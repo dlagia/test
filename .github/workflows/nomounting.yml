@@ -30,25 +30,28 @@ jobs:
           curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
           ls -d KernelSU* drivers/kernelsu 2>/dev/null || true
 
-      - name: Integrasikan NoMount (Cabang dev)
+      - name: Integrasikan NoMount (Clone branch master & salin kernel)
         working-directory: kernel
         run: |
           set -e
-          echo "Mengunduh dan menerapkan NoMount dari cabang dev..."
-          curl -LSs "https://raw.githubusercontent.com/maxsteeel/nomount/dev/setup.sh" | bash
+          echo "Mengkloning repository NoMount (branch master)..."
+          git clone --depth=1 https://github.com/maxsteeel/nomount.git /tmp/nomount
+          
+          echo "Menyalin file kernel NoMount ke source code kernel..."
+          cp -rf /tmp/nomount/kernel/* ./
           
           echo "=== VALIDASI INTEGRASI NOMOUNT ==="
-          if [ -d "drivers/nomount" ] || [ -d "nomount" ] || grep -qr "nomount" fs/ 2>/dev/null; then
-            echo "STATUS: NoMount berhasil terdeteksi dan terintegrasi ke source kernel."
+          if [ -d "drivers/nomount" ] || [ -d "nomount" ] || grep -qr "nomount" fs/ drivers/ 2>/dev/null; then
+            echo "STATUS: NoMount berhasil disalin dan terintegrasi ke source kernel."
           else
-            echo "ERROR: Skrip setup NoMount selesai tetapi file source tidak ditemukan!"
+            echo "ERROR: File kernel NoMount gagal disalin!"
             exit 1
           fi
 
       - name: Terapkan manual-hook patch
         working-directory: kernel
         run: |
-          echo "LS0tIGEvZnMvZXhlYy5jCTIwMjYtMDctMjYgMTA6MjU6MDYuMjU4NTg1NDQwICswMDAwCisrKyBiL2ZzL2V4ZWMuYwkyMDI2LTA3LTI2IDEwOjI1OjA2LjQyODU1MDUxOSArMDAwMApAQCAtMTg0MSwxMiArMTg0MSwyMSBAQAogCXJldHVybiByZXR2YWw7CiB9CiAKKyNpZmRlZiBDT05GSUdfS1NVX01BTlVBTF9IT09LCitfX2F0dHJpYnV0ZV9fKChob3QpKQorZXh0ZXJuIGludCBrc3VfaGFuZGxlX2V4ZWN2ZWF0KGludCAqZmQsIHN0cnVjdCBmaWxlbmFtZSAqKmZpbGVuYW1lX3B0ciwKKwkJCQl2b2lkICphcmd2LCB2b2lkICplbnZwLCBpbnQgKmZsYWdzKTsKKyNlbmRpZgogCmludCBkb19leGVjdmUoc3RydWN0IGZpbGVuYW1lICpmaWxlbmFtZSwKIAljb25zdCBjaGFyIF9fdXNlciAqY29uc3QgX191c2VyICpfX2FyZ3YsCiAJY29uc3QgY2hhciBfX3VzZXIgKmNvbnN0IF9fdXNlciAqX19lbnZwKQogHsKIAlzdHJ1Y3QgdXNlcl9hcmdfcHRyIGFyZ3YgPSB7IC5wdHIubmF0aXZlID0gX191c2VyIH07CiAlc3RydWN0IHVzZXJfYXJnX3B0ciBlbnZwID0geyAucHRyLm5hdGl2ZSA9IF9fZW52cCB9OworI2lmZGVmIENPTkZJR19LU1VfTUFOVUFMX0hPT0sKKwlrc3VfaGFuZGxlX2V4ZWN2ZWF0KChpbnQgKilBVF9GRENXRCwgJmZpbGVuYW1lLCAmYXJndiwgJmVudnAsIDApOworI2VuZGlmCiAJcmV0dXJuIGRvX2V4ZWN2ZWF0X2NvbW1vbihBVF9GRENXRCwgZmlsZW5hbWUsIGFyZ3YsIGVudnAsIDApOwogfQogCkBAIC0xODc0LDYgKzE4ODMsOSBAQAogCQkuaXNfY29tcGF0ID0gdHJ1ZSwKIAkJLnB0ci5jb21wYXQgPSBfX2VudnAsCiAJfTsKKyNpZmRlZiBDT05GSUdfS1NVX01BTlVBTF9IT09LCisJa3N1X2hhbmRsZV9leGVjdmVhdCgoaW50ICopQVRfRkRDV0QsICZmaWxlbmFtZSwgJmFyZ3YsICZlbnZwLCAwKTsKKyNlbmRpZgogCXJldHVybiBkb19leGVjdmVhdF9jb21tb24oQVRfRkRDV0QsIGZpbGVuYW1lLCBhcmd2LCBlbnZwLCAwKTsKIH0KIAotLS0gYS9mcy9zdGF0LmMJMjAyNi0wNy0yNiAxMDoyNTowNi4yNjczMDQ1MjkgKzAwMDAKKysr ibyfsy9zdGF0LmMJMjAyNi0wNy0yNiAxMDoyNTowNi4yNDI5OTU3NjE2ICswMDAwCkBAIC0zNTksNiArMzU5LDEyIEBACg==" | base64 -d > /tmp/resukisu-hooks.patch || true
+          echo "LS0tIGEvZnMvZXhlYy5jCTIwMjYtMDctMjYgMTA6MjU6MDYuMjU4NTg1NDQwICswMDAwCisrKyBiL2ZzL2V4ZWMuYwkyMDI2LDA3LTI2IDEwOjE5OjA2LjQyODU1MDUxOSArMDAwMApAQCAtMTg0MSwxMiArMTg0MSwyMSBAQAogCXJldHVybiByZXR2YWw7CiB9CiAKKyNpZmRlZiBDT05GSUdfS1NVX01BTlVBTF9IT09LCitfX2F0dHJpYnV0ZV9fKChob3QpKQorZXh0ZXJuIGludCBrc3VfaGFuZGxlX2V4ZWN2ZWF0KGludCAqZmQsIHN0cnVjdCBmaWxlbmFtZSAqKmZpbGVuYW1lX3B0ciwKKwkJCQl2b2lkICphcmd2LCZlbnZwLCBpbnQgKmZsYWdzKTsKKyNlbmRpZgogCmludCBkb19leGVjdmUoc3RydWN0IGZpbGVuYW1lICpmaWxlbmFtZSwKIAljb25zdCBjaGFyIF9fdXNlciAqY29uc3QgX191c2VyICpfX2FyZ3YsCiAJY29uc3QgY2hhciBfX3VzZXIgKmNvbnN0IF9fdXNlciAqX19lbnZwKQogHsKIAlzdHJ1Y3QgdXNlcl9hcmdfcHRyIGFyZ3YgPSB7IC5wdHIubmF0aXZlID0gX191c2VyIH07CiAlc3RydWN0IHVzZXJfYXJnX3B0ciBlbnZwID0geyAucHRyLm5hdGl2ZSA9IF9fZW52cCB9OworI2lmZGVmIENPTkZJR19LU1VfTUFOVUFMX0hPT0sKKwlrc3VfaGFuZGxlX2V4ZWN2ZWF0KChpbnQgKilBVF9GRENXRCwgJmZpbGVuYW1lLCAmYXJndiwgJmVudnAsIDApOworI2VuZGlmCiAJcmV0dXJuIGRvX2V4ZWN2ZWF0X2NvbW1vbihBVF9GRENXRCwgZmlsZW5hbWUsIGFyZ3YsIGVudnAsIDApOwogfQo=" | base64 -d > /tmp/resukisu-hooks.patch || true
           [ -f /tmp/resukisu-hooks.patch ] && git apply --verbose /tmp/resukisu-hooks.patch || true
 
       - name: Pra-compile - perbaikan build source MTK
