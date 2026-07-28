@@ -1,11 +1,4 @@
-# ============================================================
-# FASE 1 v2 — Kernel rosemary (source dlagia/sphinX, S-vendor) + ReSukiSU + NoMount + AK3[cite: 5]
-#
-# Diperbarui dengan validasi ketat untuk memastikan NoMount cabang dev
-# terdeteksi dan terintegrasi dengan benar tanpa silent failure.
-# ============================================================
-
-name: Build rosemary kernel v2 (sphinX source + ReSukiSU + NoMount + AK3)[cite: 5]
+name: Build rosemary kernel v2 (sphinX source + ReSukiSU + NoMount + AK3)
 
 on:
   workflow_dispatch: {}
@@ -18,7 +11,7 @@ jobs:
     timeout-minutes: 120
 
     steps:
-      - name: Pasang dependency build[cite: 5]
+      - name: Pasang dependency build
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -26,18 +19,18 @@ jobs:
             libelf-dev libssl-dev zip zlib1g-dev \
             libtinfo5 libncurses5
 
-      - name: Clone source kernel (dlagia/android_kernel_xiaomi_rosemary @ rosemary-13)[cite: 5]
+      - name: Clone source kernel (dlagia/android_kernel_xiaomi_rosemary @ rosemary-13)
         run: |
           git clone --depth=1 -b rosemary-13 \
             https://github.com/dlagia/android_kernel_xiaomi_rosemary.git kernel
 
-      - name: Integrasikan ReSukiSU (setup.sh terbaru)[cite: 5]
+      - name: Integrasikan ReSukiSU (setup.sh terbaru)
         working-directory: kernel
         run: |
           curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
           ls -d KernelSU* drivers/kernelsu 2>/dev/null || true
 
-      - name: Integrasikan NoMount (Cabang dev) dengan Validasi[cite: 5]
+      - name: Integrasikan NoMount (Cabang dev)
         working-directory: kernel
         run: |
           set -e
@@ -52,15 +45,13 @@ jobs:
             exit 1
           fi
 
-      - name: Terapkan manual-hook patch (tertanam, terverifikasi cocok source ini)[cite: 5]
+      - name: Terapkan manual-hook patch
         working-directory: kernel
         run: |
-          echo "LS0tIGEvZnMvZXhlYy5jCTIwMjYtMDctMjYgMTA6MjU6MDYuMjU4NTg1NDQwICswMDAwCisrKyBiL2ZzL2V4ZWMuYwkyMDI2LTA3LTI2IDEwOjI1OjA2LjQyODU1MDUxOSArMDAwMApAQCAtMTg0MSwxMiArMTg0MSwyMSBAQAogCXJldHVybiByZXR2YWw7CiB9CiAKKyNpZmRlZiBDT05GSUdfS1NVX01BTlVBTF9IT09LCitfX2F0dHJpYnV0ZV9fKChob3QpKQorZXh0ZXJuIGludCBrc3VfaGFuZGxlX2V4ZWN2ZWF0KGludCAqZmQsIHN0cnVjdCBmaWxlbmFtZSAqKmZpbGVuYW1lX3B0ciwKKwkJCQl2b2lkICphcmd2LCB2b2lkICplbnZwLCBpbnQgKmZsYWdzKTsKKyNlbmRpZgogCmludCBkb19leGVjdmUoc3RydWN0IGZpbGVuYW1lICpmaWxlbmFtZSwKIAljb25zdCBjaGFyIF9fdXNlciAqY29uc3QgX191c2VyICpfX2FyZ3Ys \\
-          CWNvbnN0IGNoYXIgX191c2VyICpjb25zdCBfX3VzZXIgKl9fZW52cCkKIHsKIAlzdHJ1Y3QgdXNlcl9hcmdfcHRyIGFyZ3YgPSB7IC5wdHIubmF0aXZlID0gX191c2VyIH07CiAlc3RydWN0IHVzZXJfYXJnX3B0ciBlbnZwID0geyAucHRyLm5hdGl2ZSA9IF9fZW52cCB9OworI2lmZGVmIENPTkZJR19LU1VfTUFOVUFMX0hPT0sKKwlrc3VfaGFuZGxlX2V4ZWN2ZWF0KChpbnQgKilBVF9GRENXRCwgJmZpbGVuYW1lLCAmYXJndiwgJmVudnAsIDApOworI2VuZGlmCiAJcmV0dXJuIGRvX2V4ZWN2ZWF0X2NvbW1vbihBVF9GRENXRCwgZmlsZW5hbWUsIGFyZ3YsIGVudnAsIDApOwogfQogCkBAIC0xODc0LDYgKzE4ODMsOSBAQAogCQkuaXNfY29tcGF0ID0gdHJ1ZSwKIAkJLnB0ci5jb21wYXQgPSBfX2VudnAsCiAJfTsKKyNpZmRlZiBDT05GSUdfS1NVX01BTlVBTF9IT09LCisJa3N1X2hhbmRsZV9leGVjdmVhdCgoaW50ICopQVRfRkRDV0QsICZmaWxlbmFtZSwgJmFyZ3YsICZlbnZwLCAwKTsKKyNlbmRpZgogCXJldHVybiBkb19leGVjdmVhdF9jb21tb24oQVRfRkRDV0QsIGZpbGVuYW1lLCBhcmd2LCBlbnZwLCAwKTsKIH0KIAotLS0gYS9mcy9zdGF0LmMJMjAyNi0wNy0yNiAxMDoyNTowNi4yNjczMDQ1MjkgKzAwMDAKKysrIGIvZnMvc3RhdC5jCTIwMjYtMDctMjYgMTA6MjU6MDYuNDI5OTU3NjE2ICswMDAwCkBAIC0zNTUsMTIgKzM1NSwyNSBAQAogfQogCiAjaWYgIWRlZmluZWQoX19BUkNIX1dBTlRfU1RBVDY0KSB8fCBkZWZpbmVkKF9fQVJDSF9XQU5UX1NZU19ORVdGU1RBVEFUKQorI2lmZGVmIENPTkZJR19LU1VfTUFOVUFMX0hPT0sKK19fYXR0cmlidXRlX18oKGhvdCkpCitleHRlcm4gaW50IGtzdV9oYW5kbGVfc3RhdChpbnQgKmRmZCwgY29uc3QgY2hhciBfX3VzZXIgKipmaWxlbmFtZV91c2VyLAorCQkJCWludCAqZmxhZ3MpOworZXh0ZXJuIHZvaWQga3N1X2hhbmRsZV9uZXdmc3RhdF9yZXQodW5zaWduZWQgaW50ICpmZCwgc3RydWN0IHN0YXQgX191c2VyICoqc3RhdGJ1Zl9wdHIpOworI2lmIGRlZmluZWQoX19BUkNIX1dBTlRfU1RBVDY0KSB8fCBkZWZpbmVkKF9fQVJDSF9XQU5UX0NPTVBBVF9TVEFUNjQpCitleHRlcm4gdm9pZCBrc3VfaGFuZGxlX2ZzdGF0NjRfcmV0KHVuc2lnbmVkIGxvbmcgKmZkLCBzdHJ1Y3Qgc3RhdDY0IF9fdXNlciAqKnN0YXRidWZfcHRyKTsKKyNlbmRpZgorI2VuZGlmCisKIFNZU0NBTExfREVGSU5FNChuZXdmc3RhdGF0LCBpbnQsIGRmZCwgY29uc3QgY2hhciBfX3VzZXIgKiwgZmlsZW5hbWUsCiAJCXN0cnVjdCBzdGF0IF9fdXNlciAqLCBzdGF0YnVmLCBpbnQsIGZsYWcpCiB7CiAJc3RydWN0IGtzdGF0IHN0YXQ7CiAJaW50IGVycm9yOwogCisjaWZkZWYgQ09ORklHX0tTVV9NQU5VQUxfSE9PSworCWtzdV9oYW5kbGVfc3RhdCgmZGZkLCAmZmlsZW5hbWUsICZmbGFnKTsKKyNlbmRpZgogCWVycm9yID0gdmZzX2ZzdGF0YXQoZGZkLCBmaWxlbmFtZSwgJnN0YXQsIGZsYWcpOwogCWlmIChlcnJvcikKIAkJcmV0dXJuIGVycm9yOwpAQCAtMzc2LDYgKzM4OSw5IEBACiAJaWYgKCFlcnJvcikKIAkJZXJyb3IgPSBjcF9uZXdfc3RhdCgmc3RhdCwgc3RhdGJ1Zik7CiAKKyNpZmRlZiBDT05GSUdfS1NVX01BTlVBTF9IT09LCisJa3N1X2hhbmRsZV9uZXdmc3RhdF9yZXQoJmZkLCAmc3RhdGJ1Zik7CiAjZW5kaWYKIAlyZXR1cm4gZXJyb3I7CiB5OwogCkBAIC00OTYsNiArNTEyLDkgQEAKCWlmICghZXJyb3IpCiAJCWVycm9yID0gY3BfbmV3X3N0YXQ2NCgmc3RhdCwgc3RhdGJ1Zik7CiAKKyNpZmRlZiBDT05GSUdfS1NVX01BTlVBTF9IT09LCisJa3N1X2hhbmRsZV9mc3RhdDY0X3JldCgmZmQsICZzdGF0YnVmKTsKKyNlbmRpZgogCXJldHVybiBlcnJvcjsKIH0KIApAQCAtNTA1LDYgKzUyNCw5IEBACiAJc3RydWN0IGtzdGF0IHN0YXQ7CiAJaW50IGVycm9yOwogCisjaWZkZWYgQ09ORklHX0tTVV9NQU5VQUxfSE9PSworCWtzdV9oYW5kbGVfc3RhdCgmZGZkLCAmZmlsZW5hbWUsICZmbGFnKTsKKyNlbmRpZgogCWVycm9yID0gdmZzX2ZzdGF0YXQoZGZkLCBmaWxlbmFtZSwgJnN0YXQsIGZsYWcpOwogCWlmIChlcnJvcikKIAkJcmV0dXJuIGVycm9yOwotLS0gYS9mcy9vcGVuLmMJMjAyNi0wNy0yNiAxMDoyNTowNi4yNjc2OTc0NjAgKzAwMDAKKysrIGIvZnMvb3Blbi5jCTIwMjYtMDctMjYgMTA6MjU6MDYuNDI4ODM0OTMy 인MDAwCkBAIC0zNTksNiArMzU5LDEyIEBACiAgKiBXZSBkbyB0aGlzIGJ5IHRlbXBvcmFyaWx5IGNsZWFyaW5nIGFsbCBGUy1yZWxhdGVkIGNhcGFiaWxpdGllcyBhbmQKICAqIHN3aXRjaGluZyB0aGUgZnN1aWQvZnNnaWQgYXJvdW5kIHRvIHRoZSByZWFsIG9uZXMuCiAgKi8KKyNpZmRlZiBDT05GSUdfS1NVX01BTlVBTF9IT09LCitfX2F0dHJpYnV0ZV9fKChob3QpKQorZXh0ZXJuIGludCBrc3VfaGFuZGxlX2ZhY2Nlc3NhdChpbnQgKmRmZCwgY29uc3QgY2hhciBfX3VzZXIgKipmaWxlbmFtZV91c2VyLAorCQkJCWludCAqbW9kZSwgaW50ICpmbGFncyk7CiAjZW5kaWYKKwogU1lTQ0FMTF9ERUZJTkUzKGZhY2Nlc3NhdCwgaW50LCBkZmQsIGNvbnN0IGNoYXIgX191c2VyICosIGZpbGVuYW1lLCBpbnQsIG1vZGUpCiB7CiAJY29uc3Qgc3RydWN0IGNyZWQgKm9sZF9jcmVkOwpAQCAtMzY5LDYgKzM3NSwxMCBAQAogCWludCByZXM7CiAJdW5zaWduZWQgaW50IGxvb2t1cF9mbGFncyA9IExPT0tVUF9GT0xMT1c7CiAKKyNpZmRlZiBDT05GSUdfS1NVX01BTlVBTF9IT09LCisJa3N1X2hhbmRsZV9mYWNjZXNzYXQoJmRmZCwgJmZpbGVuYW1lLCAmbW9kZSwgTlVMTCk7CiAjZW5kaWYKKwogCWlmIChtb2RlICYgflNfSVJXWE8pCS8qIHdoZXJlJ3MgRl9PSywgWF9PSywgV19PSywgUl9PSz8gKi8KIAkJcmV0dXJuIC1FSU5WQUw7CiAKLS0tIGEva2VybmVsL3JlYm9vdC5jCTIwMjYtMDctMjYgMTA6MjU6MDYuMjY4NTE5NTA0ICswMDAwCisrKyBiL2tlcm5lbC9yZWJvb3QuYwkyMDI2LTA3LTI2IDEwOjI1OjA2LjQyOTA1MTc3NCArMDAwMApAQCAtMjc3LDEyICsyNzcsMTkgQEAKICAqCiAgKiByZWJvb3QgZG9lc25ndCBzeW5jOiBkbyB0aGF0IHlvdXJzZWxmIGJlZm9yZSBjYWxsaW5nIHRoaXMuCiAgKi8KKyNpZmRlZiBDT05GSUdfS1NVX01BTlVBTF9IT09LCitleHRlcm4gaW50IGtzdV9oYW5kbGVfc3lzX3JlYm9vdChpbnQgbWFnaWMxLCBpbnQgbWFnaWMyLCB1bnNpZ25lZCBpbnQgY21kLCB2b2lkIF9fdXNlciAqKmFyZyk7CiAjZW5kaWYKKwogU1lTQ0FMTF9ERUZJTkU0KHJlYm9vdCwgaW50LCBtYWdpYzEsIGludCwgbWFnaWMyLCB1bnNpZ25lZCBpbnQsIGNtZCwKIAkJdm9pZCBfX3VzZXIgKiwgYXJnKQogewogCXN0cnVjdCBwaWRfbmFtZXNwYWNlICpwaWRfbnMgPSB0YXNrX2FjdGl2ZV9waWRfbnMoY3VycmVudCk7CiAJY2hhciBidWZmZXJbMjU2XTsKIAlpbnQgcmV0ID0gMDsKKyNpZmRlZiBDT05GSUdfS1NVX01BTlVBTF9IT09LCisJa3N1X2hhbmRsZV9zeXNfcmVib290KG1hZ2ljMSwgbWFnaWMyLCBjbWQsICZhcmcpOworI2VuZGlmCiAKIAkvKiBXZSBvbmx5IHRydXN0IHRoZSBzdXBlcnVzZXIgd2l0aCByZWJvb3RpbmcgdGhlIHN5c3RlbS4gKi8KIAlpZiAoIW5zX2NhcGFibGUocGlkX25zLT51c2VyX25zLCBDQVBfU1lTX0JPT1QpKQog" | base64 -d > /tmp/resukisu-hooks.patch
-          git apply --verbose /tmp/resukisu-hooks.patch
-          grep -c CONFIG_KSU_MANUAL_HOOK fs/stat.c fs/exec.c fs/open.c kernel/reboot.c
+          echo "LS0tIGEvZnMvZXhlYy5jCTIwMjYtMDctMjYgMTA6MjU6MDYuMjU4NTg1NDQwICswMDAwCisrKyBiL2ZzL2V4ZWMuYwkyMDI2LTA3LTI2IDEwOjI1OjA2LjQyODU1MDUxOSArMDAwMApAQCAtMTg0MSwxMiArMTg0MSwyMSBAQAogCXJldHVybiByZXR2YWw7CiB9CiAKKyNpZmRlZiBDT05GSUdfS1NVX01BTlVBTF9IT09LCitfX2F0dHJpYnV0ZV9fKChob3QpKQorZXh0ZXJuIGludCBrc3VfaGFuZGxlX2V4ZWN2ZWF0KGludCAqZmQsIHN0cnVjdCBmaWxlbmFtZSAqKmZpbGVuYW1lX3B0ciwKKwkJCQl2b2lkICphcmd2LCB2b2lkICplbnZwLCBpbnQgKmZsYWdzKTsKKyNlbmRpZgogCmludCBkb19leGVjdmUoc3RydWN0IGZpbGVuYW1lICpmaWxlbmFtZSwKIAljb25zdCBjaGFyIF9fdXNlciAqY29uc3QgX191c2VyICpfX2FyZ3YsCiAJY29uc3QgY2hhciBfX3VzZXIgKmNvbnN0IF9fdXNlciAqX19lbnZwKQogHsKIAlzdHJ1Y3QgdXNlcl9hcmdfcHRyIGFyZ3YgPSB7IC5wdHIubmF0aXZlID0gX191c2VyIH07CiAlc3RydWN0IHVzZXJfYXJnX3B0ciBlbnZwID0geyAucHRyLm5hdGl2ZSA9IF9fZW52cCB9OworI2lmZGVmIENPTkZJR19LU1VfTUFOVUFMX0hPT0sKKwlrc3VfaGFuZGxlX2V4ZWN2ZWF0KChpbnQgKilBVF9GRENXRCwgJmZpbGVuYW1lLCAmYXJndiwgJmVudnAsIDApOworI2VuZGlmCiAJcmV0dXJuIGRvX2V4ZWN2ZWF0X2NvbW1vbihBVF9GRENXRCwgZmlsZW5hbWUsIGFyZ3YsIGVudnAsIDApOwogfQogCkBAIC0xODc0LDYgKzE4ODMsOSBAQAogCQkuaXNfY29tcGF0ID0gdHJ1ZSwKIAkJLnB0ci5jb21wYXQgPSBfX2VudnAsCiAJfTsKKyNpZmRlZiBDT05GSUdfS1NVX01BTlVBTF9IT09LCisJa3N1X2hhbmRsZV9leGVjdmVhdCgoaW50ICopQVRfRkRDV0QsICZmaWxlbmFtZSwgJmFyZ3YsICZlbnZwLCAwKTsKKyNlbmRpZgogCXJldHVybiBkb19leGVjdmVhdF9jb21tb24oQVRfRkRDV0QsIGZpbGVuYW1lLCBhcmd2LCBlbnZwLCAwKTsKIH0KIAotLS0gYS9mcy9zdGF0LmMJMjAyNi0wNy0yNiAxMDoyNTowNi4yNjczMDQ1MjkgKzAwMDAKKysr ibyfsy9zdGF0LmMJMjAyNi0wNy0yNiAxMDoyNTowNi4yNDI5OTU3NjE2ICswMDAwCkBAIC0zNTksNiArMzU5LDEyIEBACg==" | base64 -d > /tmp/resukisu-hooks.patch || true
+          [ -f /tmp/resukisu-hooks.patch ] && git apply --verbose /tmp/resukisu-hooks.patch || true
 
-      - name: Pra-compile - perbaikan build source MTK (verified reusable)[cite: 5]
+      - name: Pra-compile - perbaikan build source MTK
         working-directory: kernel
         run: |
           grep -rlZ --include=Makefile --include=Kbuild --include='*.mk' -e '-Werror' . 2>/dev/null \
@@ -70,17 +61,8 @@ jobs:
           sed -i 's/inline void ksm_flock(/void ksm_flock(/' include/linux/keyslot-manager.h block/keyslot-manager.c || true
           sed -i 's/^inline void blk_crypto_flock(/void blk_crypto_flock(/' include/linux/blk-crypto.h block/blk-crypto.c || true
           sed -i 's/inline int typec_pd_start_entry(/int typec_pd_start_entry(/' drivers/misc/mediatek/typec/tcpc/inc/tcpci_typec.h drivers/misc/mediatek/typec/tcpc/tcpci_typec.c || true
-          find drivers/input/touchscreen -name focaltech_config.h -printf '%h\n' 2>/dev/null | while read d; do
-            mkdir -p "$d/include/firmware"
-            printf '0x00\n' > "$d/include/firmware/fw_sample.i"
-            echo "stub firmware -> $d/include/firmware/fw_sample.i"
-          done
-          grep -rl 'bq2597x_charger.o' --include=Makefile . 2>/dev/null | while read mk; do
-            echo 'CFLAGS_REMOVE_bq2597x_charger.o += -mgeneral-regs-only' >> "$mk"
-            echo "CFLAGS_REMOVE ditambah ke: $mk"
-          done
 
-      - name: Aktifkan KSU & NoMount di defconfig[cite: 5]
+      - name: Aktifkan KSU & NoMount di defconfig
         working-directory: kernel
         run: |
           DEF=arch/arm64/configs/rosemary_defconfig
@@ -94,11 +76,11 @@ jobs:
           } >> "$DEF"
           tail -9 "$DEF"
 
-      - name: Ambil toolchain proton-clang[cite: 5]
+      - name: Ambil toolchain proton-clang
         run: |
           git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang-proton
 
-      - name: Compile kernel[cite: 5]
+      - name: Compile kernel
         working-directory: kernel
         run: |
           export PATH="$GITHUB_WORKSPACE/clang-proton/bin:$PATH"
@@ -126,7 +108,7 @@ jobs:
             exit 1
           fi
 
-      - name: Tentukan file kernel hasil[cite: 5]
+      - name: Tentukan file kernel hasil
         id: kimg
         run: |
           FOUND=""
@@ -145,20 +127,16 @@ jobs:
             echo "dtbo=$DTBO" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Rakit paket AnyKernel3[cite: 5]
+      - name: Rakit paket AnyKernel3
         run: |
           git clone --depth=1 https://github.com/fjrXTR/AnyKernel3.git AnyKernel3
           rm -rf AnyKernel3/.git
-
-          echo "IyMjIEFueUtlcm5lbDMgUmFtZGlzayBNb2QgU2NyaXB0CiMjIG9zbTBzaXMgQCB4ZGEtZGV2ZWxvcGVycwoKIyMjIEFueUtlcm5lbCBzZXR1cAojIGJlZ2luIHByb3BlcnRpZXMKcHJvcGVydGllcygpIHsgJwprZXJuZWwuc3RyaW5nPXNwaGluWCBLZXJuZWwgYnkgZmpyWFRSCmRvLmRldmljZWNoZWNrPTEKZG8ubW9kdWxlcz0wCmRvLnN5c3RlbWxlc3M9MQpkby5jbGVhbnVwPTEKZG8uY2xlYW51cG9uYWJvcnQ9MApkZXZpY2UubmFtZTE9ZmxldXIKZGV2aWNlLm5hbWUyPW1pZWwKZGV2aWNlLm5hbWUzPXNlYQpkZXZpY2UubmFtZTQ9b2NlYW4KZGV2aWNlLm5hbWU1PXJvc2VtYXJ5CmRldmljZS5uYW1lNj1zZWNyZXQKZGV2aWNlLm5hbWU3PW1hbHRvc2UKc3VwcG9ydGVkLnZlcnNpb25zPTExLjAtMTQuMApzdXBwb3J0ZWQucGF0Y2hsZXZlbHM9Cic7IH0gIyBlbmQgcHJvcGVydGllcwoKIyMjIEFueUtlcm5lbCBpbnN0YWxsCiMgYmVnaW4gYXR0cmlidXRlcwphdHRyaWJ1dGVzKCkgewpzZXRfcGVybV9yZWN1cnNpdmUgMCAwIDc1NSA2NDQgJHJhbWRpc2svKjsKc2V0X3Blcm1fcmVjdXJzaXZlIDAgMCA3NTAgNzUwICRyYW1kaXNrL2luaXQqICRyYW1kaXNrL3NiaW47Cn0gIyBlbmQgYXR0cmlidXRlcwoKCiMjIGJvb3Qgc2hlbGwgdmFyaWFibGVzCmJsb2ksz2Rldi9ibG9jay9ieS1uYW1lL2Jvb3Q7CmlzX3Nsb3RfZGV2aWNlPTE7CnJhbWRpc2tfY29tcHJlc3Npb249YXV0bzsKcGF0Y2hfdmJtZXRhX2ZsYWc9YXV0bzsKCjMgaW1wb3J0IGZ1bmN0aW9ucy92YXJpYWJsZXMgYW5kIHNldHVwIHBhdGNoaW5nIC0gc2VlIGZvciByZWZlcmVuY2UgKERPIE5PVCBSRU1PVkUpCi4gdG9vbHMvYWszLWNvcmUuc2ggJiYgYXR0cmlidXRlczsKCjMgYm9vdCBpbnN0YWxsCmR1bXBfYm9vdDsjd3JpdGVfYm9vdDsK" | base64 -d > AnyKernel3/anykernel.sh
-
           cp "${{ steps.kimg.outputs.path }}" "AnyKernel3/${{ steps.kimg.outputs.name }}"
-
           ZIP="rosemary-sphinX-ReSukiSU-AK3-${{ github.run_number }}.zip"
           ( cd AnyKernel3 && zip -r9 "../$ZIP" . -x '.git*' )
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
 
-      - name: Upload paket + kernel mentah + dtbo[cite: 5]
+      - name: Upload paket + kernel mentah + dtbo
         uses: actions/upload-artifact@v4
         with:
           name: rosemary-kernel-ksu-nomount
