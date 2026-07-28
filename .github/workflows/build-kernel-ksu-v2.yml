@@ -1,0 +1,183 @@
+# ============================================================
+# FASE 1 v2 — Kernel rosemary (source dlagia/sphinX, S-vendor) + ReSukiSU + AK3
+#
+# Ganti source dari raw rosemary-r-oss (bootloop) ke fork yang secara
+# eksplisit S-vendor based, kernel 4.14.332, dukung dtbo overlay, dan
+# mendeklarasikan supported.versions=11.0-14.0.
+#
+# CATATAN JUJUR: source ini BELUM ada konfirmasi publik independen
+# pernah sukses boot di MIUI 14 stock. Bukti internalnya kuat
+# (S-vendor labeled, dtbo, versi kernel lebih matang), tapi tetap WAJIB
+# di-test lewat OrangeFox (backup Boot dulu!) sebelum dianggap final.
+# Kalau bootloop lagi, restore backup Boot di OFox seperti sebelumnya.
+#
+# Semua 5 perbaikan compile yang sudah terbukti di source lama (Werror
+# MTK, no_sanitize, ksm_flock/blk_crypto_flock/typec_pd_start_entry
+# inline, stub firmware touch) sudah diverifikasi TETAP cocok di source
+# ini dan dipakai lagi. AnyKernel3 pakai template asli penulis kernel
+# ini (fjrXTR) - lebih setia daripada template generik.
+#
+# Cara: buat file .github/workflows/build-kernel-ksu-v2.yml lalu paste ini.
+# ============================================================
+
+name: Build rosemary kernel v2 (sphinX source + ReSukiSU + AK3)
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Pasang dependency build
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison build-essential ccache cpio curl flex git kmod \
+            libelf-dev libssl-dev zip zlib1g-dev \
+            libtinfo5 libncurses5
+
+      - name: Clone source kernel (dlagia/android_kernel_xiaomi_rosemary @ rosemary-13)
+        run: |
+          git clone --depth=1 -b rosemary-13 \
+            https://github.com/dlagia/android_kernel_xiaomi_rosemary.git kernel
+
+      - name: Integrasikan ReSukiSU (setup.sh terbaru)
+        working-directory: kernel
+        run: |
+          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
+          ls -d KernelSU* drivers/kernelsu 2>/dev/null || true
+
+      - name: Terapkan manual-hook patch (tertanam, terverifikasi cocok source ini)
+        working-directory: kernel
+        run: |
+          echo "LS0tIGEvZnMvZXhlYy5jCTIwMjYtMDctMjYgMTA6MjU6MDYuMjU4NTg1NDQwICswMDAwCisrKyBiL2ZzL2V4ZWMuYwkyMDI2LTA3LTI2IDEwOjI1OjA2LjQyODU1MDUxOSArMDAwMApAQCAtMTg0MSwxMiArMTg0MSwyMSBAQAogCXJldHVybiByZXR2YWw7CiB9CiAKKyNpZmRlZiBDT05GSUdfS1NVX01BTlVBTF9IT09LCitfX2F0dHJpYnV0ZV9fKChob3QpKQorZXh0ZXJuIGludCBrc3VfaGFuZGxlX2V4ZWN2ZWF0KGludCAqZmQsIHN0cnVjdCBmaWxlbmFtZSAqKmZpbGVuYW1lX3B0ciwKKwkJCQl2b2lkICphcmd2LCB2b2lkICplbnZwLCBpbnQgKmZsYWdzKTsKKyNlbmRpZgorCiBpbnQgZG9fZXhlY3ZlKHN0cnVjdCBmaWxlbmFtZSAqZmlsZW5hbWUsCiAJY29uc3QgY2hhciBfX3VzZXIgKmNvbnN0IF9fdXNlciAqX19hcmd2LAogCWNvbnN0IGNoYXIgX191c2VyICpjb25zdCBfX3VzZXIgKl9fZW52cCkKIHsKIAlzdHJ1Y3QgdXNlcl9hcmdfcHRyIGFyZ3YgPSB7IC5wdHIubmF0aXZlID0gX19hcmd2IH07CiAJc3RydWN0IHVzZXJfYXJnX3B0ciBlbnZwID0geyAucHRyLm5hdGl2ZSA9IF9fZW52cCB9OworI2lmZGVmIENPTkZJR19LU1VfTUFOVUFMX0hPT0sKKwlrc3VfaGFuZGxlX2V4ZWN2ZWF0KChpbnQgKilBVF9GRENXRCwgJmZpbGVuYW1lLCAmYXJndiwgJmVudnAsIDApOworI2VuZGlmCiAJcmV0dXJuIGRvX2V4ZWN2ZWF0X2NvbW1vbihBVF9GRENXRCwgZmlsZW5hbWUsIGFyZ3YsIGVudnAsIDApOwogfQogCkBAIC0xODc0LDYgKzE4ODMsOSBAQAogCQkuaXNfY29tcGF0ID0gdHJ1ZSwKIAkJLnB0ci5jb21wYXQgPSBfX2VudnAsCiAJfTsKKyNpZmRlZiBDT05GSUdfS1NVX01BTlVBTF9IT09LCisJa3N1X2hhbmRsZV9leGVjdmVhdCgoaW50ICopQVRfRkRDV0QsICZmaWxlbmFtZSwgJmFyZ3YsICZlbnZwLCAwKTsKKyNlbmRpZgogCXJldHVybiBkb19leGVjdmVhdF9jb21tb24oQVRfRkRDV0QsIGZpbGVuYW1lLCBhcmd2LCBlbnZwLCAwKTsKIH0KIAotLS0gYS9mcy9zdGF0LmMJMjAyNi0wNy0yNiAxMDoyNTowNi4yNjczMDQ1MjkgKzAwMDAKKysrIGIvZnMvc3RhdC5jCTIwMjYtMDctMjYgMTA6MjU6MDYuNDI5OTU3NjE2ICswMDAwCkBAIC0zNTUsMTIgKzM1NSwyNSBAQAogfQogCiAjaWYgIWRlZmluZWQoX19BUkNIX1dBTlRfU1RBVDY0KSB8fCBkZWZpbmVkKF9fQVJDSF9XQU5UX1NZU19ORVdGU1RBVEFUKQorI2lmZGVmIENPTkZJR19LU1VfTUFOVUFMX0hPT0sKK19fYXR0cmlidXRlX18oKGhvdCkpCitleHRlcm4gaW50IGtzdV9oYW5kbGVfc3RhdChpbnQgKmRmZCwgY29uc3QgY2hhciBfX3VzZXIgKipmaWxlbmFtZV91c2VyLAorCQkJCWludCAqZmxhZ3MpOworZXh0ZXJuIHZvaWQga3N1X2hhbmRsZV9uZXdmc3RhdF9yZXQodW5zaWduZWQgaW50ICpmZCwgc3RydWN0IHN0YXQgX191c2VyICoqc3RhdGJ1Zl9wdHIpOworI2lmIGRlZmluZWQoX19BUkNIX1dBTlRfU1RBVDY0KSB8fCBkZWZpbmVkKF9fQVJDSF9XQU5UX0NPTVBBVF9TVEFUNjQpCitleHRlcm4gdm9pZCBrc3VfaGFuZGxlX2ZzdGF0NjRfcmV0KHVuc2lnbmVkIGxvbmcgKmZkLCBzdHJ1Y3Qgc3RhdDY0IF9fdXNlciAqKnN0YXRidWZfcHRyKTsKKyNlbmRpZgorI2VuZGlmCisKIFNZU0NBTExfREVGSU5FNChuZXdmc3RhdGF0LCBpbnQsIGRmZCwgY29uc3QgY2hhciBfX3VzZXIgKiwgZmlsZW5hbWUsCiAJCXN0cnVjdCBzdGF0IF9fdXNlciAqLCBzdGF0YnVmLCBpbnQsIGZsYWcpCiB7CiAJc3RydWN0IGtzdGF0IHN0YXQ7CiAJaW50IGVycm9yOwogCisjaWZkZWYgQ09ORklHX0tTVV9NQU5VQUxfSE9PSworCWtzdV9oYW5kbGVfc3RhdCgmZGZkLCAmZmlsZW5hbWUsICZmbGFnKTsKKyNlbmRpZgogCWVycm9yID0gdmZzX2ZzdGF0YXQoZGZkLCBmaWxlbmFtZSwgJnN0YXQsIGZsYWcpOwogCWlmIChlcnJvcikKIAkJcmV0dXJuIGVycm9yOwpAQCAtMzc2LDYgKzM4OSw5IEBACiAJaWYgKCFlcnJvcikKIAkJZXJyb3IgPSBjcF9uZXdfc3RhdCgmc3RhdCwgc3RhdGJ1Zik7CiAKKyNpZmRlZiBDT05GSUdfS1NVX01BTlVBTF9IT09LCisJa3N1X2hhbmRsZV9uZXdmc3RhdF9yZXQoJmZkLCAmc3RhdGJ1Zik7CisjZW5kaWYKIAlyZXR1cm4gZXJyb3I7CiB9CiAKQEAgLTQ5Niw2ICs1MTIsOSBAQAogCWlmICghZXJyb3IpCiAJCWVycm9yID0gY3BfbmV3X3N0YXQ2NCgmc3RhdCwgc3RhdGJ1Zik7CiAKKyNpZmRlZiBDT05GSUdfS1NVX01BTlVBTF9IT09LCisJa3N1X2hhbmRsZV9mc3RhdDY0X3JldCgmZmQsICZzdGF0YnVmKTsKKyNlbmRpZgogCXJldHVybiBlcnJvcjsKIH0KIApAQCAtNTA1LDYgKzUyNCw5IEBACiAJc3RydWN0IGtzdGF0IHN0YXQ7CiAJaW50IGVycm9yOwogCisjaWZkZWYgQ09ORklHX0tTVV9NQU5VQUxfSE9PSworCWtzdV9oYW5kbGVfc3RhdCgmZGZkLCAmZmlsZW5hbWUsICZmbGFnKTsKKyNlbmRpZgogCWVycm9yID0gdmZzX2ZzdGF0YXQoZGZkLCBmaWxlbmFtZSwgJnN0YXQsIGZsYWcpOwogCWlmIChlcnJvcikKIAkJcmV0dXJuIGVycm9yOwotLS0gYS9mcy9vcGVuLmMJMjAyNi0wNy0yNiAxMDoyNTowNi4yNjc2OTc0NjAgKzAwMDAKKysrIGIvZnMvb3Blbi5jCTIwMjYtMDctMjYgMTA6MjU6MDYuNDI4ODM0OTMyICswMDAwCkBAIC0zNTksNiArMzU5LDEyIEBACiAgKiBXZSBkbyB0aGlzIGJ5IHRlbXBvcmFyaWx5IGNsZWFyaW5nIGFsbCBGUy1yZWxhdGVkIGNhcGFiaWxpdGllcyBhbmQKICAqIHN3aXRjaGluZyB0aGUgZnN1aWQvZnNnaWQgYXJvdW5kIHRvIHRoZSByZWFsIG9uZXMuCiAgKi8KKyNpZmRlZiBDT05GSUdfS1NVX01BTlVBTF9IT09LCitfX2F0dHJpYnV0ZV9fKChob3QpKQorZXh0ZXJuIGludCBrc3VfaGFuZGxlX2ZhY2Nlc3NhdChpbnQgKmRmZCwgY29uc3QgY2hhciBfX3VzZXIgKipmaWxlbmFtZV91c2VyLAorCQkJCWludCAqbW9kZSwgaW50ICpmbGFncyk7CisjZW5kaWYKKwogU1lTQ0FMTF9ERUZJTkUzKGZhY2Nlc3NhdCwgaW50LCBkZmQsIGNvbnN0IGNoYXIgX191c2VyICosIGZpbGVuYW1lLCBpbnQsIG1vZGUpCiB7CiAJY29uc3Qgc3RydWN0IGNyZWQgKm9sZF9jcmVkOwpAQCAtMzY5LDYgKzM3NSwxMCBAQAogCWludCByZXM7CiAJdW5zaWduZWQgaW50IGxvb2t1cF9mbGFncyA9IExPT0tVUF9GT0xMT1c7CiAKKyNpZmRlZiBDT05GSUdfS1NVX01BTlVBTF9IT09LCisJa3N1X2hhbmRsZV9mYWNjZXNzYXQoJmRmZCwgJmZpbGVuYW1lLCAmbW9kZSwgTlVMTCk7CisjZW5kaWYKKwogCWlmIChtb2RlICYgflNfSVJXWE8pCS8qIHdoZXJlJ3MgRl9PSywgWF9PSywgV19PSywgUl9PSz8gKi8KIAkJcmV0dXJuIC1FSU5WQUw7CiAKLS0tIGEva2VybmVsL3JlYm9vdC5jCTIwMjYtMDctMjYgMTA6MjU6MDYuMjY4NTE5NTA0ICswMDAwCisrKyBiL2tlcm5lbC9yZWJvb3QuYwkyMDI2LTA3LTI2IDEwOjI1OjA2LjQyOTA1MTc3NCArMDAwMApAQCAtMjc3LDEyICsyNzcsMTkgQEAKICAqCiAgKiByZWJvb3QgZG9lc24ndCBzeW5jOiBkbyB0aGF0IHlvdXJzZWxmIGJlZm9yZSBjYWxsaW5nIHRoaXMuCiAgKi8KKyNpZmRlZiBDT05GSUdfS1NVX01BTlVBTF9IT09LCitleHRlcm4gaW50IGtzdV9oYW5kbGVfc3lzX3JlYm9vdChpbnQgbWFnaWMxLCBpbnQgbWFnaWMyLCB1bnNpZ25lZCBpbnQgY21kLCB2b2lkIF9fdXNlciAqKmFyZyk7CisjZW5kaWYKKwogU1lTQ0FMTF9ERUZJTkU0KHJlYm9vdCwgaW50LCBtYWdpYzEsIGludCwgbWFnaWMyLCB1bnNpZ25lZCBpbnQsIGNtZCwKIAkJdm9pZCBfX3VzZXIgKiwgYXJnKQogewogCXN0cnVjdCBwaWRfbmFtZXNwYWNlICpwaWRfbnMgPSB0YXNrX2FjdGl2ZV9waWRfbnMoY3VycmVudCk7CiAJY2hhciBidWZmZXJbMjU2XTsKIAlpbnQgcmV0ID0gMDsKKyNpZmRlZiBDT05GSUdfS1NVX01BTlVBTF9IT09LCisJa3N1X2hhbmRsZV9zeXNfcmVib290KG1hZ2ljMSwgbWFnaWMyLCBjbWQsICZhcmcpOworI2VuZGlmCiAKIAkvKiBXZSBvbmx5IHRydXN0IHRoZSBzdXBlcnVzZXIgd2l0aCByZWJvb3RpbmcgdGhlIHN5c3RlbS4gKi8KIAlpZiAoIW5zX2NhcGFibGUocGlkX25zLT51c2VyX25zLCBDQVBfU1lTX0JPT1QpKQo=" | base64 -d > /tmp/resukisu-hooks.patch
+          git apply --verbose /tmp/resukisu-hooks.patch
+          grep -c CONFIG_KSU_MANUAL_HOOK fs/stat.c fs/exec.c fs/open.c kernel/reboot.c
+
+      - name: Pra-compile - perbaikan build source MTK (verified reusable)
+        working-directory: kernel
+        run: |
+          # 1) buang -Werror standalone dari Makefile/Kbuild (per-folder MTK), jaga -Werror=/-Werror- yg sah
+          grep -rlZ --include=Makefile --include=Kbuild --include='*.mk' -e '-Werror' . 2>/dev/null \
+            | xargs -0 -r sed -i -E -e 's/-Werror=[A-Za-z0-9_-]+//g' -e 's/(-Werror)([[:space:]]|$)/\2/g' || true
+          # 2) buang atribut no_sanitize("...") yg tak dikenal GCC 4.9 (harmless)
+          grep -rlZ 'no_sanitize(' . 2>/dev/null \
+            | xargs -0 -r sed -i -E 's/__attribute__\(\(no_sanitize\("[^"]*"\)\)\)//g' || true
+          # 3) buang 'inline' dari fungsi ber-EXPORT yg body-nya out-of-line
+          sed -i 's/inline void ksm_flock(/void ksm_flock(/' include/linux/keyslot-manager.h block/keyslot-manager.c || true
+          sed -i 's/^inline void blk_crypto_flock(/void blk_crypto_flock(/' include/linux/blk-crypto.h block/blk-crypto.c || true
+          sed -i 's/inline int typec_pd_start_entry(/int typec_pd_start_entry(/' drivers/misc/mediatek/typec/tcpc/inc/tcpci_typec.h drivers/misc/mediatek/typec/tcpc/tcpci_typec.c || true
+          # 4) touch Focaltech: stub firmware yg hilang di SEMUA folder driver focaltech
+          find drivers/input/touchscreen -name focaltech_config.h -printf '%h\n' 2>/dev/null | while read d; do
+            mkdir -p "$d/include/firmware"
+            printf '0x00\n' > "$d/include/firmware/fw_sample.i"
+            echo "stub firmware -> $d/include/firmware/fw_sample.i"
+          done
+          # 5) bq2597x: izinkan FP di file ini saja kalau ada (sudah dibungkus kernel_neon_begin/end)
+          grep -rl 'bq2597x_charger.o' --include=Makefile . 2>/dev/null | while read mk; do
+            echo 'CFLAGS_REMOVE_bq2597x_charger.o += -mgeneral-regs-only' >> "$mk"
+            echo "CFLAGS_REMOVE ditambah ke: $mk"
+          done
+          echo '== cek sisa =='
+          echo -n 'no_sanitize( tersisa: '; grep -rl 'no_sanitize(' --include='*.h' --include='*.c' . 2>/dev/null | wc -l
+
+      - name: Aktifkan KSU di defconfig
+        working-directory: kernel
+        run: |
+          DEF=arch/arm64/configs/rosemary_defconfig
+          {
+            echo ""
+            echo "# ReSukiSU"
+            echo "CONFIG_KSU=y"
+            echo "CONFIG_KSU_MANUAL_HOOK=y"
+            echo "CONFIG_KALLSYMS_ALL=y"
+          } >> "$DEF"
+          tail -8 "$DEF"
+
+      - name: Ambil toolchain GCC 4.9 (aarch64 + arm32)
+        run: |
+          git clone --depth=1 \
+            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git gcc64
+          git clone --depth=1 \
+            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git gcc32
+
+      - name: Compile kernel
+        working-directory: kernel
+        run: |
+          export PATH="$GITHUB_WORKSPACE/gcc64/bin:$GITHUB_WORKSPACE/gcc32/bin:$PATH"
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-android-
+          export CROSS_COMPILE_ARM32=arm-linux-androideabi-
+          export KBUILD_BUILD_USER=github
+          export KBUILD_BUILD_HOST=actions
+          make O=out rosemary_defconfig
+          set -o pipefail
+          if ! make -k O=out -j"$(nproc)" KCFLAGS="-Wno-error" 2>&1 | tee /tmp/build.log; then
+            echo ""
+            echo "==================== BARIS ERROR (kirim ini) ===================="
+            grep -niE "error:|fatal error|undefined reference|No such file|multiple definition|recipe for target|Error [0-9]" /tmp/build.log | tail -120 || true
+            echo "==================== KONTEKS TIAP KEGAGALAN (kirim ini juga) ===================="
+            for L in $(grep -n 'Error 1' /tmp/build.log | head -3 | cut -d: -f1); do
+              S=$((L-40)); [ $S -lt 1 ] && S=1
+              echo "----- konteks baris $S s/d $L -----"
+              sed -n "${S},${L}p" /tmp/build.log
+            done
+            echo "==================== 50 BARIS TERAKHIR ===================="
+            tail -50 /tmp/build.log
+            echo ""
+            echo ">>> BUILD GAGAL. Salin blok BARIS ERROR di atas dan kirim balik."
+            exit 1
+          fi
+          ls -la out/arch/arm64/boot/
+
+      - name: Tentukan file kernel hasil
+        id: kimg
+        run: |
+          FOUND=""
+          for f in Image.gz-dtb Image.gz Image; do
+            p="kernel/out/arch/arm64/boot/$f"
+            if [ -f "$p" ]; then
+              echo "path=$p" >> "$GITHUB_OUTPUT"
+              echo "name=$f" >> "$GITHUB_OUTPUT"
+              FOUND=1
+              break
+            fi
+          done
+          [ -n "$FOUND" ] || { echo "Kernel image tidak ditemukan"; exit 1; }
+          DTBO="kernel/out/arch/arm64/boot/dtbo.img"
+          if [ -f "$DTBO" ]; then
+            echo "dtbo=$DTBO" >> "$GITHUB_OUTPUT"
+            echo "dtbo.img ditemukan: $DTBO"
+          fi
+
+      - name: Rakit paket AnyKernel3 (template asli fjrXTR)
+        run: |
+          git clone --depth=1 https://github.com/fjrXTR/AnyKernel3.git AnyKernel3
+          rm -rf AnyKernel3/.git
+
+          echo "IyMjIEFueUtlcm5lbDMgUmFtZGlzayBNb2QgU2NyaXB0CiMjIG9zbTBzaXMgQCB4ZGEtZGV2ZWxvcGVycwoKIyMjIEFueUtlcm5lbCBzZXR1cAojIGJlZ2luIHByb3BlcnRpZXMKcHJvcGVydGllcygpIHsgJwprZXJuZWwuc3RyaW5nPXNwaGluWCBLZXJuZWwgYnkgZmpyWFRSCmRvLmRldmljZWNoZWNrPTEKZG8ubW9kdWxlcz0wCmRvLnN5c3RlbWxlc3M9MQpkby5jbGVhbnVwPTEKZG8uY2xlYW51cG9uYWJvcnQ9MApkZXZpY2UubmFtZTE9ZmxldXIKZGV2aWNlLm5hbWUyPW1pZWwKZGV2aWNlLm5hbWUzPXNlYQpkZXZpY2UubmFtZTQ9b2NlYW4KZGV2aWNlLm5hbWU1PXJvc2VtYXJ5CmRldmljZS5uYW1lNj1zZWNyZXQKZGV2aWNlLm5hbWU3PW1hbHRvc2UKc3VwcG9ydGVkLnZlcnNpb25zPTExLjAtMTQuMApzdXBwb3J0ZWQucGF0Y2hsZXZlbHM9Cic7IH0gIyBlbmQgcHJvcGVydGllcwoKIyMjIEFueUtlcm5lbCBpbnN0YWxsCiMgYmVnaW4gYXR0cmlidXRlcwphdHRyaWJ1dGVzKCkgewpzZXRfcGVybV9yZWN1cnNpdmUgMCAwIDc1NSA2NDQgJHJhbWRpc2svKjsKc2V0X3Blcm1fcmVjdXJzaXZlIDAgMCA3NTAgNzUwICRyYW1kaXNrL2luaXQqICRyYW1kaXNrL3NiaW47Cn0gIyBlbmQgYXR0cmlidXRlcwoKCiMjIGJvb3Qgc2hlbGwgdmFyaWFibGVzCmJsb2NrPS9kZXYvYmxvY2svYnktbmFtZS9ib290Owppc19zbG90X2RldmljZT0xOwpyYW1kaXNrX2NvbXByZXNzaW9uPWF1dG87CnBhdGNoX3ZibWV0YV9mbGFnPWF1dG87CgojIGltcG9ydCBmdW5jdGlvbnMvdmFyaWFibGVzIGFuZCBzZXR1cCBwYXRjaGluZyAtIHNlZSBmb3IgcmVmZXJlbmNlIChETyBOT1QgUkVNT1ZFKQouIHRvb2xzL2FrMy1jb3JlLnNoICYmIGF0dHJpYnV0ZXM7CgojIGJvb3QgaW5zdGFsbApkdW1wX2Jvb3Q7ICMgdXNlIHNwbGl0X2Jvb3QgdG8gc2tpcCByYW1kaXNrIHVucGFjaywgZS5nLiBmb3IgZGV2aWNlcyB3aXRoIGluaXRfYm9vdCByYW1kaXNrCndyaXRlX2Jvb3Q7ICMgdXNlIGZsYXNoX2Jvb3QgdG8gc2tpcCByYW1kaXNrIHJlcGFjaywgZS5nLiBmb3IgZGV2aWNlcyB3aXRoIGluaXRfYm9vdCByYW1kaXNrCiMjIGVuZCBib290IGluc3RhbGwKCgojIyBpbml0X2Jvb3Qgc2hlbGwgdmFyaWFibGVzCiNibG9jaz1pbml0X2Jvb3Q7CiNpc19zbG90X2RldmljZT0xOwojcmFtZGlza19jb21wcmVzc2lvbj1hdXRvOwojcGF0Y2hfdmJtZXRhX2ZsYWc9YXV0bzsKCiMgcmVzZXQgZm9yIGluaXRfYm9vdCBwYXRjaGluZwojcmVzZXRfYWs7CgojIGluaXRfYm9vdCBpbnN0YWxsCiNkdW1wX2Jvb3Q7ICMgdW5wYWNrIHJhbWRpc2sgc2luY2UgaXQgaXMgdGhlIG5ldyBmaXJzdCBzdGFnZSBpbml0IHJhbWRpc2sgd2hlcmUgb3ZlcmxheS5kIG11c3QgZ28KCiN3cml0ZV9ib290OwojIyBlbmQgaW5pdF9ib290IGluc3RhbGwKCgojIyB2ZW5kb3Jfa2VybmVsX2Jvb3Qgc2hlbGwgdmFyaWFibGVzCiNibG9jaz12ZW5kb3Jfa2VybmVsX2Jvb3Q7CiNpc19zbG90X2RldmljZT0xOwojcmFtZGlza19jb21wcmVzc2lvbj1hdXRvOwojcGF0Y2hfdmJtZXRhX2ZsYWc9YXV0bzsKCiMgcmVzZXQgZm9yIHZlbmRvcl9rZXJuZWxfYm9vdCBwYXRjaGluZwojcmVzZXRfYWs7CgojIHZlbmRvcl9rZXJuZWxfYm9vdCBpbnN0YWxsCiNzcGxpdF9ib290OyAjIHNraXAgdW5wYWNrL3JlcGFjayByYW1kaXNrLCBlLmcuIGZvciBkdGIgb24gZGV2aWNlcyB3aXRoIGhkciB2NCBhbmQgdmVuZG9yX2tlcm5lbF9ib290CgojZmxhc2hfYm9vdDsKIyMgZW5kIHZlbmRvcl9rZXJuZWxfYm9vdCBpbnN0YWxsCgoKIyMgdmVuZG9yX2Jvb3Qgc2hlbGwgdmFyaWFibGVzCiNibG9jaz12ZW5kb3JfYm9vdDsKI2lzX3Nsb3RfZGV2aWNlPTE7CiNyYW1kaXNrX2NvbXByZXNzaW9uPWF1dG87CiNwYXRjaF92Ym1ldGFfZmxhZz1hdXRvOwoKIyByZXNldCBmb3IgdmVuZG9yX2Jvb3QgcGF0Y2hpbmcKI3Jlc2V0X2FrOwoKIyB2ZW5kb3JfYm9vdCBpbnN0YWxsCiNkdW1wX2Jvb3Q7ICMgdXNlIHNwbGl0X2Jvb3QgdG8gc2tpcCByYW1kaXNrIHVucGFjaywgZS5nLiBmb3IgZHRiIG9uIGRldmljZXMgd2l0aCBoZHIgdjQgYnV0IG5vIHZlbmRvcl9rZXJuZWxfYm9vdAoKI3dyaXRlX2Jvb3Q7ICMgdXNlIGZsYXNoX2Jvb3QgdG8gc2tpcCByYW1kaXNrIHJlcGFjaywgZS5nLiBmb3IgZHRiIG9uIGRldmljZXMgd2l0aCBoZHIgdjQgYnV0IG5vIHZlbmRvcl9rZXJuZWxfYm9vdAojIyBlbmQgdmVuZG9yX2Jvb3QgaW5zdGFsbAoK" | base64 -d > AnyKernel3/anykernel.sh
+          echo "== anykernel.sh =="; cat AnyKernel3/anykernel.sh
+
+          cp "${{ steps.kimg.outputs.path }}" "AnyKernel3/${{ steps.kimg.outputs.name }}"
+
+          ZIP="rosemary-sphinX-ReSukiSU-AK3-${{ github.run_number }}.zip"
+          ( cd AnyKernel3 && zip -r9 "../$ZIP" . -x '.git*' )
+          echo "ZIP=$ZIP" >> "$GITHUB_ENV"
+          unzip -l "$ZIP" | head -20
+
+      - name: Upload paket + kernel mentah + dtbo (kalau ada)
+        uses: actions/upload-artifact@v4
+        with:
+          name: rosemary-kernel-ksu-v2
+          if-no-files-found: warn
+          path: |
+            ${{ env.ZIP }}
+            ${{ steps.kimg.outputs.path }}
+            ${{ steps.kimg.outputs.dtbo }}
+            kernel/out/.config
