@@ -95,6 +95,12 @@ jobs:
           bash susfs_inline_hook_patches.sh
           rm -f susfs_inline_hook_patches.sh
 
+          # FIX BUG SCRIPT: fs/read_write.c pakai guard CONFIG_KSU utk
+          # ksu_is_init_rc_hook_enabled, padahal variabel itu cuma didefinisikan
+          # kalau CONFIG_KSU_SUSFS aktif -> undefined reference kalau SUSFS mati.
+          echo "cyA9IG9wZW4oJ2ZzL3JlYWRfd3JpdGUuYycpLnJlYWQoKQpvbGQxID0gIiIiI2lmZGVmIENPTkZJR19LU1UKZXh0ZXJuIHN0cnVjdCBzdGF0aWNfa2V5X3RydWUga3N1X2lzX2luaXRfcmNfaG9va19lbmFibGVkOwpleHRlcm4gX19hdHRyaWJ1dGVfXygoY29sZCkpIGludCBrc3VfaGFuZGxlX3N5c19yZWFkKHVuc2lnbmVkIGludCBmZCk7CiNlbmRpZiIiIgpuZXcxID0gIiIiI2lmZGVmIENPTkZJR19LU1VfU1VTRlMKZXh0ZXJuIHN0cnVjdCBzdGF0aWNfa2V5X3RydWUga3N1X2lzX2luaXRfcmNfaG9va19lbmFibGVkOwpleHRlcm4gX19hdHRyaWJ1dGVfXygoY29sZCkpIGludCBrc3VfaGFuZGxlX3N5c19yZWFkKHVuc2lnbmVkIGludCBmZCk7CiNlbmRpZiIiIgpvbGQyID0gIiIiI2lmZGVmIENPTkZJR19LU1UKCWlmIChzdGF0aWNfYnJhbmNoX3VubGlrZWx5KCZrc3VfaXNfaW5pdF9yY19ob29rX2VuYWJsZWQpKQoJCWtzdV9oYW5kbGVfc3lzX3JlYWQoZmQpOwojZW5kaWYiIiIKbmV3MiA9ICIiIiNpZmRlZiBDT05GSUdfS1NVX1NVU0ZTCglpZiAoc3RhdGljX2JyYW5jaF91bmxpa2VseSgma3N1X2lzX2luaXRfcmNfaG9va19lbmFibGVkKSkKCQlrc3VfaGFuZGxlX3N5c19yZWFkKGZkKTsKI2VuZGlmIiIiCmFzc2VydCBvbGQxIGluIHMsICJndWFyZDEgbm90IGZvdW5kIgphc3NlcnQgb2xkMiBpbiBzLCAiZ3VhcmQyIG5vdCBmb3VuZCIKcyA9IHMucmVwbGFjZShvbGQxLCBuZXcxLCAxKS5yZXBsYWNlKG9sZDIsIG5ldzIsIDEpCm9wZW4oJ2ZzL3JlYWRfd3JpdGUuYycsICd3Jykud3JpdGUocykKcHJpbnQoImZzL3JlYWRfd3JpdGUuYyBndWFyZCBmaXhlZDogQ09ORklHX0tTVSAtPiBDT05GSUdfS1NVX1NVU0ZTIikK" | base64 -d > /tmp/fix_readwrite_guard.py
+          python3 /tmp/fix_readwrite_guard.py
+
           echo "== cek jejak susfs masuk =="
           ls fs/susfs.c include/linux/susfs.h include/linux/susfs_def.h
           grep -c KSU_SUSFS fs/proc/task_mmu.c kernel/sys.c mm/memory.c
