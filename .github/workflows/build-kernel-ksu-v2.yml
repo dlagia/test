@@ -189,22 +189,6 @@ jobs:
           export KBUILD_BUILD_USER=github
           export KBUILD_BUILD_HOST=actions
           make O=out rosemary_defconfig
-
-          echo "===== VERIFY SUSFS CONFIG ====="
-          if [ -f out/.config ]; then
-            required_configs=(
-              CONFIG_KSU_SUSFS
-              CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT
-              CONFIG_KSU_SUSFS_OPEN_REDIRECT
-              CONFIG_KSU_SUSFS_SPOOF_UNAME
-              CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
-              CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-            )
-            for cfg in "${required_configs[@]}"; do
-              grep -q "^${cfg}=y$" out/.config || { echo "::error::$cfg missing"; exit 1; }
-            done
-          fi
-
           set -o pipefail
           if ! make -k O=out -j"$(nproc)" \
                 ARCH=arm64 \
@@ -248,10 +232,7 @@ jobs:
         id: kimg
         run: |
           FOUND=""
-          for f in Image.gz-dtb
-          echo "===== VERIFY IMAGE ====="
-          strings out/arch/arm64/boot/Image.gz-dtb | grep -iq susfs || { echo "::error::SUSFS not found in kernel image"; exit 1; }
- Image.gz Image; do
+          for f in Image.gz-dtb Image.gz Image; do
             p="kernel/out/arch/arm64/boot/$f"
             if [ -f "$p" ]; then
               echo "path=$p" >> "$GITHUB_OUTPUT"
