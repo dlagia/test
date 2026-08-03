@@ -73,6 +73,18 @@ jobs:
           git apply --verbose /tmp/nomount-hooks.patch
           grep -c CONFIG_NOMOUNT fs/Kconfig fs/Makefile fs/namei.c fs/dcache.c fs/readdir.c fs/stat.c fs/proc/task_mmu.c fs/statfs.c
 
+      - name: Tambal CVE-2026-43499 (GhostLock, rtmutex/futex UAF -> local root exploit)
+        working-directory: kernel
+        run: |
+          # Bug nyata 15 tahun di kernel Linux (rt_mutex/futex remove_waiter()),
+          # dipakai UNTUK dapat root tanpa privilese - berbahaya buat SEMUA app
+          # yg jalan di HP ini, bukan cuma kita. Backport diverifikasi manual dari
+          # commit upstream 3bfdc63936dd, disesuaikan ke struktur kernel 4.14 kita
+          # (source modern pakai rt_mutex_base/scoped_guard yg belum ada di 4.14).
+          echo "LS0tIGEva2VybmVsL2xvY2tpbmcvcnRtdXRleC5jCTIwMjYtMDgtMDMgMDA6NDc6MTguOTMwODkwODk0ICswMDAwCisrKyBiL2tlcm5lbC9sb2NraW5nL3J0bXV0ZXguYwkyMDI2LTA4LTAzIDAwOjQ3OjE5LjAyOTE3NDEzNiArMDAwMApAQCAtMTA3MCwxNCArMTA3MCwyMCBAQAogewogCWJvb2wgaXNfdG9wX3dhaXRlciA9ICh3YWl0ZXIgPT0gcnRfbXV0ZXhfdG9wX3dhaXRlcihsb2NrKSk7CiAJc3RydWN0IHRhc2tfc3RydWN0ICpvd25lciA9IHJ0X211dGV4X293bmVyKGxvY2spOworCS8qIENWRS0yMDI2LTQzNDk5IChHaG9zdExvY2spIGZpeDogdXNlIHdhaXRlci0+dGFzaywgbm90IGN1cnJlbnQgLQorCSAqIHdoZW4gY2FsbGVkIGZyb20gcnRfbXV0ZXhfc3RhcnRfcHJveHlfbG9jaygpIChmdXRleF9yZXF1ZXVlKCkKKwkgKiBwcm94eS1sb2NrIHJvbGxiYWNrIHBhdGgpIHdhaXRlci0+dGFzayAhPSBjdXJyZW50LiBPcGVyYXRpbmcgb24KKwkgKiBjdXJyZW50IGluIHRoYXQgcGF0aCBkZXF1ZXVlcyB1bmRlciB0aGUgd3JvbmcgdGFzaydzIHBpX2xvY2sgYW5kCisJICogbGVhdmVzIHRoZSByZWFsIHdhaXRlciB0YXNrJ3MgcGlfYmxvY2tlZF9vbiBkYW5nbGluZyAtPiBVQUYuICovCisJc3RydWN0IHRhc2tfc3RydWN0ICp3YWl0ZXJfdGFzayA9IHdhaXRlci0+dGFzazsKIAlzdHJ1Y3QgcnRfbXV0ZXggKm5leHRfbG9jazsKIAogCWxvY2tkZXBfYXNzZXJ0X2hlbGQoJmxvY2stPndhaXRfbG9jayk7CiAKLQlyYXdfc3Bpbl9sb2NrKCZjdXJyZW50LT5waV9sb2NrKTsKKwlyYXdfc3Bpbl9sb2NrKCZ3YWl0ZXJfdGFzay0+cGlfbG9jayk7CiAJcnRfbXV0ZXhfZGVxdWV1ZShsb2NrLCB3YWl0ZXIpOwotCWN1cnJlbnQtPnBpX2Jsb2NrZWRfb24gPSBOVUxMOwotCXJhd19zcGluX3VubG9jaygmY3VycmVudC0+cGlfbG9jayk7CisJd2FpdGVyX3Rhc2stPnBpX2Jsb2NrZWRfb24gPSBOVUxMOworCXJhd19zcGluX3VubG9jaygmd2FpdGVyX3Rhc2stPnBpX2xvY2spOwogCiAJLyoKIAkgKiBPbmx5IHVwZGF0ZSBwcmlvcml0eSBpZiB0aGUgd2FpdGVyIHdhcyB0aGUgaGlnaGVzdCBwcmlvcml0eQpAQCAtMTExMyw3ICsxMTE5LDcgQEAKIAlyYXdfc3Bpbl91bmxvY2tfaXJxKCZsb2NrLT53YWl0X2xvY2spOwogCiAJcnRfbXV0ZXhfYWRqdXN0X3ByaW9fY2hhaW4ob3duZXIsIFJUX01VVEVYX01JTl9DSEFJTldBTEssIGxvY2ssCi0JCQkJICAgbmV4dF9sb2NrLCBOVUxMLCBjdXJyZW50KTsKKwkJCQkgICBuZXh0X2xvY2ssIE5VTEwsIHdhaXRlcl90YXNrKTsKIAogCXJhd19zcGluX2xvY2tfaXJxKCZsb2NrLT53YWl0X2xvY2spOwogfQo=" | base64 -d > /tmp/cve-2026-43499-ghostlock.patch
+          git apply --verbose /tmp/cve-2026-43499-ghostlock.patch
+          grep -c CVE-2026-43499 kernel/locking/rtmutex.c
+
       - name: Pra-compile - perbaikan build source MTK (verified reusable)
         working-directory: kernel
         run: |
