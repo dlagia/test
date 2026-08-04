@@ -147,6 +147,15 @@ jobs:
           echo "== Ambil patch non-GKI untuk kernel 4.14 =="
           fetch_with_fallback "Patches/Patch/susfs_patch_to_4.14.patch" /tmp/susfs_patch_to_4.14.patch || exit 1
 
+          echo "== Bersihkan .rej/.orig lama (kalau ada sisa dari source/percobaan sebelumnya) =="
+          OLD_REJ=$(find . -name '*.rej')
+          if [ -n "$OLD_REJ" ]; then
+            echo "Ditemukan .rej LAMA (bukan dari patch ini, dibersihkan dulu supaya tidak salah dilaporkan):"
+            echo "$OLD_REJ"
+          fi
+          find . -name '*.rej' -delete
+          find . -name '*.orig' -delete
+
           echo "== Terapkan patch SUSFS (patch -p1 -f, fuzz diizinkan) =="
           # -f: jangan tanya interaktif (mencegah patch salah baca stdin/mengacak parsing).
           # Exit code ditangkap manual (via ||) supaya bash -e TIDAK langsung mematikan
@@ -154,6 +163,7 @@ jobs:
           PATCH_EXIT=0
           patch -p1 -f --fuzz=3 --no-backup-if-mismatch < /tmp/susfs_patch_to_4.14.patch || PATCH_EXIT=$?
 
+          # Hanya .rej BARU (hasil patch di atas) yang relevan - baseline lama sudah dibersihkan.
           REJ_FILES=$(find . -name '*.rej')
           if [ -n "$REJ_FILES" ] || [ "$PATCH_EXIT" -ne 0 ]; then
             echo "=================================================================="
