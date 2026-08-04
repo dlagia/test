@@ -103,23 +103,25 @@ jobs:
           #
           # CATATAN JUJUR: patch SUSFS resmi (ribuan baris, puluhan file) TIDAK ditulis
           # ulang manual di sini - diambil langsung dari sumber aslinya. Konflik/.rej
-          # saat apply itu WAJAR untuk source non-standar (dikonfirmasi dari beberapa
-          # laporan komunitas ReSukiSU+SUSFS+kernel non-GKI) - kalau itu terjadi, step
-          # ini GAGAL dengan menampilkan isi .rej, bukan diam-diam lanjut build dengan
-          # kernel yang setengah ditambal.
+          # saat apply itu WAJAR untuk source non-standar - kalau itu terjadi, step ini
+          # GAGAL dengan menampilkan isi .rej, bukan diam-diam lanjut build.
+          #
+          # PENTING: jangan pre-copy fs/susfs.c / include/linux/susfs*.h sebelum patch -
+          # patch non-GKI itu sendiri yang membuat file itu. Pre-copy bikin "patch"
+          # masuk mode tanya-interaktif dan bisa mengacak parsing hunk setelahnya.
+          # File tambahan (mis. sus_su.c) yang TIDAK dibuat oleh patch baru dicopy
+          # SETELAH patch berhasil, dengan cp -n (no-clobber).
 
           SUSFS_BRANCH="kernel-4.14"
           DLAGIA_BASE="https://raw.githubusercontent.com/dlagia/NonGKI_Kernel_Build_2nd/mainline"
           UPSTREAM_BASE="https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline"
 
           fetch_with_fallback() {
-            # $1 = path relatif di repo (mis. Patches/Patch/susfs_patch_to_4.14.patch)
-            # $2 = tujuan lokal
             local relpath="$1"
             local dest="$2"
             if curl -fLs -o "$dest" "${DLAGIA_BASE}/${relpath}"; then
               if [ -s "$dest" ] && ! grep -qi '<!DOCTYPE html>' "$dest"; then
-                echo "rekernel-susfs: dipakai dari dlagia/NonGKI_Kernel_Build_2nd -> $relpath"
+                echo "susfs: dipakai dari dlagia/NonGKI_Kernel_Build_2nd -> $relpath"
                 return 0
               fi
             fi
@@ -132,7 +134,6 @@ jobs:
             fi
             echo "=================================================================="
             echo "susfs: GAGAL - '$relpath' tidak ditemukan di fork dlagia ATAU upstream."
-            echo "Kemungkinan nama file/struktur folder di repo tsb sudah berubah."
             echo "Cek manual: ${DLAGIA_BASE}/${relpath}"
             echo "         atau: ${UPSTREAM_BASE}/${relpath}"
             echo "=================================================================="
@@ -143,30 +144,41 @@ jobs:
           rm -rf /tmp/susfs4ksu
           git clone -b "$SUSFS_BRANCH" --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git /tmp/susfs4ksu
 
-          mkdir -p fs include/linux
-          cp -v /tmp/susfs4ksu/kernel_patches/fs/*.c fs/ 2>/dev/null || true
-          cp -v /tmp/susfs4ksu/kernel_patches/include/linux/*.h include/linux/ 2>/dev/null || true
-
           echo "== Ambil patch non-GKI untuk kernel 4.14 =="
           fetch_with_fallback "Patches/Patch/susfs_patch_to_4.14.patch" /tmp/susfs_patch_to_4.14.patch || exit 1
 
-          echo "== Terapkan patch SUSFS (patch -p1, fuzz diizinkan, sisa konflik jadi .rej) =="
-          patch -p1 --fuzz=3 --no-backup-if-mismatch < /tmp/susfs_patch_to_4.14.patch
+          echo "== Terapkan patch SUSFS (patch -p1 -f, fuzz diizinkan) =="
+          # -f: jangan tanya interaktif (mencegah patch salah baca stdin/mengacak parsing).
+          # Exit code ditangkap manual (via ||) supaya bash -e TIDAK langsung mematikan
+          # step sebelum kita sempat melaporkan .rej dengan jelas.
+          PATCH_EXIT=0
+          patch -p1 -f --fuzz=3 --no-backup-if-mismatch < /tmp/susfs_patch_to_4.14.patch || PATCH_EXIT=$?
 
           REJ_FILES=$(find . -name '*.rej')
-          if [ -n "$REJ_FILES" ]; then
+          if [ -n "$REJ_FILES" ] || [ "$PATCH_EXIT" -ne 0 ]; then
             echo "=================================================================="
-            echo "susfs: GAGAL - ada bagian patch yang tidak bisa diterapkan otomatis (.rej)."
+            echo "susfs: GAGAL menerapkan patch (exit patch=$PATCH_EXIT)."
             echo "Ini WAJAR untuk source non-standar - perlu resolusi manual per file."
-            echo "Daftar & isi file .rej (kirim balik ini kalau minta bantuan lanjut):"
+            if [ -n "$REJ_FILES" ]; then
+              echo "Daftar & isi file .rej (kirim balik ini kalau minta bantuan lanjut):"
+              for f in $REJ_FILES; do
+                echo "---- $f ----"
+                cat "$f"
+              done
+            else
+              echo "Tidak ada file .rej tapi 'patch' tetap exit $PATCH_EXIT - kemungkinan"
+              echo "ada file target yang tidak ditemukan sama sekali. Lihat log 'patching"
+              echo "file ...' di atas, baris terakhir sebelum pesan ini adalah yang gagal."
+            fi
             echo "=================================================================="
-            for f in $REJ_FILES; do
-              echo "---- $f ----"
-              cat "$f"
-            done
             exit 1
           fi
           find . -name '*.orig' -delete
+
+          echo "== Lengkapi file susfs4ksu tambahan yang TIDAK dibuat oleh patch (cp -n) =="
+          mkdir -p fs include/linux
+          cp -vn /tmp/susfs4ksu/kernel_patches/fs/*.c fs/ 2>/dev/null || true
+          cp -vn /tmp/susfs4ksu/kernel_patches/include/linux/*.h include/linux/ 2>/dev/null || true
 
           echo "== Ambil & jalankan susfs_inline_hook_patches.sh (untuk CONFIG_KSU_MANUAL_HOOK=y) =="
           fetch_with_fallback "Patches/susfs_inline_hook_patches.sh" ./susfs_inline_hook_patches.sh || exit 1
@@ -174,8 +186,9 @@ jobs:
           ./susfs_inline_hook_patches.sh
 
           echo "== Verifikasi =="
-          grep -rl 'susfs' fs/ include/linux/ 2>/dev/null | head -20
-
+          test -f fs/susfs.c && echo "fs/susfs.c ADA"
+          test -f include/linux/susfs.h && echo "include/linux/susfs.h ADA"
+          grep -c 'CONFIG_KSU_SUSFS' fs/Makefile
 
       - name: Integrasikan NoMount (kernel-side, tertanam & terverifikasi)
         working-directory: kernel
