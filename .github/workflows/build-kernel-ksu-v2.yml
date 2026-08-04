@@ -172,6 +172,25 @@ jobs:
           PATCH_EXIT=0
           patch -p1 -f --fuzz=3 --no-backup-if-mismatch < /tmp/susfs_patch_to_4.14.patch || PATCH_EXIT=$?
 
+
+          echo "== Resolusi otomatis konflik yang sudah dikenal: NoMount vs SUSFS di show_map_vma() =="
+          # NoMount menyisipkan nomount_spoof_mmap_metadata() di antara
+          # "ino = inode->i_ino;" dan "pgoff = ...;" pada fs/proc/task_mmu.c,
+          # yang membuat hunk asli SUSFS di fungsi show_map_vma() gagal cocok
+          # konteks (lihat .rej di bawah kalau ini juga gagal). Skrip ini
+          # menggabungkan KEDUA logika jadi satu blok - bukan mengabaikan salah satunya.
+          if [ -f fs/proc/task_mmu.c.rej ] && grep -q "show_map_vma" fs/proc/task_mmu.c.rej; then
+            echo "IyEvdXNyL2Jpbi9wZXJsCiMgTWVuZ2dhYnVuZ2thbiBtYW51YWwga29uZmxpayBOb01vdW50IHZzIFNVU0ZTIGRpIHNob3dfbWFwX3ZtYSgpCiMgKGZzL3Byb2MvdGFza19tbXUuYykuIE5vTW91bnQgbWVueWlzaXBrYW4gbm9tb3VudF9zcG9vZl9tbWFwX21ldGFkYXRhKCkKIyBkaSBhbnRhcmEgImlubyA9IGlub2RlLT5pX2lubzsiIGRhbiAicGdvZmYgPSAuLi4iLCB5YW5nIG1lbWJ1YXQgaHVuayBhc2xpCiMgU1VTRlMgKHlhbmcgbWVueWlzaXBrYW4gT1BFTl9SRURJUkVDVC9TVVNfTUFQIGRpIGF3YWwgYmxvayBkYW4gU1VTX0tTVEFUCiMgZGkgYWtoaXIgYmxvaykgZ2FnYWwgY29jb2sga29udGVrcy4gU2tyaXAgaW5pIG1lbmdnYWJ1bmdrYW4ga2VkdWFueWEgamFkaQojIHNhdHUgYmxvayB5YW5nIG1lbXBlcnRhaGFua2FuIGZ1bmdzaSBrZWR1YSBwYXRjaC4KdXNlIHN0cmljdDsKdXNlIHdhcm5pbmdzOwoKbXkgJHBhdGggPSAnZnMvcHJvYy90YXNrX21tdS5jJzsKb3BlbihteSAkZmgsICc8JywgJHBhdGgpIG9yIGRpZSAibWVyZ2VfdGFza19tbXU6IHRpZGFrIGJpc2EgYnVrYSAkcGF0aDogJCFcbiI7CmxvY2FsICQvOwpteSAkY29udGVudCA9IDwkZmg+OwpjbG9zZSAkZmg7CgpteSAkYW5jaG9yX3JlID0gcXIvCiAgICAoc3RydWN0XCBpbm9kZVwgXCppbm9kZVwgPVwgZmlsZV9pbm9kZVwodm1hLT52bV9maWxlXCk7KSBccypcbgogICAgXHMqKGRldlwgPVwgaW5vZGUtPmlfc2ItPnNfZGV2OykgXHMqXG4KICAgIFxzKihpbm9cID1cIGlub2RlLT5pX2lubzspIFxzKlxuCiAgICBcI2lmZGVmXCBDT05GSUdfTk9NT1VOVCBccypcbgogICAgXHMqKG5vbW91bnRfc3Bvb2ZfbW1hcF9tZXRhZGF0YVwoaW5vZGUsXCAmZGV2LFwgJmlub1wpOykgXHMqXG4KICAgIFwjZW5kaWYgXHMqXG4KICAgIFxzKihwZ29mZlwgPVwgXChcKGxvZmZfdFwpdm1hLT52bV9wZ29mZlwpXCA8PFwgUEFHRV9TSElGVDspIFxzKlxuCiAgICBccypcfQoveDsKCm15ICRuID0gMDsKJG4rKyB3aGlsZSAkY29udGVudCA9fiAvJGFuY2hvcl9yZS9nczsKaWYgKCRuICE9IDEpIHsKICAgIGRpZSAibWVyZ2VfdGFza19tbXU6IHBvbGEgZ2FidW5nYW4gc2hvd19tYXBfdm1hIHRpZGFrIGtldGVtdSB0ZXBhdCAxeCAobWF0Y2g9JG4pIGRpICRwYXRoLlxuIiAuCiAgICAgICAgIktlbXVuZ2tpbmFuIHBhdGNoIE5vTW91bnQgZGkgZmlsZSBpbmkgYmVydWJhaCBmb3JtYXQuIFBlcmx1IHBlbnllc3VhaWFuIG1hbnVhbC5cbiI7Cn0KCiRjb250ZW50ID1+IHMvJGFuY2hvcl9yZS9idWlsZF9tZXJnZWQoJDEsICQyLCAkMywgJDQsICQ1KS9lOwoKb3BlbihteSAkb3V0LCAnPicsICRwYXRoKSBvciBkaWUgIm1lcmdlX3Rhc2tfbW11OiB0aWRhayBiaXNhIHR1bGlzICRwYXRoOiAkIVxuIjsKcHJpbnQgJG91dCAkY29udGVudDsKY2xvc2UgJG91dDsKcHJpbnQgIm1lcmdlX3Rhc2tfbW11OiBiZXJoYXNpbCBtZW5nZ2FidW5na2FuIGhvb2sgTm9Nb3VudCArIFNVU0ZTIGRpIHNob3dfbWFwX3ZtYSgpXG4iOwoKc3ViIGJ1aWxkX21lcmdlZCB7CiAgICBteSAoJGlub2RlX2RlY2wsICRkZXZfbGluZSwgJGlub19saW5lLCAkbm9tb3VudF9jYWxsLCAkcGdvZmZfbGluZSkgPSBAXzsKICAgIHJldHVybiAkaW5vZGVfZGVjbCAuICJcbiIgLiA8PCJDT0RFIjsKI2lmZGVmIENPTkZJR19LU1VfU1VTRlNfT1BFTl9SRURJUkVDVAoJCWlmIChTVVNGU19JU19JTk9ERV9PUEVOX1JFRElSRUNUKGlub2RlKSkgewoJCQljaGFyICpzcG9vZmVkX3JlZGlyZWN0ZWRfbmFtZSA9IE5VTEw7CgkJCWludCBzcmN1X2lkeCA9IHNyY3VfcmVhZF9sb2NrKCZzdXNmc19zcmN1X29wZW5fcmVkaXJlY3QpOwoJCQlpbnQgcmV0ID0gc3VzZnNfb3Blbl9yZWRpcmVjdF9zcG9vZl9zaG93X21hcF92bWFfc3JjdShpbm9kZSwgJmlubywgJmRldiwgJnNwb29mZWRfcmVkaXJlY3RlZF9uYW1lKTsKCQkJaWYgKCFyZXQpIHsKCQkJCXBnb2ZmID0gKChsb2ZmX3Qpdm1hLT52bV9wZ29mZikgPDwgUEFHRV9TSElGVDsKCQkJCXN0YXJ0ID0gdm1hLT52bV9zdGFydDsKCQkJCWVuZCA9IHZtYS0+dm1fZW5kOwoJCQkJc2hvd192bWFfaGVhZGVyX3ByZWZpeChtLCBzdGFydCwgZW5kLCBmbGFncywgcGdvZmYsIGRldiwgaW5vKTsKCQkJCXNlcV9wYWQobSwgJyAnKTsKCQkJCWlmIChzcG9vZmVkX3JlZGlyZWN0ZWRfbmFtZSkKCQkJCQlzZXFfcHV0cyhtLCBzcG9vZmVkX3JlZGlyZWN0ZWRfbmFtZSk7CgkJCQlzZXFfcHV0YyhtLCAnXFxuJyk7CgkJCQlzcmN1X3JlYWRfdW5sb2NrKCZzdXNmc19zcmN1X29wZW5fcmVkaXJlY3QsIHNyY3VfaWR4KTsKCQkJCXJldHVybjsKCQkJfQoJCQlzcmN1X3JlYWRfdW5sb2NrKCZzdXNmc19zcmN1X29wZW5fcmVkaXJlY3QsIHNyY3VfaWR4KTsKCQl9CiNlbmRpZiAvLyAjaWZkZWYgQ09ORklHX0tTVV9TVVNGU19PUEVOX1JFRElSRUNUCiNpZmRlZiBDT05GSUdfS1NVX1NVU0ZTX1NVU19NQVAKCQlpZiAoU1VTRlNfSVNfSU5PREVfU1VTX01BUChpbm9kZSkpCgkJCXJldHVybjsKI2VuZGlmIC8vICNpZmRlZiBDT05GSUdfS1NVX1NVU0ZTX1NVU19NQVAKCQkkZGV2X2xpbmUKCQkkaW5vX2xpbmUKI2lmZGVmIENPTkZJR19OT01PVU5UCgkJJG5vbW91bnRfY2FsbAojZW5kaWYKCQkkcGdvZmZfbGluZQojaWZkZWYgQ09ORklHX0tTVV9TVVNGU19TVVNfS1NUQVQKCQlzdXNmc19zdXNfa3N0YXRfc3Bvb2Zfc2hvd19tYXBfdm1hKGlub2RlLCAmZGV2LCAmaW5vKTsKI2VuZGlmIC8vICNpZmRlZiBDT05GSUdfS1NVX1NVU0ZTX1NVU19LU1RBVAoJfQpDT0RFCn0K" | base64 -d > /tmp/merge_task_mmu.pl
+            if perl /tmp/merge_task_mmu.pl; then
+              rm -f fs/proc/task_mmu.c.rej fs/proc/task_mmu.c.orig
+              # Satu-satunya penyebab exit code patch di atas bukan-0 sudah ditangani
+              # manual - reset supaya tidak dianggap gagal kalau tidak ada .rej lain.
+              PATCH_EXIT=0
+            else
+              echo "susfs: skrip resolusi manual GAGAL - lihat pesan di atas."
+            fi
+          fi
+
           # Hanya .rej BARU (hasil patch di atas) yang relevan - baseline lama sudah dibersihkan.
           REJ_FILES=$(find . -name '*.rej')
           if [ -n "$REJ_FILES" ] || [ "$PATCH_EXIT" -ne 0 ]; then
