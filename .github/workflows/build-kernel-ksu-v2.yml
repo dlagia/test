@@ -1,5 +1,5 @@
 # ============================================================
-# FASE 2 — Kernel rosemary (dlagia/sphinX) + ReSukiSU + NoMount + AK3
+# FASE 2 — Kernel rosemary (dlagia/sphinX) + ReSukiSU + NoMount + Re-Kernel + AK3
 #
 # Lanjutan dari Fase 1 (build-kernel-ksu-v2.yml) yang SUDAH TERBUKTI
 # BOOT NORMAL. File ini menambahkan NoMount (github.com/maxsteeel/nomount)
@@ -23,9 +23,26 @@
 # WAJIB: test lewat OrangeFox (backup Boot dulu!) sebelum dianggap final,
 # SAMA seperti Fase 1. Kernel ini basis sama dengan yang sudah terbukti
 # boot, tapi NoMount menyentuh VFS inti - tetap test dulu.
+#
+# Re:Kernel (github.com/Sakion-Team/Re-Kernel): membuka netlink server
+# supaya tombstone/freezer di userspace tahu kapan binder call atau
+# signal (SIGKILL/SIGTERM/SIGABRT/SIGQUIT) menyasar proses yang sedang
+# di-freeze cgroup, jadi bisa di-unfreeze tepat waktu (kurangi ANR).
+# Ditanam manual sesuai Integrate/README.md repo tsb (mode <=5.4).
+#
+# CATATAN JUJUR: BEDA dari ReSukiSU/NoMount di atas, hook Re:Kernel ini
+# TIDAK diverifikasi baris-per-baris ke source dlagia/android_kernel_
+# xiaomi_rosemary (repo itu tidak ditemukan publik untuk dicek manual).
+# Anchor pakai pola toleran-spasi + pengecekan "match harus tepat 1x"
+# sebelum menyisipkan kode (lihat step-nya) - kalau struktur binder.c/
+# signal.c di source ini beda dari referensi AOSP-style Re-Kernel, step
+# ini GAGAL dengan pesan jelas, bukan diam-diam menghasilkan kernel yang
+# rusak. Kalau gagal, kirim balik isi fungsi binder_transaction(),
+# binder_alloc_new_buf_locked(), dan do_send_sig_info() dari source asli
+# supaya anchor-nya disesuaikan.
 # ============================================================
 
-name: Build rosemary kernel v3 (sphinX + ReSukiSU + NoMount + AK3)
+name: Build rosemary kernel v3 (sphinX + ReSukiSU + NoMount + Re-Kernel + AK3)
 
 on:
   workflow_dispatch: {}
@@ -85,6 +102,34 @@ jobs:
           git apply --verbose /tmp/cve-2026-43499-ghostlock.patch
           grep -c CVE-2026-43499 kernel/locking/rtmutex.c
 
+      - name: Integrasikan Re:Kernel (Sakion-Team) - notifikasi freeze binder/signal
+        working-directory: kernel
+        run: |
+          # https://github.com/Sakion-Team/Re-Kernel
+          # CATATAN JUJUR: beda dari ReSukiSU/NoMount di atas, hook ini TIDAK
+          # divalidasi baris-per-baris ke source dlagia/android_kernel_xiaomi_rosemary
+          # (repo itu tidak ditemukan publik untuk dicek manual). Dipakai pencocokan
+          # pola toleran-spasi + validasi "match harus tepat 1x" SEBELUM menyisipkan
+          # kode (lihat apply_rekernel_hooks.pl) - kalau anchor tidak ketemu persis
+          # 1x, step ini GAGAL dengan pesan jelas, bukan diam-diam korup file.
+          mkdir -p drivers/rekernel
+          echo "I2lmbmRlZiBfUkVLRVJORUxfSAojZGVmaW5lIF9SRUtFUk5FTF9ICgovKgogKiBIZWFkZXIgaW50ZWdyYXNpIFJlOktlcm5lbCAoaHR0cHM6Ly9naXRodWIuY29tL1Nha2lvbi1UZWFtL1JlLUtlcm5lbCkKICogdW50dWsga2VybmVsIG5vbi1HS0kvUUdLSSAoPD0gNS40KSwgc2VzdWFpIHBhbmR1YW4gcmVzbWkgZGkgZm9sZGVyCiAqIEludGVncmF0ZS9SRUFETUUubWQgcmVwbyB0ZXJzZWJ1dC4gTWVtYnVrYSBuZXRsaW5rIHNlcnZlciBhZ2FyCiAqIHVzZXJzcGFjZSB0b21ic3RvbmUgaGFuZGxlciAobWlzLiBhcHAgZnJlZXplci9PT00gbWFuYWdlcikgYmlzYQogKiBtZW5lcmltYSBub3RpZmlrYXNpIHNhYXQgYmluZGVyIGNhbGwgYXRhdSBzaWduYWwgbWVueWFzYXIgcHJvc2VzCiAqIHlhbmcgc2VkYW5nIGRpYmVrdWthbiAoZnJvemVuKSBvbGVoIGNncm91cCBmcmVlemVyLCBzZWhpbmdnYSBwcm9zZXMKICogdHNiIGJpc2EgZGktdW5mcmVlemUgdGVwYXQgd2FrdHUgYWxpaC1hbGloIEFOUi9mb3JjZS1jbG9zZS4KICovCgojaW5jbHVkZSA8bGludXgvc2NoZWQuaD4KI2luY2x1ZGUgPGxpbnV4L2ZyZWV6ZXIuaD4KCiNkZWZpbmUgUkVLRVJORUxfTkVUTElOS19NSU4gICAgICAyMgojZGVmaW5lIFJFS0VSTkVMX05FVExJTktfTUFYICAgICAgMjYKI2RlZmluZSBSRUtFUk5FTF9VU0VSX1BPUlQgICAgICAgIDEwMAojZGVmaW5lIFJFS0VSTkVMX1BBQ0tFVF9TSVpFICAgICAgMTI4CiNkZWZpbmUgUkVLRVJORUxfTUlOX1VTRVJBUFBfVUlEICAoMTAwMDApCiNkZWZpbmUgUkVLRVJORUxfTUFYX1NZU1RFTV9VSUQgICAoMjAwMCkKI2RlZmluZSBSRUtFUk5FTF9SRVNFUlZFX09SREVSICAgIDE3CiNkZWZpbmUgUkVLRVJORUxfV0FSTl9BSEVBRF9TUEFDRSAoMSA8PCBSRUtFUk5FTF9SRVNFUlZFX09SREVSKQoKaW50IHJla2VybmVsX3N0YXJ0X3NlcnZlcih2b2lkKTsKaW50IHJla2VybmVsX3NlbmRfbmV0bGlua19tZXNzYWdlKGNoYXIgKm1zZywgdWludDE2X3QgbGVuKTsKCnN0YXRpYyBpbmxpbmUgYm9vbCByZWtlcm5lbF90YXNrX2lzX2Zyb3plbihzdHJ1Y3QgdGFza19zdHJ1Y3QgKnRhc2spCnsKCXJldHVybiBmcm96ZW4odGFzay0+Z3JvdXBfbGVhZGVyKSB8fCBmcmVlemluZyh0YXNrLT5ncm91cF9sZWFkZXIpOwp9CgojZW5kaWYgLyogX1JFS0VSTkVMX0ggKi8K" | base64 -d > drivers/rekernel/rekernel.h
+          echo "LyoKICogZHJpdmVycy9yZWtlcm5lbC9yZWtlcm5lbC5jCiAqCiAqIEludGVncmFzaSBSZTpLZXJuZWwgKGh0dHBzOi8vZ2l0aHViLmNvbS9TYWtpb24tVGVhbS9SZS1LZXJuZWwpIHVudHVrCiAqIGtlcm5lbCBub24tR0tJL1FHS0kgKDw9IDUuNCkuIERpYWRhcHRhc2kgZGFyaSBrb2RlIHJlZmVyZW5zaSByZXNtaSBkaQogKiBJbnRlZ3JhdGUvUkVBRE1FLm1kIHJlcG8gdGVyc2VidXQ6IGZ1bmdzaSBzdGF0aXMgZGliZXJpIHByZWZpeCByZWtlcm5lbF8KICogZGFuIGRpcGluZGFoIGtlIHNhdHUgdHJhbnNsYXRpb24gdW5pdCAoYnVrYW4gZGlzYWxpbiBrZSB0aWdhIGZpbGUKICogcGVtYW5nZ2lsKSBzdXBheWEgdGlkYWsgYWRhIG11bHRpcGxlLWRlZmluaXRpb247IGhhbnlhIGR1YSBmdW5nc2kgeWFuZwogKiBkaWV4cG9ydCBsZXdhdCByZWtlcm5lbC5oIGtlIGRyaXZlcnMvYW5kcm9pZC9iaW5kZXIuYywKICogZHJpdmVycy9hbmRyb2lkL2JpbmRlcl9hbGxvYy5jLCBkYW4ga2VybmVsL3NpZ25hbC5jLgogKi8KCiNpbmNsdWRlIDxsaW51eC9pbml0Lmg+CiNpbmNsdWRlIDxsaW51eC9tb2R1bGUuaD4KI2luY2x1ZGUgPGxpbnV4L3R5cGVzLmg+CiNpbmNsdWRlIDxuZXQvc29jay5oPgojaW5jbHVkZSA8bGludXgvbmV0bGluay5oPgojaW5jbHVkZSA8bGludXgvcHJvY19mcy5oPgojaW5jbHVkZSA8bGludXgvc2VxX2ZpbGUuaD4KI2luY2x1ZGUgInJla2VybmVsLmgiCgpzdGF0aWMgc3RydWN0IHNvY2sgKnJla2VybmVsX25ldGxpbms7CmV4dGVybiBzdHJ1Y3QgbmV0IGluaXRfbmV0OwpzdGF0aWMgaW50IHJla2VybmVsX25ldGxpbmtfdW5pdCA9IFJFS0VSTkVMX05FVExJTktfTUlOOwoKc3RhdGljIGludCByZWtlcm5lbF9uZXRsaW5rX3NlbmQoY2hhciAqbXNnLCB1aW50MTZfdCBsZW4pCnsKCXN0cnVjdCBza19idWZmICpza2J1ZmZlcjsKCXN0cnVjdCBubG1zZ2hkciAqbmxoZHI7CgoJc2tidWZmZXIgPSBubG1zZ19uZXcobGVuLCBHRlBfQVRPTUlDKTsKCWlmICghc2tidWZmZXIpIHsKCQlwcl9lcnIoInJla2VybmVsOiBuZXRsaW5rIGFsbG9jIGZhaWx1cmUuXG4iKTsKCQlyZXR1cm4gLTE7Cgl9CgoJbmxoZHIgPSBubG1zZ19wdXQoc2tidWZmZXIsIDAsIDAsIHJla2VybmVsX25ldGxpbmtfdW5pdCwgbGVuLCAwKTsKCWlmICghbmxoZHIpIHsKCQlwcl9lcnIoInJla2VybmVsOiBubG1zZ19wdXQgZmFpbHVyZS5cbiIpOwoJCW5sbXNnX2ZyZWUoc2tidWZmZXIpOwoJCXJldHVybiAtMTsKCX0KCgltZW1jcHkobmxtc2dfZGF0YShubGhkciksIG1zZywgbGVuKTsKCXJldHVybiBuZXRsaW5rX3VuaWNhc3QocmVrZXJuZWxfbmV0bGluaywgc2tidWZmZXIsIFJFS0VSTkVMX1VTRVJfUE9SVCwgTVNHX0RPTlRXQUlUKTsKfQoKaW50IHJla2VybmVsX3NlbmRfbmV0bGlua19tZXNzYWdlKGNoYXIgKm1zZywgdWludDE2X3QgbGVuKQp7CglyZXR1cm4gcmVrZXJuZWxfbmV0bGlua19zZW5kKG1zZywgbGVuKTsKfQoKc3RhdGljIHZvaWQgcmVrZXJuZWxfbmV0bGlua19yY3ZfbXNnKHN0cnVjdCBza19idWZmICpza2J1ZmZlcikKewoJLyogVGlkYWsgYnV0dWggYXBhIHB1biBkYXJpIHVzZXJzcGFjZSwgY3VrdXAgZGlhYmFpa2FuLiAqLwp9CgpzdGF0aWMgc3RydWN0IG5ldGxpbmtfa2VybmVsX2NmZyByZWtlcm5lbF9jZmcgPSB7CgkuaW5wdXQgPSByZWtlcm5lbF9uZXRsaW5rX3Jjdl9tc2csCn07CgpzdGF0aWMgaW50IHJla2VybmVsX3VuaXRfc2hvdyhzdHJ1Y3Qgc2VxX2ZpbGUgKm0sIHZvaWQgKnYpCnsKCXNlcV9wcmludGYobSwgIiVkXG4iLCByZWtlcm5lbF9uZXRsaW5rX3VuaXQpOwoJcmV0dXJuIDA7Cn0KCnN0YXRpYyBpbnQgcmVrZXJuZWxfdW5pdF9vcGVuKHN0cnVjdCBpbm9kZSAqaW5vZGUsIHN0cnVjdCBmaWxlICpmaWxlKQp7CglyZXR1cm4gc2luZ2xlX29wZW4oZmlsZSwgcmVrZXJuZWxfdW5pdF9zaG93LCBOVUxMKTsKfQoKc3RhdGljIGNvbnN0IHN0cnVjdCBmaWxlX29wZXJhdGlvbnMgcmVrZXJuZWxfdW5pdF9mb3BzID0gewoJLm9wZW4gICAgPSByZWtlcm5lbF91bml0X29wZW4sCgkucmVhZCAgICA9IHNlcV9yZWFkLAoJLmxsc2VlayAgPSBzZXFfbHNlZWssCgkucmVsZWFzZSA9IHNpbmdsZV9yZWxlYXNlLAoJLm93bmVyICAgPSBUSElTX01PRFVMRSwKfTsKCnN0YXRpYyBzdHJ1Y3QgcHJvY19kaXJfZW50cnkgKnJla2VybmVsX2RpciwgKnJla2VybmVsX3VuaXRfZW50cnk7CgppbnQgcmVrZXJuZWxfc3RhcnRfc2VydmVyKHZvaWQpCnsKCWlmIChyZWtlcm5lbF9uZXRsaW5rICE9IE5VTEwpCgkJcmV0dXJuIDA7CgoJZm9yIChyZWtlcm5lbF9uZXRsaW5rX3VuaXQgPSBSRUtFUk5FTF9ORVRMSU5LX01JTjsKCSAgICAgcmVrZXJuZWxfbmV0bGlua191bml0IDwgUkVLRVJORUxfTkVUTElOS19NQVg7IHJla2VybmVsX25ldGxpbmtfdW5pdCsrKSB7CgkJcmVrZXJuZWxfbmV0bGluayA9IChzdHJ1Y3Qgc29jayAqKW5ldGxpbmtfa2VybmVsX2NyZWF0ZSgmaW5pdF9uZXQsCgkJCQkJcmVrZXJuZWxfbmV0bGlua191bml0LCAmcmVrZXJuZWxfY2ZnKTsKCQlpZiAocmVrZXJuZWxfbmV0bGluayAhPSBOVUxMKQoJCQlicmVhazsKCX0KCglpZiAocmVrZXJuZWxfbmV0bGluayA9PSBOVUxMKSB7CgkJcHJfZXJyKCJyZWtlcm5lbDogZmFpbGVkIHRvIGNyZWF0ZSBSZTpLZXJuZWwgc2VydmVyIVxuIik7CgkJcmV0dXJuIC0xOwoJfQoKCXByX2luZm8oInJla2VybmVsOiBjcmVhdGVkIFJlOktlcm5lbCBzZXJ2ZXIhIE5FVExJTksgVU5JVDogJWRcbiIsIHJla2VybmVsX25ldGxpbmtfdW5pdCk7CgoJcmVrZXJuZWxfZGlyID0gcHJvY19ta2RpcigicmVrZXJuZWwiLCBOVUxMKTsKCWlmICghcmVrZXJuZWxfZGlyKSB7CgkJcHJfZXJyKCJyZWtlcm5lbDogY3JlYXRlIC9wcm9jL3Jla2VybmVsIGZhaWxlZCFcbiIpOwoJfSBlbHNlIHsKCQljaGFyIGJ1ZmZbMzJdOwoKCQlzbnByaW50ZihidWZmLCBzaXplb2YoYnVmZiksICIlZCIsIHJla2VybmVsX25ldGxpbmtfdW5pdCk7CgkJcmVrZXJuZWxfdW5pdF9lbnRyeSA9IHByb2NfY3JlYXRlKGJ1ZmYsIDA2NDQsIHJla2VybmVsX2RpciwgJnJla2VybmVsX3VuaXRfZm9wcyk7CgkJaWYgKCFyZWtlcm5lbF91bml0X2VudHJ5KQoJCQlwcl9lcnIoInJla2VybmVsOiBjcmVhdGUgcmVrZXJuZWwgdW5pdCBmYWlsZWQhXG4iKTsKCX0KCglyZXR1cm4gMDsKfQo=" | base64 -d > drivers/rekernel/rekernel.c
+          echo "b2JqLSQoQ09ORklHX1JFS0VSTkVMKSArPSByZWtlcm5lbC5vCg==" | base64 -d > drivers/rekernel/Makefile
+          echo "Y29uZmlnIFJFS0VSTkVMCglib29sICJSZTpLZXJuZWwgYmluZGVyL3NpZ25hbCBmcmVlemUgbm90aWZpZXIiCglkZWZhdWx0IHkKCWhlbHAKCSAgUmU6S2VybmVsIChTYWtpb24tVGVhbSkgbWVtYnVrYSBuZXRsaW5rIHNlcnZlciBkaSBrZXJuZWwgc3VwYXlhCgkgIHRvbWJzdG9uZS9mcmVlemVyIGhhbmRsZXIgZGkgdXNlcnNwYWNlIG1lbmRhcGF0IG5vdGlmaWthc2kgc2FhdAoJICBiaW5kZXIgY2FsbCBhdGF1IHNpZ25hbCAoU0lHS0lMTC9TSUdURVJNL1NJR0FCUlQvU0lHUVVJVCkgbWVueWFzYXIKCSAgcHJvc2VzIHlhbmcgc2VkYW5nIGRpYmVrdWthbiAoZnJvemVuKSwgc2VoaW5nZ2EgcHJvc2VzIHRzYiBiaXNhCgkgIGRpLXVuZnJlZXplIHRlcGF0IHdha3R1IGFsaWgtYWxpaCBBTlIvZm9yY2UtY2xvc2UuCg==" | base64 -d > drivers/rekernel/Kconfig
+
+          grep -q 'rekernel/' drivers/Makefile || echo 'obj-y += rekernel/' >> drivers/Makefile
+          grep -q 'rekernel/Kconfig' drivers/Kconfig || echo 'source "drivers/rekernel/Kconfig"' >> drivers/Kconfig
+
+          sed -i '1i #include "../rekernel/rekernel.h"' drivers/android/binder.c
+          sed -i '1i #include "../rekernel/rekernel.h"' drivers/android/binder_alloc.c
+          sed -i '1i #include "../drivers/rekernel/rekernel.h"' kernel/signal.c
+
+          echo "IyEvdXNyL2Jpbi9wZXJsCiMgTWVueWlzaXBrYW4gaG9vayBSZTpLZXJuZWwga2UgYmluZGVyLmMgLyBiaW5kZXJfYWxsb2MuYyAvIGtlcm5lbC9zaWduYWwuYy4KIyBTZXRpYXAgYW5jaG9yIGRpdmFsaWRhc2kgaGFydXMgY29jb2sgVEVQQVQgMXggc2ViZWx1bSBkaXNpc2lwa2FuOyBrYWxhdQojIHRpZGFrLCBzY3JpcHQgZXhpdCgxKSBkZW5nYW4gcGVzYW4gamVsYXMgKGJ1a2FuIGRpYW0tZGlhbSBrb3J1cCBmaWxlKS4KdXNlIHN0cmljdDsKdXNlIHdhcm5pbmdzOwoKc3ViIHBhdGNoX2ZpbGUgewogICAgbXkgKCRwYXRoLCAkYW5jaG9yX3JlLCAkYnVpbGRfaW5zZXJ0LCAkbGFiZWwpID0gQF87CiAgICBvcGVuKG15ICRmaCwgJzwnLCAkcGF0aCkgb3IgZGllICJyZWtlcm5lbDogdGlkYWsgYmlzYSBidWthICRwYXRoOiAkIVxuIjsKICAgIGxvY2FsICQvOwogICAgbXkgJGNvbnRlbnQgPSA8JGZoPjsKICAgIGNsb3NlICRmaDsKCiAgICBteSAkbiA9ICgpID0gJGNvbnRlbnQgPX4gLyRhbmNob3JfcmUvZ3M7CiAgICBpZiAoJG4gIT0gMSkgewogICAgICAgIGRpZSAicmVrZXJuZWw6IGFuY2hvciAnJGxhYmVsJyBrZXRlbXUgJG4ga2FsaSAoaGFydXMgMSkgZGkgJHBhdGguXG4iIC4KICAgICAgICAgICAgIlNvdXJjZSBrZXJuZWwgaW5pIGtlbXVuZ2tpbmFuIGJlZGEgc3RydWt0dXIgZGFyaSByZWZlcmVuc2kgUmUtS2VybmVsLlxuIiAuCiAgICAgICAgICAgICJLaXJpbSBiYWxpayBpc2kgZnVuZ3NpIHRlcmthaXQgZGFyaSBzb3VyY2UgYXNsaSBzdXBheWEgYW5jaG9yIGRpc2VzdWFpa2FuLlxuIjsKICAgIH0KCiAgICAkY29udGVudCA9fiBzLygkYW5jaG9yX3JlKS8kYnVpbGRfaW5zZXJ0LT4oJDEpL2VzOwoKICAgIG9wZW4obXkgJG91dCwgJz4nLCAkcGF0aCkgb3IgZGllICJyZWtlcm5lbDogdGlkYWsgYmlzYSB0dWxpcyAkcGF0aDogJCFcbiI7CiAgICBwcmludCAkb3V0ICRjb250ZW50OwogICAgY2xvc2UgJG91dDsKICAgIHByaW50ICJyZWtlcm5lbDogaG9vayAnJGxhYmVsJyBiZXJoYXNpbCBkaXNpc2lwa2FuIGtlICRwYXRoXG4iOwp9CgojIDEpIGJpbmRlcl90cmFuc2FjdGlvbigpIC0gcmVwbHkgcGF0aApwYXRjaF9maWxlKAogICAgJ2RyaXZlcnMvYW5kcm9pZC9iaW5kZXIuYycsCiAgICBxci90YXJnZXRfcHJvY1xzKj1ccyp0YXJnZXRfdGhyZWFkLT5wcm9jO1xzKlxuXHMqdGFyZ2V0X3Byb2MtPnRtcF9yZWZcK1wrO1xzKlxuXHMqYmluZGVyX2lubmVyX3Byb2NfdW5sb2NrXCh0YXJnZXRfdGhyZWFkLT5wcm9jXCk7LywKICAgIHN1YiB7CiAgICAgICAgbXkgJG0gPSBzaGlmdDsKICAgICAgICByZXR1cm4gJG0gLiA8PCdDT0RFJzsKCgkJaWYgKHJla2VybmVsX3N0YXJ0X3NlcnZlcigpID09IDApIHsKCQkJaWYgKHRhcmdldF9wcm9jCgkJCQkmJiAoTlVMTCAhPSB0YXJnZXRfcHJvYy0+dHNrKQoJCQkJJiYgKE5VTEwgIT0gcHJvYy0+dHNrKQoJCQkJJiYgKHRhc2tfdWlkKHRhcmdldF9wcm9jLT50c2spLnZhbCA8PSBSRUtFUk5FTF9NQVhfU1lTVEVNX1VJRCkKCQkJCSYmIChwcm9jLT5waWQgIT0gdGFyZ2V0X3Byb2MtPnBpZCkKCQkJCSYmIHJla2VybmVsX3Rhc2tfaXNfZnJvemVuKHRhcmdldF9wcm9jLT50c2spKSB7CgkJCQljaGFyIHJla2VybmVsX2ttc2dbUkVLRVJORUxfUEFDS0VUX1NJWkVdOwoKCQkJCXNucHJpbnRmKHJla2VybmVsX2ttc2csIHNpemVvZihyZWtlcm5lbF9rbXNnKSwKCQkJCQkidHlwZT1CaW5kZXIsYmluZGVydHlwZT1yZXBseSxvbmV3YXk9MCxmcm9tX3BpZD0lZCxmcm9tPSVkLHRhcmdldF9waWQ9JWQsdGFyZ2V0PSVkOyIsCgkJCQkJcHJvYy0+cGlkLCB0YXNrX3VpZChwcm9jLT50c2spLnZhbCwgdGFyZ2V0X3Byb2MtPnBpZCwgdGFza191aWQodGFyZ2V0X3Byb2MtPnRzaykudmFsKTsKCQkJCXJla2VybmVsX3NlbmRfbmV0bGlua19tZXNzYWdlKHJla2VybmVsX2ttc2csIHN0cmxlbihyZWtlcm5lbF9rbXNnKSk7CgkJCX0KCQl9CkNPREUKICAgIH0sCiAgICAnYmluZGVyX3RyYW5zYWN0aW9uIHJlcGx5LXBhdGgnLAopOwoKIyAyKSBiaW5kZXJfdHJhbnNhY3Rpb24oKSAtIHRyYW5zYWN0aW9uIHBhdGgKcGF0Y2hfZmlsZSgKICAgICdkcml2ZXJzL2FuZHJvaWQvYmluZGVyLmMnLAogICAgcXIvZS0+dG9fbm9kZSA9IHRhcmdldF9ub2RlLT5kZWJ1Z19pZDsvLAogICAgc3ViIHsKICAgICAgICBteSAkbSA9IHNoaWZ0OwogICAgICAgIHJldHVybiAkbSAuIDw8J0NPREUnOwoKCQlpZiAocmVrZXJuZWxfc3RhcnRfc2VydmVyKCkgPT0gMCkgewoJCQlpZiAodGFyZ2V0X3Byb2MKCQkJCSYmIChOVUxMICE9IHRhcmdldF9wcm9jLT50c2spCgkJCQkmJiAoTlVMTCAhPSBwcm9jLT50c2spCgkJCQkmJiAodGFza191aWQodGFyZ2V0X3Byb2MtPnRzaykudmFsID4gUkVLRVJORUxfTUlOX1VTRVJBUFBfVUlEKQoJCQkJJiYgKHByb2MtPnBpZCAhPSB0YXJnZXRfcHJvYy0+cGlkKQoJCQkJJiYgcmVrZXJuZWxfdGFza19pc19mcm96ZW4odGFyZ2V0X3Byb2MtPnRzaykpIHsKCQkJCWNoYXIgcmVrZXJuZWxfa21zZ1tSRUtFUk5FTF9QQUNLRVRfU0laRV07CgoJCQkJc25wcmludGYocmVrZXJuZWxfa21zZywgc2l6ZW9mKHJla2VybmVsX2ttc2cpLAoJCQkJCSJ0eXBlPUJpbmRlcixiaW5kZXJ0eXBlPXRyYW5zYWN0aW9uLG9uZXdheT0lZCxmcm9tX3BpZD0lZCxmcm9tPSVkLHRhcmdldF9waWQ9JWQsdGFyZ2V0PSVkOyIsCgkJCQkJdHItPmZsYWdzICYgVEZfT05FX1dBWSwgcHJvYy0+cGlkLCB0YXNrX3VpZChwcm9jLT50c2spLnZhbCwgdGFyZ2V0X3Byb2MtPnBpZCwgdGFza191aWQodGFyZ2V0X3Byb2MtPnRzaykudmFsKTsKCQkJCXJla2VybmVsX3NlbmRfbmV0bGlua19tZXNzYWdlKHJla2VybmVsX2ttc2csIHN0cmxlbihyZWtlcm5lbF9rbXNnKSk7CgkJCX0KCQl9CkNPREUKICAgIH0sCiAgICAnYmluZGVyX3RyYW5zYWN0aW9uIHRyYW5zYWN0aW9uLXBhdGgnLAopOwoKIyAzKSBiaW5kZXJfYWxsb2NfbmV3X2J1Zl9sb2NrZWQoKSAtIGluc2VydGVkIEJFRk9SRSB0aGUgbWF0Y2hlZCBhbmNob3IKcGF0Y2hfZmlsZSgKICAgICdkcml2ZXJzL2FuZHJvaWQvYmluZGVyX2FsbG9jLmMnLAogICAgcXIvaWYgXChpc19hc3luYyAmJlxzKlxuXHMqYWxsb2MtPmZyZWVfYXN5bmNfc3BhY2UgPCBzaXplIFwrIHNpemVvZlwoc3RydWN0IGJpbmRlcl9idWZmZXJcKVwpIFx7LywKICAgIHN1YiB7CiAgICAgICAgbXkgJG0gPSBzaGlmdDsKICAgICAgICBteSAkcHJlID0gPDwnQ09ERSc7CglpZiAoaXNfYXN5bmMKCQkmJiAoYWxsb2MtPmZyZWVfYXN5bmNfc3BhY2UgPCAzICogKHNpemUgKyBzaXplb2Yoc3RydWN0IGJpbmRlcl9idWZmZXIpKQoJCXx8IChhbGxvYy0+ZnJlZV9hc3luY19zcGFjZSA8IFJFS0VSTkVMX1dBUk5fQUhFQURfU1BBQ0UpKSkgewoJCXN0cnVjdCB0YXNrX3N0cnVjdCAqcmVrZXJuZWxfcHJvY190YXNrOwoKCQlyY3VfcmVhZF9sb2NrKCk7CgkJcmVrZXJuZWxfcHJvY190YXNrID0gZmluZF90YXNrX2J5X3ZwaWQoYWxsb2MtPnBpZCk7CgkJcmN1X3JlYWRfdW5sb2NrKCk7CgkJaWYgKHJla2VybmVsX3Byb2NfdGFzayAhPSBOVUxMICYmIHJla2VybmVsX3N0YXJ0X3NlcnZlcigpID09IDApIHsKCQkJaWYgKHJla2VybmVsX3Rhc2tfaXNfZnJvemVuKHJla2VybmVsX3Byb2NfdGFzaykpIHsKCQkJCWNoYXIgcmVrZXJuZWxfa21zZ1tSRUtFUk5FTF9QQUNLRVRfU0laRV07CgoJCQkJc25wcmludGYocmVrZXJuZWxfa21zZywgc2l6ZW9mKHJla2VybmVsX2ttc2cpLAoJCQkJCSJ0eXBlPUJpbmRlcixiaW5kZXJ0eXBlPWZyZWVfYnVmZmVyX2Z1bGwsb25ld2F5PTEsZnJvbV9waWQ9JWQsZnJvbT0lZCx0YXJnZXRfcGlkPSVkLHRhcmdldD0lZDsiLAoJCQkJCWN1cnJlbnQtPnBpZCwgdGFza191aWQoY3VycmVudCkudmFsLCByZWtlcm5lbF9wcm9jX3Rhc2stPnBpZCwgdGFza191aWQocmVrZXJuZWxfcHJvY190YXNrKS52YWwpOwoJCQkJcmVrZXJuZWxfc2VuZF9uZXRsaW5rX21lc3NhZ2UocmVrZXJuZWxfa21zZywgc3RybGVuKHJla2VybmVsX2ttc2cpKTsKCQkJfQoJCX0KCX0KQ09ERQogICAgICAgIHJldHVybiAkcHJlIC4gJG07CiAgICB9LAogICAgJ2JpbmRlcl9hbGxvY19uZXdfYnVmX2xvY2tlZCcsCik7CgojIDQpIGRvX3NlbmRfc2lnX2luZm8oKQpwYXRjaF9maWxlKAogICAgJ2tlcm5lbC9zaWduYWwuYycsCiAgICBxci9pbnQgZG9fc2VuZF9zaWdfaW5mb1woaW50IHNpZywgc3RydWN0IHNpZ2luZm8gXCppbmZvLCBzdHJ1Y3QgdGFza19zdHJ1Y3QgXCpwLFxzKlxuXHMqYm9vbCBncm91cFwpXHMqXG5ce1xzKlxuXHMqdW5zaWduZWQgbG9uZyBmbGFncztccypcblxzKmludCByZXQgPSAtRVNSQ0g7LywKICAgIHN1YiB7CiAgICAgICAgbXkgJG0gPSBzaGlmdDsKICAgICAgICByZXR1cm4gJG0gLiA8PCdDT0RFJzsKCglpZiAocmVrZXJuZWxfc3RhcnRfc2VydmVyKCkgPT0gMCkgewoJCWlmIChyZWtlcm5lbF90YXNrX2lzX2Zyb3plbihjdXJyZW50KSAmJgoJCQkoc2lnID09IFNJR0tJTEwgfHwgc2lnID09IFNJR1RFUk0gfHwgc2lnID09IFNJR0FCUlQgfHwgc2lnID09IFNJR1FVSVQpKSB7CgkJCWNoYXIgcmVrZXJuZWxfa21zZ1tSRUtFUk5FTF9QQUNLRVRfU0laRV07CgoJCQlzbnByaW50ZihyZWtlcm5lbF9rbXNnLCBzaXplb2YocmVrZXJuZWxfa21zZyksCgkJCQkidHlwZT1TaWduYWwsc2lnbmFsPSVkLGtpbGxlcl9waWQ9JWQsa2lsbGVyPSVkLGRzdF9waWQ9JWQsZHN0PSVkOyIsCgkJCQlzaWcsIHRhc2tfdGdpZF9ucihwKSwgdGFza191aWQocCkudmFsLCB0YXNrX3RnaWRfbnIoY3VycmVudCksIHRhc2tfdWlkKGN1cnJlbnQpLnZhbCk7CgkJCXJla2VybmVsX3NlbmRfbmV0bGlua19tZXNzYWdlKHJla2VybmVsX2ttc2csIHN0cmxlbihyZWtlcm5lbF9rbXNnKSk7CgkJfQoJfQpDT0RFCiAgICB9LAogICAgJ2RvX3NlbmRfc2lnX2luZm8nLAopOwo=" | base64 -d > /tmp/apply_rekernel_hooks.pl
+          perl /tmp/apply_rekernel_hooks.pl
+
+          grep -c 'rekernel_start_server' drivers/android/binder.c drivers/android/binder_alloc.c kernel/signal.c
+
       - name: Pra-compile - perbaikan build source MTK (verified reusable)
         working-directory: kernel
         run: |
@@ -125,8 +170,11 @@ jobs:
             echo ""
             echo "# NoMount"
             echo "CONFIG_NOMOUNT=y"
+            echo ""
+            echo "# Re:Kernel"
+            echo "CONFIG_REKERNEL=y"
           } >> "$DEF"
-          tail -8 "$DEF"
+          tail -11 "$DEF"
 
       - name: Ambil toolchain proton-clang (dipakai penulis kernel ini di b.sh)
         run: |
@@ -210,7 +258,7 @@ jobs:
 
           cp "${{ steps.kimg.outputs.path }}" "AnyKernel3/${{ steps.kimg.outputs.name }}"
 
-          ZIP="rosemary-sphinX-ReSukiSU-NoMount-AK3-${{ github.run_number }}.zip"
+          ZIP="rosemary-sphinX-ReSukiSU-NoMount-ReKernel-AK3-${{ github.run_number }}.zip"
           ( cd AnyKernel3 && zip -r9 "../$ZIP" . -x '.git*' )
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
           unzip -l "$ZIP" | head -20
@@ -218,7 +266,7 @@ jobs:
       - name: Upload paket + kernel mentah + dtbo + nm CLI
         uses: actions/upload-artifact@v4
         with:
-          name: rosemary-kernel-ksu-nomount-v3
+          name: rosemary-kernel-ksu-nomount-rekernel-v3
           if-no-files-found: warn
           path: |
             ${{ env.ZIP }}
