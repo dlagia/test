@@ -1,5 +1,4 @@
 # ============================================================
-# FASE 2 — Kernel rosemary (dlagia/sphinX) + ReSukiSU + SUSFS + NoMount + Re-Kernel + AK3
 #
 # Lanjutan dari Fase 1 (build-kernel-ksu-v2.yml) yang SUDAH TERBUKTI
 # BOOT NORMAL. File ini menambahkan NoMount (github.com/maxsteeel/nomount)
@@ -24,17 +23,13 @@
 # SAMA seperti Fase 1. Kernel ini basis sama dengan yang sudah terbukti
 # boot, tapi NoMount menyentuh VFS inti - tetap test dulu.
 #
-# SUSFS (gitlab.com/simonpunk/susfs4ksu, branch kernel-4.14): root hiding
-# di level kernel untuk ReSukiSU. Patch resmi susfs4ksu diambil langsung
 # dari sumbernya (BUKAN ditulis ulang manual - terlalu besar/berisiko).
-# Patch non-GKI + skrip susfs_inline_hook_patches.sh (khusus untuk
 # CONFIG_KSU_MANUAL_HOOK=y, sudah dipakai kernel ini) diambil dari
 # github.com/dlagia/NonGKI_Kernel_Build_2nd, fallback ke upstream
 # github.com/JackA1ltman/NonGKI_Kernel_Build_2nd kalau file belum ada
 # di fork tsb. Kalau patch resmi tidak apply bersih (ada .rej), step
 # GAGAL dengan menampilkan isi .rej - konflik manual itu WAJAR untuk
 # source non-standar (dikonfirmasi dari laporan komunitas ReSukiSU+
-# SUSFS lain), bukan tanda ada yang ditulis sembarangan di sini.
 #
 # Re:Kernel (github.com/Sakion-Team/Re-Kernel): membuka netlink server
 # supaya tombstone/freezer di userspace tahu kapan binder call atau
@@ -53,8 +48,6 @@
 # binder_alloc_new_buf_locked(), dan do_send_sig_info() dari source asli
 # supaya anchor-nya disesuaikan.
 # ============================================================
-
-name: Build rosemary kernel v3 (sphinX + ReSukiSU + SUSFS + NoMount + Re-Kernel + AK3)
 
 on:
   workflow_dispatch: {}
@@ -100,145 +93,6 @@ jobs:
           echo "LS0tIGEvZnMvS2NvbmZpZwkyMDI2LTA3LTI5IDAyOjA1OjI1LjYxMjMwOTA4NSArMDAwMAorKysgYi9mcy9LY29uZmlnCTIwMjYtMDctMjkgMDc6MTU6NTAuNTYyNjM5NzI0ICswMDAwCkBAIC0zMTQsNCArMzE0LDEyIEBACiBzb3VyY2UgImZzL2RsbS9LY29uZmlnIgogc291cmNlICJmcy91bmljb2RlL0tjb25maWciCiAKK2NvbmZpZyBOT01PVU5UCisJYm9vbCAiTm9Nb3VudCBQYXRoIFJlZGlyZWN0aW9uIFN1YnN5c3RlbSIKKwlkZWZhdWx0IHkKKwloZWxwCisJICBOb01vdW50IGFsbG93cyBwYXRoIHJlZGlyZWN0aW9uIGFuZCB2aXJ0dWFsIGZpbGUgaW5qZWN0aW9uCisJICB3aXRob3V0IG1vdW50aW5nIGZpbGVzeXN0ZW1zLiBVc2VmdWwgZm9yIHN5c3RlbWxlc3MgbW9kaWZpY2F0aW9ucy4KKworCiBlbmRtZW51Ci0tLSBhL2ZzL01ha2VmaWxlCTIwMjYtMDctMjkgMDI6MDU6MjUuNjE3OTMwNDk3ICswMDAwCisrKyBiL2ZzL01ha2VmaWxlCTIwMjYtMDctMjkgMDc6MTU6NTAuNTYyODI1OTg2ICswMDAwCkBAIC0yMSw2ICsyMSw3IEBACiBvYmoteSArPQluby1ibG9jay5vCiBlbmRpZgogCitvYmotJChDT05GSUdfTk9NT1VOVCkgKz0gbm9tb3VudC5vCiBvYmotJChDT05GSUdfUFJPQ19GUykgKz0gcHJvY19uYW1lc3BhY2UubwogCiBvYmoteQkJCQkrPSBub3RpZnkvCi0tLSBhL2ZzL25hbWVpLmMJMjAyNi0wNy0yOSAwMjowNToyNS42MjMzNTAzMzUgKzAwMDAKKysrIGIvZnMvbmFtZWkuYwkyMDI2LTA3LTI5IDA3OjE1OjUwLjU2NTk5NjgzNyArMDAwMApAQCAtMTI3LDYgKzEyNywxMSBAQAogCiAjZGVmaW5lIEVNQkVEREVEX05BTUVfTUFYCShQQVRIX01BWCAtIG9mZnNldG9mKHN0cnVjdCBmaWxlbmFtZSwgaW5hbWUpKQogCisjaWZkZWYgQ09ORklHX05PTU9VTlQKK2V4dGVybiBzdHJ1Y3QgZmlsZW5hbWUgKm5vbW91bnRfaGFuZGxlX2dldG5hbWUoc3RydWN0IGZpbGVuYW1lICpuYW1lKTsKK2V4dGVybiBpbnQgbm9tb3VudF9oYW5kbGVfcGVybWlzc2lvbihzdHJ1Y3QgaW5vZGUgKmlub2RlLCBpbnQgbWFzayk7CisjZW5kaWYKKwogc3RydWN0IGZpbGVuYW1lICoKIGdldG5hbWVfZmxhZ3MoY29uc3QgY2hhciBfX3VzZXIgKmZpbGVuYW1lLCBpbnQgZmxhZ3MsIGludCAqZW1wdHkpCiB7CkBAIC0yMDIsNiArMjA3LDExIEBACiAKIAlyZXN1bHQtPnVwdHIgPSBmaWxlbmFtZTsKIAlyZXN1bHQtPmFuYW1lID0gTlVMTDsKKyNpZmRlZiBDT05GSUdfTk9NT1VOVAorCWlmICghSVNfRVJSKHJlc3VsdCkpIHsKKwkJcmVzdWx0ID0gbm9tb3VudF9oYW5kbGVfZ2V0bmFtZShyZXN1bHQpOworCX0KKyNlbmRpZgogCWF1ZGl0X2dldG5hbWUocmVzdWx0KTsKIAlyZXR1cm4gcmVzdWx0OwogfQpAQCAtMjQzLDYgKzI1MywxMSBAQAogCXJlc3VsdC0+dXB0ciA9IE5VTEw7CiAJcmVzdWx0LT5hbmFtZSA9IE5VTEw7CiAJcmVzdWx0LT5yZWZjbnQgPSAxOworI2lmZGVmIENPTkZJR19OT01PVU5UCisJaWYgKCFJU19FUlIocmVzdWx0KSkgeworCQlyZXN1bHQgPSBub21vdW50X2hhbmRsZV9nZXRuYW1lKHJlc3VsdCk7CisJfQorI2VuZGlmCiAJYXVkaXRfZ2V0bmFtZShyZXN1bHQpOwogCiAJcmV0dXJuIHJlc3VsdDsKQEAgLTMzNiw2ICszNTEsMTIgQEAKIHsKIAlpbnQgcmV0OwogCisjaWZkZWYgQ09ORklHX05PTU9VTlQKKwlpbnQgbm1fcGVybSA9IG5vbW91bnRfaGFuZGxlX3Blcm1pc3Npb24oaW5vZGUsIG1hc2spOworCWlmICh1bmxpa2VseShubV9wZXJtIDwgMCkpIHJldHVybiBubV9wZXJtOworCWlmICh1bmxpa2VseShubV9wZXJtID4gMCkpIHJldHVybiAwOworI2VuZGlmCisKIAkvKgogCSAqIERvIHRoZSBiYXNpYyBwZXJtaXNzaW9uIGNoZWNrcy4KIAkgKi8KQEAgLTQ4Miw2ICs1MDMsMTIgQEAKIHsKIAlpbnQgcmV0dmFsOwogCisjaWZkZWYgQ09ORklHX05PTU9VTlQKKwlpbnQgbm1fcGVybTIgPSBub21vdW50X2hhbmRsZV9wZXJtaXNzaW9uKGlub2RlLCBtYXNrKTsKKwlpZiAodW5saWtlbHkobm1fcGVybTIgPCAwKSkgcmV0dXJuIG5tX3Blcm0yOworCWlmICh1bmxpa2VseShubV9wZXJtMiA+IDApKSByZXR1cm4gMDsKKyNlbmRpZgorCiAJcmV0dmFsID0gc2JfcGVybWlzc2lvbihpbm9kZS0+aV9zYiwgaW5vZGUsIG1hc2spOwogCWlmIChyZXR2YWwpCiAJCXJldHVybiByZXR2YWw7Ci0tLSBhL2ZzL2RjYWNoZS5jCTIwMjYtMDctMjkgMDI6MDU6MjUuNjMwNzIzOTQwICswMDAwCisrKyBiL2ZzL2RjYWNoZS5jCTIwMjYtMDctMjkgMDc6MTU6NTAuNTY2NTg0NTQ3ICswMDAwCkBAIC0zMjgyLDYgKzMyODIsMTAgQEAKIAlyZXR1cm4gcHJlcGVuZChidWZmZXIsIGJ1ZmxlbiwgIih1bnJlYWNoYWJsZSkiLCAxMyk7CiB9CiAKKyNpZmRlZiBDT05GSUdfTk9NT1VOVAorZXh0ZXJuIGNoYXIgKm5vbW91bnRfaGFuZGxlX2RwYXRoKGNvbnN0IHN0cnVjdCBwYXRoICpwYXRoLCBjaGFyICpidWYsIGludCBidWZsZW4pOworI2VuZGlmCisKIHN0YXRpYyB2b2lkIGdldF9mc19yb290X3JjdShzdHJ1Y3QgZnNfc3RydWN0ICpmcywgc3RydWN0IHBhdGggKnJvb3QpCiB7CiAJdW5zaWduZWQgc2VxOwpAQCAtMzMxNCw2ICszMzE4LDEzIEBACiAJc3RydWN0IHBhdGggcm9vdDsKIAlpbnQgZXJyb3I7CiAKKyNpZmRlZiBDT05GSUdfTk9NT1VOVAorCWNoYXIgKm5tX3BhdGggPSBub21vdW50X2hhbmRsZV9kcGF0aChwYXRoLCBidWYsIGJ1Zmxlbik7CisJaWYgKHVubGlrZWx5KG5tX3BhdGgpKSB7CisJCXJldHVybiBubV9wYXRoOworCX0KKyNlbmRpZgorCiAJLyoKIAkgKiBXZSBoYXZlIHZhcmlvdXMgc3ludGhldGljIGZpbGVzeXN0ZW1zIHRoYXQgbmV2ZXIgZ2V0IG1vdW50ZWQuICBPbgogCSAqIHRoZXNlIGZpbGVzeXN0ZW1zIGRlbnRyaWVzIGFyZSBuZXZlciB1c2VkIGZvciBsb29rdXAgcHVycG9zZXMsIGFuZAotLS0gYS9mcy9yZWFkZGlyLmMJMjAyNi0wNy0yOSAwMjowNToyNS42MzcwMzk3ODAgKzAwMDAKKysrIGIvZnMvcmVhZGRpci5jCTIwMjYtMDctMjkgMDc6MTU6NTAuNTY3MDAwNTAxICswMDAwCkBAIC0yMyw2ICsyMywxMCBAQAogCiAjaW5jbHVkZSA8bGludXgvdWFjY2Vzcy5oPgogCisjaWZkZWYgQ09ORklHX05PTU9VTlQKK2V4dGVybiBpbnQgbm9tb3VudF9oYW5kbGVfaXRlcmF0ZV9kaXIoc3RydWN0IGZpbGUgKmZpbGUsIHN0cnVjdCBkaXJfY29udGV4dCAqY3R4KTsKKyNlbmRpZgorCiBpbnQgaXRlcmF0ZV9kaXIoc3RydWN0IGZpbGUgKmZpbGUsIHN0cnVjdCBkaXJfY29udGV4dCAqY3R4KQogewogCXN0cnVjdCBpbm9kZSAqaW5vZGUgPSBmaWxlX2lub2RlKGZpbGUpOwpAQCAtNDgsMTAgKzUyLDE0IEBACiAJcmVzID0gLUVOT0VOVDsKIAlpZiAoIUlTX0RFQURESVIoaW5vZGUpKSB7CiAJCWN0eC0+cG9zID0gZmlsZS0+Zl9wb3M7CisjaWZkZWYgQ09ORklHX05PTU9VTlQKKwkJcmVzID0gbm9tb3VudF9oYW5kbGVfaXRlcmF0ZV9kaXIoZmlsZSwgY3R4KTsKKyNlbHNlCiAJCWlmIChzaGFyZWQpCiAJCQlyZXMgPSBmaWxlLT5mX29wLT5pdGVyYXRlX3NoYXJlZChmaWxlLCBjdHgpOwogCQllbHNlCiAJCQlyZXMgPSBmaWxlLT5mX29wLT5pdGVyYXRlKGZpbGUsIGN0eCk7CisjZW5kaWYKIAkJZmlsZS0+Zl9wb3MgPSBjdHgtPnBvczsKIAkJZnNub3RpZnlfYWNjZXNzKGZpbGUpOwogCQlmaWxlX2FjY2Vzc2VkKGZpbGUpOwotLS0gYS9mcy9zdGF0LmMJMjAyNi0wNy0yOSAwMjowNToyNS42NDI1NDMzNzcgKzAwMDAKKysrIGIvZnMvc3RhdC5jCTIwMjYtMDctMjkgMDc6MTU6NTAuNTY3MTUxMDE5ICswMDAwCkBAIC0xMDUsNiArMTA1LDEwIEBACiAgKgogICogMCB3aWxsIGJlIHJldHVybmVkIG9uIHN1Y2Nlc3MsIGFuZCBhIC12ZSBlcnJvciBjb2RlIGlmIHVuc3VjY2Vzc2Z1bC4KICAqLworI2lmZGVmIENPTkZJR19OT01PVU5UCitleHRlcm4gaW50IG5vbW91bnRfaGFuZGxlX2dldGF0dHIoaW50IHJldCwgY29uc3Qgc3RydWN0IHBhdGggKnBhdGgsIHN0cnVjdCBrc3RhdCAqc3RhdCk7CisjZW5kaWYKKwogaW50IHZmc19nZXRhdHRyKGNvbnN0IHN0cnVjdCBwYXRoICpwYXRoLCBzdHJ1Y3Qga3N0YXQgKnN0YXQsCiAJCXUzMiByZXF1ZXN0X21hc2ssIHVuc2lnbmVkIGludCBxdWVyeV9mbGFncykKIHsKQEAgLTExMyw3ICsxMTcsMTEgQEAKIAlyZXR2YWwgPSBzZWN1cml0eV9pbm9kZV9nZXRhdHRyKHBhdGgpOwogCWlmIChyZXR2YWwpCiAJCXJldHVybiByZXR2YWw7CisjaWZkZWYgQ09ORklHX05PTU9VTlQKKwlyZXR1cm4gbm9tb3VudF9oYW5kbGVfZ2V0YXR0cih2ZnNfZ2V0YXR0cl9ub3NlYyhwYXRoLCBzdGF0LCByZXF1ZXN0X21hc2ssIHF1ZXJ5X2ZsYWdzKSwgcGF0aCwgc3RhdCk7CisjZWxzZQogCXJldHVybiB2ZnNfZ2V0YXR0cl9ub3NlYyhwYXRoLCBzdGF0LCByZXF1ZXN0X21hc2ssIHF1ZXJ5X2ZsYWdzKTsKKyNlbmRpZgogfQogRVhQT1JUX1NZTUJPTCh2ZnNfZ2V0YXR0cik7CiAKLS0tIGEvZnMvcHJvYy90YXNrX21tdS5jCTIwMjYtMDctMjkgMDI6MDU6MjUuNjQ4MTYzMDYxICswMDAwCisrKyBiL2ZzL3Byb2MvdGFza19tbXUuYwkyMDI2LTA3LTI5IDA3OjE1OjUwLjU2NzMyNzcyOSArMDAwMApAQCAtMzQ3LDYgKzM0NywxMCBAQAogCQkgICBNQUpPUihkZXYpLCBNSU5PUihkZXYpLCBpbm8pOwogfQogCisjaWZkZWYgQ09ORklHX05PTU9VTlQKK2V4dGVybiBib29sIG5vbW91bnRfc3Bvb2ZfbW1hcF9tZXRhZGF0YShzdHJ1Y3QgaW5vZGUgKmlub2RlLCBkZXZfdCAqZGV2LCB1bnNpZ25lZCBsb25nICppbm8pOworI2VuZGlmCisKIHN0YXRpYyB2b2lkCiBzaG93X21hcF92bWEoc3RydWN0IHNlcV9maWxlICptLCBzdHJ1Y3Qgdm1fYXJlYV9zdHJ1Y3QgKnZtYSkKIHsKQEAgLTM2Myw2ICszNjcsOSBAQAogCQlzdHJ1Y3QgaW5vZGUgKmlub2RlID0gZmlsZV9pbm9kZSh2bWEtPnZtX2ZpbGUpOwogCQlkZXYgPSBpbm9kZS0+aV9zYi0+c19kZXY7CiAJCWlubyA9IGlub2RlLT5pX2lubzsKKyNpZmRlZiBDT05GSUdfTk9NT1VOVAorCQlub21vdW50X3Nwb29mX21tYXBfbWV0YWRhdGEoaW5vZGUsICZkZXYsICZpbm8pOworI2VuZGlmCiAJCXBnb2ZmID0gKChsb2ZmX3Qpdm1hLT52bV9wZ29mZikgPDwgUEFHRV9TSElGVDsKIAl9CiAKLS0tIGEvZnMvc3RhdGZzLmMJMjAyNi0wNy0yOSAwMjowNToyNS42NTQwODYwMDQgKzAwMDAKKysrIGIvZnMvc3RhdGZzLmMJMjAyNi0wNy0yOSAwNzoxNTo1MC41Njc1MTc5MDMgKzAwMDAKQEAgLTExLDYgKzExLDEwIEBACiAjaW5jbHVkZSA8bGludXgvY29tcGF0Lmg+CiAjaW5jbHVkZSAiaW50ZXJuYWwuaCIKIAorI2lmZGVmIENPTkZJR19OT01PVU5UCitleHRlcm4gdm9pZCBub21vdW50X3Nwb29mX3N0YXRmcyhjb25zdCBzdHJ1Y3QgcGF0aCAqcGF0aCwgc3RydWN0IGtzdGF0ZnMgKmJ1Zik7CisjZW5kaWYKKwogc3RhdGljIGludCBmbGFnc19ieV9tbnQoaW50IG1udF9mbGFncykKIHsKIAlpbnQgZmxhZ3MgPSAwOwpAQCAtNzQsNiArNzgsOSBAQAogCWVycm9yID0gc3RhdGZzX2J5X2RlbnRyeShwYXRoLT5kZW50cnksIGJ1Zik7CiAJaWYgKCFlcnJvcikKIAkJYnVmLT5mX2ZsYWdzID0gY2FsY3VsYXRlX2ZfZmxhZ3MocGF0aC0+bW50KTsKKyNpZmRlZiBDT05GSUdfTk9NT1VOVAorCW5vbW91bnRfc3Bvb2Zfc3RhdGZzKHBhdGgsIGJ1Zik7CisjZW5kaWYKIAlyZXR1cm4gZXJyb3I7CiB9CiBFWFBPUlRfU1lNQk9MKHZmc19zdGF0ZnMpOwo=" | base64 -d > /tmp/nomount-hooks.patch
           git apply --verbose /tmp/nomount-hooks.patch
           grep -c CONFIG_NOMOUNT fs/Kconfig fs/Makefile fs/namei.c fs/dcache.c fs/readdir.c fs/stat.c fs/proc/task_mmu.c fs/statfs.c
-
-      - name: Integrasikan SUSFS (susfs4ksu, patch non-GKI dari NonGKI_Kernel_Build_2nd)
-        working-directory: kernel
-        run: |
-          # Sumber resmi: https://gitlab.com/simonpunk/susfs4ksu (branch kernel-4.14)
-          # Patch non-GKI + skrip inline-hook: dicoba dulu dari repo kamu sendiri
-          # https://github.com/dlagia/NonGKI_Kernel_Build_2nd , fallback ke upstream
-          # https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd kalau file belum
-          # ada di fork kamu.
-          #
-          # CATATAN JUJUR: patch SUSFS resmi (ribuan baris, puluhan file) TIDAK ditulis
-          # ulang manual di sini - diambil langsung dari sumber aslinya. Konflik/.rej
-          # saat apply itu WAJAR untuk source non-standar - kalau itu terjadi, step ini
-          # GAGAL dengan menampilkan isi .rej, bukan diam-diam lanjut build.
-          #
-          # PENTING: jangan pre-copy fs/susfs.c / include/linux/susfs*.h sebelum patch -
-          # patch non-GKI itu sendiri yang membuat file itu. Pre-copy bikin "patch"
-          # masuk mode tanya-interaktif dan bisa mengacak parsing hunk setelahnya.
-          # File tambahan (mis. sus_su.c) yang TIDAK dibuat oleh patch baru dicopy
-          # SETELAH patch berhasil, dengan cp -n (no-clobber).
-
-          SUSFS_BRANCH="kernel-4.14"
-          DLAGIA_BASE="https://raw.githubusercontent.com/dlagia/NonGKI_Kernel_Build_2nd/mainline"
-          UPSTREAM_BASE="https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline"
-
-          fetch_with_fallback() {
-            local relpath="$1"
-            local dest="$2"
-            if curl -fLs -o "$dest" "${DLAGIA_BASE}/${relpath}"; then
-              if [ -s "$dest" ] && ! grep -qi '<!DOCTYPE html>' "$dest"; then
-                echo "susfs: dipakai dari dlagia/NonGKI_Kernel_Build_2nd -> $relpath"
-                return 0
-              fi
-            fi
-            echo "susfs: tidak ada di fork dlagia untuk '$relpath', coba upstream JackA1ltman..."
-            if curl -fLs -o "$dest" "${UPSTREAM_BASE}/${relpath}"; then
-              if [ -s "$dest" ] && ! grep -qi '<!DOCTYPE html>' "$dest"; then
-                echo "susfs: dipakai dari upstream JackA1ltman/NonGKI_Kernel_Build_2nd -> $relpath"
-                return 0
-              fi
-            fi
-            echo "=================================================================="
-            echo "susfs: GAGAL - '$relpath' tidak ditemukan di fork dlagia ATAU upstream."
-            echo "Cek manual: ${DLAGIA_BASE}/${relpath}"
-            echo "         atau: ${UPSTREAM_BASE}/${relpath}"
-            echo "=================================================================="
-            return 1
-          }
-
-          echo "== Clone susfs4ksu resmi (branch ${SUSFS_BRANCH}) =="
-          rm -rf /tmp/susfs4ksu
-          git clone -b "$SUSFS_BRANCH" --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git /tmp/susfs4ksu
-
-          echo "== Ambil patch non-GKI untuk kernel 4.14 =="
-          fetch_with_fallback "Patches/Patch/susfs_patch_to_4.14.patch" /tmp/susfs_patch_to_4.14.patch || exit 1
-
-          echo "== Bersihkan .rej/.orig lama (kalau ada sisa dari source/percobaan sebelumnya) =="
-          OLD_REJ=$(find . -name '*.rej')
-          if [ -n "$OLD_REJ" ]; then
-            echo "Ditemukan .rej LAMA (bukan dari patch ini, dibersihkan dulu supaya tidak salah dilaporkan):"
-            echo "$OLD_REJ"
-          fi
-          find . -name '*.rej' -delete
-          find . -name '*.orig' -delete
-
-          echo "== Terapkan patch SUSFS (patch -p1 -f, fuzz diizinkan) =="
-          # -f: jangan tanya interaktif (mencegah patch salah baca stdin/mengacak parsing).
-          # Exit code ditangkap manual (via ||) supaya bash -e TIDAK langsung mematikan
-          # step sebelum kita sempat melaporkan .rej dengan jelas.
-          PATCH_EXIT=0
-          patch -p1 -f --fuzz=3 --no-backup-if-mismatch < /tmp/susfs_patch_to_4.14.patch || PATCH_EXIT=$?
-
-
-          echo "== Resolusi otomatis konflik yang sudah dikenal: NoMount vs SUSFS di show_map_vma() =="
-          # NoMount menyisipkan nomount_spoof_mmap_metadata() di antara
-          # "ino = inode->i_ino;" dan "pgoff = ...;" pada fs/proc/task_mmu.c,
-          # yang membuat hunk asli SUSFS di fungsi show_map_vma() gagal cocok
-          # konteks (lihat .rej di bawah kalau ini juga gagal). Skrip ini
-          # menggabungkan KEDUA logika jadi satu blok - bukan mengabaikan salah satunya.
-          if [ -f fs/proc/task_mmu.c.rej ] && grep -q "show_map_vma" fs/proc/task_mmu.c.rej; then
-            echo "IyEvdXNyL2Jpbi9wZXJsCiMgTWVuZ2dhYnVuZ2thbiBtYW51YWwga29uZmxpayBOb01vdW50IHZzIFNVU0ZTIGRpIHNob3dfbWFwX3ZtYSgpCiMgKGZzL3Byb2MvdGFza19tbXUuYykuIE5vTW91bnQgbWVueWlzaXBrYW4gbm9tb3VudF9zcG9vZl9tbWFwX21ldGFkYXRhKCkKIyBkaSBhbnRhcmEgImlubyA9IGlub2RlLT5pX2lubzsiIGRhbiAicGdvZmYgPSAuLi4iLCB5YW5nIG1lbWJ1YXQgaHVuayBhc2xpCiMgU1VTRlMgKHlhbmcgbWVueWlzaXBrYW4gT1BFTl9SRURJUkVDVC9TVVNfTUFQIGRpIGF3YWwgYmxvayBkYW4gU1VTX0tTVEFUCiMgZGkgYWtoaXIgYmxvaykgZ2FnYWwgY29jb2sga29udGVrcy4gU2tyaXAgaW5pIG1lbmdnYWJ1bmdrYW4ga2VkdWFueWEgamFkaQojIHNhdHUgYmxvayB5YW5nIG1lbXBlcnRhaGFua2FuIGZ1bmdzaSBrZWR1YSBwYXRjaC4KdXNlIHN0cmljdDsKdXNlIHdhcm5pbmdzOwoKbXkgJHBhdGggPSAnZnMvcHJvYy90YXNrX21tdS5jJzsKb3BlbihteSAkZmgsICc8JywgJHBhdGgpIG9yIGRpZSAibWVyZ2VfdGFza19tbXU6IHRpZGFrIGJpc2EgYnVrYSAkcGF0aDogJCFcbiI7CmxvY2FsICQvOwpteSAkY29udGVudCA9IDwkZmg+OwpjbG9zZSAkZmg7CgpteSAkYW5jaG9yX3JlID0gcXIvCiAgICAoc3RydWN0XCBpbm9kZVwgXCppbm9kZVwgPVwgZmlsZV9pbm9kZVwodm1hLT52bV9maWxlXCk7KSBccypcbgogICAgXHMqKGRldlwgPVwgaW5vZGUtPmlfc2ItPnNfZGV2OykgXHMqXG4KICAgIFxzKihpbm9cID1cIGlub2RlLT5pX2lubzspIFxzKlxuCiAgICBcI2lmZGVmXCBDT05GSUdfTk9NT1VOVCBccypcbgogICAgXHMqKG5vbW91bnRfc3Bvb2ZfbW1hcF9tZXRhZGF0YVwoaW5vZGUsXCAmZGV2LFwgJmlub1wpOykgXHMqXG4KICAgIFwjZW5kaWYgXHMqXG4KICAgIFxzKihwZ29mZlwgPVwgXChcKGxvZmZfdFwpdm1hLT52bV9wZ29mZlwpXCA8PFwgUEFHRV9TSElGVDspIFxzKlxuCiAgICBccypcfQoveDsKCm15ICRuID0gMDsKJG4rKyB3aGlsZSAkY29udGVudCA9fiAvJGFuY2hvcl9yZS9nczsKaWYgKCRuICE9IDEpIHsKICAgIGRpZSAibWVyZ2VfdGFza19tbXU6IHBvbGEgZ2FidW5nYW4gc2hvd19tYXBfdm1hIHRpZGFrIGtldGVtdSB0ZXBhdCAxeCAobWF0Y2g9JG4pIGRpICRwYXRoLlxuIiAuCiAgICAgICAgIktlbXVuZ2tpbmFuIHBhdGNoIE5vTW91bnQgZGkgZmlsZSBpbmkgYmVydWJhaCBmb3JtYXQuIFBlcmx1IHBlbnllc3VhaWFuIG1hbnVhbC5cbiI7Cn0KCiRjb250ZW50ID1+IHMvJGFuY2hvcl9yZS9idWlsZF9tZXJnZWQoJDEsICQyLCAkMywgJDQsICQ1KS9lOwoKb3BlbihteSAkb3V0LCAnPicsICRwYXRoKSBvciBkaWUgIm1lcmdlX3Rhc2tfbW11OiB0aWRhayBiaXNhIHR1bGlzICRwYXRoOiAkIVxuIjsKcHJpbnQgJG91dCAkY29udGVudDsKY2xvc2UgJG91dDsKcHJpbnQgIm1lcmdlX3Rhc2tfbW11OiBiZXJoYXNpbCBtZW5nZ2FidW5na2FuIGhvb2sgTm9Nb3VudCArIFNVU0ZTIGRpIHNob3dfbWFwX3ZtYSgpXG4iOwoKc3ViIGJ1aWxkX21lcmdlZCB7CiAgICBteSAoJGlub2RlX2RlY2wsICRkZXZfbGluZSwgJGlub19saW5lLCAkbm9tb3VudF9jYWxsLCAkcGdvZmZfbGluZSkgPSBAXzsKICAgIHJldHVybiAkaW5vZGVfZGVjbCAuICJcbiIgLiA8PCJDT0RFIjsKI2lmZGVmIENPTkZJR19LU1VfU1VTRlNfT1BFTl9SRURJUkVDVAoJCWlmIChTVVNGU19JU19JTk9ERV9PUEVOX1JFRElSRUNUKGlub2RlKSkgewoJCQljaGFyICpzcG9vZmVkX3JlZGlyZWN0ZWRfbmFtZSA9IE5VTEw7CgkJCWludCBzcmN1X2lkeCA9IHNyY3VfcmVhZF9sb2NrKCZzdXNmc19zcmN1X29wZW5fcmVkaXJlY3QpOwoJCQlpbnQgcmV0ID0gc3VzZnNfb3Blbl9yZWRpcmVjdF9zcG9vZl9zaG93X21hcF92bWFfc3JjdShpbm9kZSwgJmlubywgJmRldiwgJnNwb29mZWRfcmVkaXJlY3RlZF9uYW1lKTsKCQkJaWYgKCFyZXQpIHsKCQkJCXBnb2ZmID0gKChsb2ZmX3Qpdm1hLT52bV9wZ29mZikgPDwgUEFHRV9TSElGVDsKCQkJCXN0YXJ0ID0gdm1hLT52bV9zdGFydDsKCQkJCWVuZCA9IHZtYS0+dm1fZW5kOwoJCQkJc2hvd192bWFfaGVhZGVyX3ByZWZpeChtLCBzdGFydCwgZW5kLCBmbGFncywgcGdvZmYsIGRldiwgaW5vKTsKCQkJCXNlcV9wYWQobSwgJyAnKTsKCQkJCWlmIChzcG9vZmVkX3JlZGlyZWN0ZWRfbmFtZSkKCQkJCQlzZXFfcHV0cyhtLCBzcG9vZmVkX3JlZGlyZWN0ZWRfbmFtZSk7CgkJCQlzZXFfcHV0YyhtLCAnXFxuJyk7CgkJCQlzcmN1X3JlYWRfdW5sb2NrKCZzdXNmc19zcmN1X29wZW5fcmVkaXJlY3QsIHNyY3VfaWR4KTsKCQkJCXJldHVybjsKCQkJfQoJCQlzcmN1X3JlYWRfdW5sb2NrKCZzdXNmc19zcmN1X29wZW5fcmVkaXJlY3QsIHNyY3VfaWR4KTsKCQl9CiNlbmRpZiAvLyAjaWZkZWYgQ09ORklHX0tTVV9TVVNGU19PUEVOX1JFRElSRUNUCiNpZmRlZiBDT05GSUdfS1NVX1NVU0ZTX1NVU19NQVAKCQlpZiAoU1VTRlNfSVNfSU5PREVfU1VTX01BUChpbm9kZSkpCgkJCXJldHVybjsKI2VuZGlmIC8vICNpZmRlZiBDT05GSUdfS1NVX1NVU0ZTX1NVU19NQVAKCQkkZGV2X2xpbmUKCQkkaW5vX2xpbmUKI2lmZGVmIENPTkZJR19OT01PVU5UCgkJJG5vbW91bnRfY2FsbAojZW5kaWYKCQkkcGdvZmZfbGluZQojaWZkZWYgQ09ORklHX0tTVV9TVVNGU19TVVNfS1NUQVQKCQlzdXNmc19zdXNfa3N0YXRfc3Bvb2Zfc2hvd19tYXBfdm1hKGlub2RlLCAmZGV2LCAmaW5vKTsKI2VuZGlmIC8vICNpZmRlZiBDT05GSUdfS1NVX1NVU0ZTX1NVU19LU1RBVAoJfQpDT0RFCn0K" | base64 -d > /tmp/merge_task_mmu.pl
-            if perl /tmp/merge_task_mmu.pl; then
-              rm -f fs/proc/task_mmu.c.rej fs/proc/task_mmu.c.orig
-              # Satu-satunya penyebab exit code patch di atas bukan-0 sudah ditangani
-              # manual - reset supaya tidak dianggap gagal kalau tidak ada .rej lain.
-              PATCH_EXIT=0
-            else
-              echo "susfs: skrip resolusi manual GAGAL - lihat pesan di atas."
-            fi
-          fi
-
-          # Hanya .rej BARU (hasil patch di atas) yang relevan - baseline lama sudah dibersihkan.
-          REJ_FILES=$(find . -name '*.rej')
-          if [ -n "$REJ_FILES" ] || [ "$PATCH_EXIT" -ne 0 ]; then
-            echo "=================================================================="
-            echo "susfs: GAGAL menerapkan patch (exit patch=$PATCH_EXIT)."
-            echo "Ini WAJAR untuk source non-standar - perlu resolusi manual per file."
-            if [ -n "$REJ_FILES" ]; then
-              echo "Daftar & isi file .rej (kirim balik ini kalau minta bantuan lanjut):"
-              for f in $REJ_FILES; do
-                echo "---- $f ----"
-                cat "$f"
-              done
-            else
-              echo "Tidak ada file .rej tapi 'patch' tetap exit $PATCH_EXIT - kemungkinan"
-              echo "ada file target yang tidak ditemukan sama sekali. Lihat log 'patching"
-              echo "file ...' di atas, baris terakhir sebelum pesan ini adalah yang gagal."
-            fi
-            echo "=================================================================="
-            exit 1
-          fi
-          find . -name '*.orig' -delete
-
-          echo "== Lengkapi file susfs4ksu tambahan yang TIDAK dibuat oleh patch (cp -n) =="
-          mkdir -p fs include/linux
-          cp -vn /tmp/susfs4ksu/kernel_patches/fs/*.c fs/ 2>/dev/null || true
-          cp -vn /tmp/susfs4ksu/kernel_patches/include/linux/*.h include/linux/ 2>/dev/null || true
-
-          echo "== Ambil & jalankan susfs_inline_hook_patches.sh (untuk CONFIG_KSU_MANUAL_HOOK=y) =="
-          fetch_with_fallback "Patches/susfs_inline_hook_patches.sh" ./susfs_inline_hook_patches.sh || exit 1
-          chmod +x ./susfs_inline_hook_patches.sh
-          ./susfs_inline_hook_patches.sh
-
-          echo "== Verifikasi =="
-          test -f fs/susfs.c && echo "fs/susfs.c ADA"
-          test -f include/linux/susfs.h && echo "include/linux/susfs.h ADA"
-          grep -c 'CONFIG_KSU_SUSFS' fs/Makefile
-
-      - name: Perbaiki smap_gather_stats (efek samping hunk SUSFS, void tapi return 0)
-        working-directory: kernel
-        run: |
-          # Hunk SUSFS untuk SUS_MAP/SUS_KSTAT di fs/proc/task_mmu.c ditulis dengan
-          # asumsi smap_gather_stats() mengembalikan int, tapi di kernel 4.14 non-GKI
-          # ini fungsinya void - "return 0;" jadi tidak valid secara C
-          # (-Wreturn-type error). Skrip ini HANYA mengubah "return 0;" -> "return;"
-          # DI DALAM badan fungsi smap_gather_stats saja (dicari lewat pencocokan
-          # kurung kurawal) - fungsi lain di file yang sama yang memang int tidak disentuh.
-          echo "IyEvdXNyL2Jpbi9wZXJsCiMgUGVyYmFpa2kgZWZlayBzYW1waW5nIGh1bmsgU1VTRlMgZGkgZnMvcHJvYy90YXNrX21tdS5jOiBmdW5nc2kKIyBzbWFwX2dhdGhlcl9zdGF0cygpIGRpIGtlcm5lbCA0LjE0IG5vbi1HS0kgaW5pIFZPSUQsIHRhcGkgcGF0Y2ggU1VTRlMKIyAoZGl0dWxpcyB1bnR1ayBrZXJuZWwgdmVyc2kgbGFpbiB5YW5nIGZ1bmdzaW55YSByZXR1cm4gaW50KSBtZW55aXNpcGthbgojICJyZXR1cm4gMDsiIGRpIGRhbGFtbnlhIC0gdGlkYWsgdmFsaWQgc2VjYXJhIEMgdW50dWsgZnVuZ3NpIHZvaWQuCiMgUGVyYmFpa2FuIGluaSBIQU5ZQSBtZW5ndWJhaCAicmV0dXJuIDA7IiAtPiAicmV0dXJuOyIgREkgREFMQU0gYmFkYW4KIyBmdW5nc2kgc21hcF9nYXRoZXJfc3RhdHMgc2FqYSAoZGljYXJpIGxld2F0IHBlbmNvY29rYW4ga3VydW5nIGt1cmF3YWwpLAojIHN1cGF5YSB0aWRhayBzYWxhaCBrZW5hIGZ1bmdzaSBsYWluIGRpIGZpbGUgeWFuZyBzYW1hIHlhbmcgbWVtYW5nCiMgbWVuZ2VtYmFsaWthbiBpbnQuCnVzZSBzdHJpY3Q7CnVzZSB3YXJuaW5nczsKCm15ICRwYXRoID0gJ2ZzL3Byb2MvdGFza19tbXUuYyc7Cm9wZW4obXkgJGZoLCAnPCcsICRwYXRoKSBvciBkaWUgImZpeF9zbWFwX2dhdGhlcl9zdGF0czogdGlkYWsgYmlzYSBidWthICRwYXRoOiAkIVxuIjsKbG9jYWwgJC87Cm15ICRjb250ZW50ID0gPCRmaD47CmNsb3NlICRmaDsKCiMgQ2FyaSBkZWZpbmlzaSBmdW5nc2kgKGJhcmlzIHlhbmcgbWVuZ2FuZHVuZyBuYW1hIGZ1bmdzaSBkaWlrdXRpICcoJyBsYWx1ICd7JyBkaSBiYXJpcy9ibG9rIGJlcmlrdXRueWEpCmlmICgkY29udGVudCAhfiAvXGJzbWFwX2dhdGhlcl9zdGF0c1xzKlwoW147XSo/XClccypcbj9cey9zKSB7CiAgICBkaWUgImZpeF9zbWFwX2dhdGhlcl9zdGF0czogZGVmaW5pc2kgZnVuZ3NpIHNtYXBfZ2F0aGVyX3N0YXRzKCkgdGlkYWsgZGl0ZW11a2FuIGRpICRwYXRoLlxuIiAuCiAgICAgICAgIktlbXVuZ2tpbmFuIG5hbWEvc2lnbmF0dXJlIGJlcnViYWggLSBwZXJsdSBjZWsgbWFudWFsLlxuIjsKfQoKbXkgJHN0YXJ0ID0gJC1bMF07ICAgICAgIyBwb3Npc2kgYXdhbCBtYXRjaCAobXVsYWkgZGFyaSBuYW1hIGZ1bmdzaSkKbXkgJGJyYWNlX29wZW4gPSBpbmRleCgkY29udGVudCwgJ3snLCAkc3RhcnQpOwpkaWUgImZpeF9zbWFwX2dhdGhlcl9zdGF0czogdGlkYWsga2V0ZW11ICd7JyBwZW1idWthLlxuIiBpZiAkYnJhY2Vfb3BlbiA8IDA7CgojIEhpdHVuZyBrdXJ1bmcga3VyYXdhbCBiZXJwYXNhbmdhbiB1bnR1ayBtZW5lbXVrYW4gYWtoaXIgZnVuZ3NpCm15ICRkZXB0aCA9IDA7Cm15ICRwb3MgPSAkYnJhY2Vfb3BlbjsKbXkgJGVuZCA9IC0xOwpteSAkbGVuID0gbGVuZ3RoKCRjb250ZW50KTsKd2hpbGUgKCRwb3MgPCAkbGVuKSB7CiAgICBteSAkYyA9IHN1YnN0cigkY29udGVudCwgJHBvcywgMSk7CiAgICBpZiAoJGMgZXEgJ3snKSB7ICRkZXB0aCsrOyB9CiAgICBlbHNpZiAoJGMgZXEgJ30nKSB7CiAgICAgICAgJGRlcHRoLS07CiAgICAgICAgaWYgKCRkZXB0aCA9PSAwKSB7ICRlbmQgPSAkcG9zOyBsYXN0OyB9CiAgICB9CiAgICAkcG9zKys7Cn0KZGllICJmaXhfc21hcF9nYXRoZXJfc3RhdHM6IHRpZGFrIGtldGVtdSBwZW51dHVwIGZ1bmdzaSAoa3VydW5nIHRpZGFrIHNlaW1iYW5nKS5cbiIgaWYgJGVuZCA8IDA7CgpteSAkYm9keSA9IHN1YnN0cigkY29udGVudCwgJGJyYWNlX29wZW4sICRlbmQgLSAkYnJhY2Vfb3BlbiArIDEpOwpteSAkbl9iZWZvcmUgPSAoKSA9ICRib2R5ID1+IC9cYnJldHVyblxzKzBccyo7L2c7CgppZiAoJG5fYmVmb3JlID09IDApIHsKICAgIHByaW50ICJmaXhfc21hcF9nYXRoZXJfc3RhdHM6IHRpZGFrIGFkYSAncmV0dXJuIDA7JyBkaSBkYWxhbSBzbWFwX2dhdGhlcl9zdGF0cygpIC0gbXVuZ2tpbiBzdWRhaCBiZW5hciwgdGlkYWsgYWRhIHlhbmcgZGl1YmFoLlxuIjsKICAgIGV4aXQgMDsKfQoKKG15ICRuZXdfYm9keSA9ICRib2R5KSA9fiBzL1xicmV0dXJuXHMrMFxzKjsvcmV0dXJuOy9nOwoKc3Vic3RyKCRjb250ZW50LCAkYnJhY2Vfb3BlbiwgJGVuZCAtICRicmFjZV9vcGVuICsgMSkgPSAkbmV3X2JvZHk7CgpvcGVuKG15ICRvdXQsICc+JywgJHBhdGgpIG9yIGRpZSAiZml4X3NtYXBfZ2F0aGVyX3N0YXRzOiB0aWRhayBiaXNhIHR1bGlzICRwYXRoOiAkIVxuIjsKcHJpbnQgJG91dCAkY29udGVudDsKY2xvc2UgJG91dDsKcHJpbnQgImZpeF9zbWFwX2dhdGhlcl9zdGF0czogYmVyaGFzaWwgbWVuZ2dhbnRpICRuX2JlZm9yZSAncmV0dXJuIDA7JyAtPiAncmV0dXJuOycgZGkgZGFsYW0gc21hcF9nYXRoZXJfc3RhdHMoKVxuIjsK" | base64 -d > /tmp/fix_smap_gather_stats.pl
-          perl /tmp/fix_smap_gather_stats.pl
 
       - name: Tambal CVE-2026-43499 (GhostLock, rtmutex/futex UAF -> local root exploit)
         working-directory: kernel
@@ -316,17 +170,8 @@ jobs:
             echo "# ReSukiSU"
             echo "CONFIG_KSU=y"
             echo "CONFIG_KSU_MANUAL_HOOK=y"
+            echo "CONFIG_KALLSYMS=y"
             echo "CONFIG_KALLSYMS_ALL=y"
-            # Kernel ini 4.14 (jauh di bawah 6.8), jadi hook setresuid (yang benar-benar
-            # MEMBERI akses root) dan sys_read (injeksi init.rc) TIDAK ditempel manual
-            # di patch manual-hook yang tertanam - keduanya WAJIB tapi menurut dokumentasi
-            # resmi ReSukiSU (resukisu.github.io/guide/manual-integrate.html) untuk kernel
-            # <6.8 bisa otomatis lewat LSM/input-handler asal 3 flag ini dinyalakan.
-            # Tanpa ini, su_compat gagal & root tidak pernah benar-benar diberikan
-            # (proses "berhasil" exec ke su, tapi setresuid ke root tidak pernah disahkan).
-            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK=y"
-            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK=y"
-            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INPUT_HOOK=y"
             echo ""
             echo "# NoMount"
             echo "CONFIG_NOMOUNT=y"
@@ -334,20 +179,8 @@ jobs:
             echo "# Re:Kernel"
             echo "CONFIG_REKERNEL=y"
             echo ""
-            echo "# SUSFS (susfs4ksu kernel-4.14, non-GKI patch)"
-            echo "CONFIG_KSU_SUSFS=y"
-            echo "CONFIG_KSU_SUSFS_SUS_PATH=y"
-            echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y"
-            echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y"
-            echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y"
-            echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y"
-            echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y"
-            echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y"
-            echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y"
-            echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y"
-            echo "CONFIG_KSU_SUSFS_SUS_MAP=y"
           } >> "$DEF"
-          tail -25 "$DEF"
+          tail -22 "$DEF"
 
       - name: Ambil toolchain proton-clang (dipakai penulis kernel ini di b.sh)
         run: |
@@ -362,37 +195,6 @@ jobs:
           export KBUILD_BUILD_USER=github
           export KBUILD_BUILD_HOST=actions
           make O=out rosemary_defconfig
-          echo "== Verifikasi: apakah CONFIG_KSU_SUSFS* benar-benar tersimpan di .config final =="
-          # make defconfig TIDAK pernah error untuk symbol Kconfig yang tidak dikenali
-          # atau dependency yang belum terpenuhi - opsi seperti itu cuma diam-diam
-          # dibuang/di-set ke default. Ini mengecek hasil SEBENARNYA, bukan cuma
-          # apa yang kita tulis ke file defconfig.
-          SUSFS_OK=1
-          for CFG in CONFIG_KSU_SUSFS CONFIG_KSU_SUSFS_SUS_PATH CONFIG_KSU_SUSFS_SUS_MOUNT \
-                     CONFIG_KSU_SUSFS_SUS_KSTAT CONFIG_KSU_SUSFS_TRY_UMOUNT \
-                     CONFIG_KSU_SUSFS_SPOOF_UNAME CONFIG_KSU_SUSFS_ENABLE_LOG \
-                     CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
-                     CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
-                     CONFIG_KSU_SUSFS_OPEN_REDIRECT CONFIG_KSU_SUSFS_SUS_MAP; do
-            if grep -q "^${CFG}=y" out/.config; then
-              echo "  OK   $CFG=y"
-            else
-              echo "  HILANG $CFG (tidak =y di .config final - lihat baris grep di bawah untuk statusnya)"
-              grep "^# ${CFG}\|^${CFG}=" out/.config || echo "    (symbol ini bahkan tidak dikenali sama sekali oleh Kconfig)"
-              SUSFS_OK=0
-            fi
-          done
-          if [ "$SUSFS_OK" -eq 0 ]; then
-            echo "=================================================================="
-            echo "PERINGATAN: sebagian/semua CONFIG_KSU_SUSFS* tidak ter-set di .config final."
-            echo "Ini KEMUNGKINAN BESAR penyebab SUSFS tidak terdeteksi manager/modul di HP."
-            echo "Build tetap dilanjutkan (bukan menghentikan build) supaya kamu tetap dapat"
-            echo "kernel untuk di-test, tapi laporan ini WAJIB dikirim balik ke Claude."
-            echo "=================================================================="
-          else
-            echo "Semua CONFIG_KSU_SUSFS* tersimpan dengan benar di .config final."
-          fi
-
           set -o pipefail
           if ! make -k O=out -j"$(nproc)" \
                 ARCH=arm64 \
@@ -462,7 +264,6 @@ jobs:
 
           cp "${{ steps.kimg.outputs.path }}" "AnyKernel3/${{ steps.kimg.outputs.name }}"
 
-          ZIP="rosemary-sphinX-ReSukiSU-SUSFS-NoMount-ReKernel-AK3-${{ github.run_number }}.zip"
           ( cd AnyKernel3 && zip -r9 "../$ZIP" . -x '.git*' )
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
           unzip -l "$ZIP" | head -20
@@ -470,7 +271,6 @@ jobs:
       - name: Upload paket + kernel mentah + dtbo + nm CLI
         uses: actions/upload-artifact@v4
         with:
-          name: rosemary-kernel-ksu-susfs-nomount-rekernel-v3
           if-no-files-found: warn
           path: |
             ${{ env.ZIP }}
