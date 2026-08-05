@@ -362,6 +362,37 @@ jobs:
           export KBUILD_BUILD_USER=github
           export KBUILD_BUILD_HOST=actions
           make O=out rosemary_defconfig
+          echo "== Verifikasi: apakah CONFIG_KSU_SUSFS* benar-benar tersimpan di .config final =="
+          # make defconfig TIDAK pernah error untuk symbol Kconfig yang tidak dikenali
+          # atau dependency yang belum terpenuhi - opsi seperti itu cuma diam-diam
+          # dibuang/di-set ke default. Ini mengecek hasil SEBENARNYA, bukan cuma
+          # apa yang kita tulis ke file defconfig.
+          SUSFS_OK=1
+          for CFG in CONFIG_KSU_SUSFS CONFIG_KSU_SUSFS_SUS_PATH CONFIG_KSU_SUSFS_SUS_MOUNT \
+                     CONFIG_KSU_SUSFS_SUS_KSTAT CONFIG_KSU_SUSFS_TRY_UMOUNT \
+                     CONFIG_KSU_SUSFS_SPOOF_UNAME CONFIG_KSU_SUSFS_ENABLE_LOG \
+                     CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+                     CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
+                     CONFIG_KSU_SUSFS_OPEN_REDIRECT CONFIG_KSU_SUSFS_SUS_MAP; do
+            if grep -q "^${CFG}=y" out/.config; then
+              echo "  OK   $CFG=y"
+            else
+              echo "  HILANG $CFG (tidak =y di .config final - lihat baris grep di bawah untuk statusnya)"
+              grep "^# ${CFG}\|^${CFG}=" out/.config || echo "    (symbol ini bahkan tidak dikenali sama sekali oleh Kconfig)"
+              SUSFS_OK=0
+            fi
+          done
+          if [ "$SUSFS_OK" -eq 0 ]; then
+            echo "=================================================================="
+            echo "PERINGATAN: sebagian/semua CONFIG_KSU_SUSFS* tidak ter-set di .config final."
+            echo "Ini KEMUNGKINAN BESAR penyebab SUSFS tidak terdeteksi manager/modul di HP."
+            echo "Build tetap dilanjutkan (bukan menghentikan build) supaya kamu tetap dapat"
+            echo "kernel untuk di-test, tapi laporan ini WAJIB dikirim balik ke Claude."
+            echo "=================================================================="
+          else
+            echo "Semua CONFIG_KSU_SUSFS* tersimpan dengan benar di .config final."
+          fi
+
           set -o pipefail
           if ! make -k O=out -j"$(nproc)" \
                 ARCH=arm64 \
