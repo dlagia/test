@@ -317,6 +317,16 @@ jobs:
             echo "CONFIG_KSU=y"
             echo "CONFIG_KSU_MANUAL_HOOK=y"
             echo "CONFIG_KALLSYMS_ALL=y"
+            # Kernel ini 4.14 (jauh di bawah 6.8), jadi hook setresuid (yang benar-benar
+            # MEMBERI akses root) dan sys_read (injeksi init.rc) TIDAK ditempel manual
+            # di patch manual-hook yang tertanam - keduanya WAJIB tapi menurut dokumentasi
+            # resmi ReSukiSU (resukisu.github.io/guide/manual-integrate.html) untuk kernel
+            # <6.8 bisa otomatis lewat LSM/input-handler asal 3 flag ini dinyalakan.
+            # Tanpa ini, su_compat gagal & root tidak pernah benar-benar diberikan
+            # (proses "berhasil" exec ke su, tapi setresuid ke root tidak pernah disahkan).
+            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK=y"
+            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK=y"
+            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INPUT_HOOK=y"
             echo ""
             echo "# NoMount"
             echo "CONFIG_NOMOUNT=y"
@@ -337,7 +347,7 @@ jobs:
             echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y"
             echo "CONFIG_KSU_SUSFS_SUS_MAP=y"
           } >> "$DEF"
-          tail -22 "$DEF"
+          tail -25 "$DEF"
 
       - name: Ambil toolchain proton-clang (dipakai penulis kernel ini di b.sh)
         run: |
