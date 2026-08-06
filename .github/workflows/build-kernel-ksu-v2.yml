@@ -73,6 +73,21 @@ jobs:
           git clone --depth=1 -b rosemary-13 \
             https://github.com/dlagia/android_kernel_xiaomi_rosemary.git kernel
 
+      - name: Samakan SUBLEVEL dengan versi stock (4.14.186) - hasil temuan fsck.f2fs
+        working-directory: kernel
+        run: |
+          # fsck.f2fs vendor Xiaomi (biner terpisah, di luar build ini) hardcode
+          # "4.14.186-perf" sebagai versi kernel yang ia harapkan. Supaya uname -r
+          # kernel custom ini SAMA PERSIS dengan itu (bukan cuma LOCALVERSION-nya,
+          # tapi angka SUBLEVEL asli di Makefile), ubah di sini SEBELUM apa pun
+          # lain dibangun - supaya konsisten di seluruh proses compile & versi
+          # LINUX_VERSION_CODE yang dipakai kode sumber (masih di rentang 4.14.x
+          # yang sama, jadi tidak mempengaruhi cabang kondisional versi manapun
+          # di patch ReSukiSU/NoMount/Re-Kernel/CVE).
+          grep -n '^SUBLEVEL = ' Makefile
+          sed -i 's/^SUBLEVEL = .*/SUBLEVEL = 186/' Makefile
+          grep -n '^SUBLEVEL = ' Makefile
+
       - name: Integrasikan ReSukiSU (setup.sh terbaru)
         working-directory: kernel
         run: |
@@ -167,11 +182,10 @@ jobs:
           DEF=arch/arm64/configs/rosemary_defconfig
           {
             echo ""
-            echo "# Penamaan versi kernel - hilangkan branding kustom (sphinX-fern!)."
-            echo "# Tanda seru & nama kodenama kustom tidak standar untuk kernel produksi"
-            echo "# dan bisa jadi sinyal 'ini kernel custom' bagi app yang cek uname -r."
-            echo "# Kosongkan supaya uname -r cuma tampil '4.14.332' polos seperti kernel stock."
-            echo 'CONFIG_LOCALVERSION=""'
+            echo "# Penamaan versi kernel - samakan dengan string vendor stock (fsck.f2fs: 4.14.186-perf)."
+            echo "# Angka SUBLEVEL sudah diubah ke 186 di Makefile (step lebih awal);"
+            echo "# di sini cuma tinggal set suffix '-perf' supaya uname -r jadi '4.14.186-perf' persis."
+            echo 'CONFIG_LOCALVERSION="-perf"'
             echo "CONFIG_LOCALVERSION_AUTO=n"
             echo ""
             echo "# ReSukiSU"
