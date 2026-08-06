@@ -167,6 +167,13 @@ jobs:
           DEF=arch/arm64/configs/rosemary_defconfig
           {
             echo ""
+            echo "# Penamaan versi kernel - hilangkan branding kustom (sphinX-fern!)."
+            echo "# Tanda seru & nama kodenama kustom tidak standar untuk kernel produksi"
+            echo "# dan bisa jadi sinyal 'ini kernel custom' bagi app yang cek uname -r."
+            echo "# Kosongkan supaya uname -r cuma tampil '4.14.332' polos seperti kernel stock."
+            echo 'CONFIG_LOCALVERSION=""'
+            echo "CONFIG_LOCALVERSION_AUTO=n"
+            echo ""
             echo "# ReSukiSU"
             echo "CONFIG_KSU=y"
             echo "CONFIG_KSU_MANUAL_HOOK=y"
@@ -192,8 +199,14 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/clang-proton/bin:$PATH"
           export ARCH=arm64
           export SUBARCH=arm64
-          export KBUILD_BUILD_USER=github
-          export KBUILD_BUILD_HOST=actions
+          export KBUILD_BUILD_USER=build
+          export KBUILD_BUILD_HOST=kernel
+          # Timestamp build ditetapkan manual (bukan waktu build CI sebenarnya) supaya
+          # cocok dengan tanggal pembaruan keamanan yang ditampilkan di HP (2024-07-01).
+          # Format persis output 'date' asli Linux: nama hari/bulan singkatan 3 huruf,
+          # tanggal di-pad SPASI (bukan nol) kalau <10 - 1 Juli 2024 jatuh hari SENIN,
+          # bukan Sabtu, supaya hari & tanggal tetap konsisten satu sama lain.
+          export KBUILD_BUILD_TIMESTAMP="Mon Jul  1 17:32:55 CST 2024"
           make O=out rosemary_defconfig
           set -o pipefail
           if ! make -k O=out -j"$(nproc)" \
