@@ -149,6 +149,26 @@ jobs:
 
           grep -c 'rekernel_start_server' drivers/android/binder.c drivers/android/binder_alloc.c kernel/signal.c
 
+      - name: Integrasikan Baseband-guard (LSM anti-tulis baseband/boot chain)
+        working-directory: kernel
+        run: |
+          # https://github.com/vc-teahouse/Baseband-guard
+          # LSM ringan yang memblokir tulisan tak sah ke partisi/device node kritis
+          # (baseband, boot chain) di level kernel. Dipasang via setup.sh resmi milik
+          # proyek ini sendiri (pola sama seperti setup.sh ReSukiSU) - bukan patch
+          # tertanam manual, jadi selalu ambil versi terbaru tiap build.
+          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
+
+          # LSM baru harus didaftarkan ke daftar default LSM stack di security/Kconfig
+          # supaya benar-benar aktif tanpa perlu di-set manual lewat cmdline kernel.
+          # Ini command RESMI dari README proyek, khusus untuk build otomatis/CI
+          # (peringatan resmi: setup.sh --cleanup akan menghapus semua default LSM
+          # Kconfig kalau dijalankan, makanya proyeknya sendiri menyarankan sed
+          # langsung ini untuk skrip build otomatis, bukan menjalankan --cleanup).
+          grep -q 'baseband_guard' security/Kconfig && echo "baseband_guard: sudah terdaftar di default LSM list" || \
+            sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' security/Kconfig
+          grep -n 'baseband_guard' security/Kconfig || echo "baseband_guard: PERINGATAN - tidak ketemu di security/Kconfig setelah sed, cek manual"
+
       - name: Pra-compile - perbaikan build source MTK (verified reusable)
         working-directory: kernel
         run: |
@@ -200,8 +220,11 @@ jobs:
             echo "# Re:Kernel"
             echo "CONFIG_REKERNEL=y"
             echo ""
+            echo "# Baseband-guard"
+            echo "CONFIG_BBG=y"
+            echo ""
           } >> "$DEF"
-          tail -22 "$DEF"
+          tail -25 "$DEF"
 
       - name: Ambil toolchain proton-clang (dipakai penulis kernel ini di b.sh)
         run: |
