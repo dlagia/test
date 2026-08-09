@@ -17,145 +17,145 @@
         working-directory: kernel
         run: |
           cat > /tmp/apply_susfs_bridge.pl << 'PERLEOF'
-#!/usr/bin/perl
-use strict;
-use warnings;
-
-sub patch_file {
-    my ($path, $anchor_re, $build_insert, $expect_count, $label) = @_;
-    open(my $fh, '<', $path) or die "susfs-bridge: tidak bisa buka $path: $!\n";
-    local $/;
-    my $content = <$fh>;
-    close $fh;
-
-    my $n = () = $content =~ /$anchor_re/gs;
-    if ($n != $expect_count) {
-        die "susfs-bridge: anchor '$label' ketemu $n kali (harus $expect_count) di $path.\n" .
-            "Source kernel ini kemungkinan beda dari yang sudah dianalisis manual.\n" .
-            "Kirim balik isi fungsi terkait dari source asli supaya anchor disesuaikan.\n";
-    }
-
-    $content =~ s/($anchor_re)/$build_insert->($1)/ges;
-
-    open(my $out, '>', $path) or die "susfs-bridge: tidak bisa tulis $path: $!\n";
-    print $out $content;
-    close $out;
-    print "susfs-bridge: hook '$label' berhasil disisipkan ke $path\n";
-}
-
-# ---------- fs/exec.c ----------
-# 1) Deklarasi tambahan setelah extern ksu_handle_execveat yang sudah ada
-patch_file(
-    'fs/exec.c',
-    qr/extern int ksu_handle_execveat\(int \*fd, struct filename \*\*filename_ptr,\n\t\t\t\tvoid \*argv, void \*envp, int \*flags\);\n#endif/,
-    sub {
-        my $m = shift;
-        return $m . "\n" . <<'CODE';
-
-#ifdef CONFIG_KSU_SUSFS
-extern struct static_key_true ksu_su_compat_enabled;
-extern struct static_key_true susfs_is_sdcard_android_data_not_decrypted;
-extern bool __ksu_is_allow_uid_for_current(uid_t uid);
-extern int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
-				void *argv, void *envp, int *flags);
-#endif
-CODE
-    },
-    1,
-    'fs/exec.c extern decl',
-);
-
-# 2) Panggilan susfs-aware di KEDUA titik panggil ksu_handle_execveat yang sudah ada
-patch_file(
-    'fs/exec.c',
-    qr/\tksu_handle_execveat\(\(int \*\)AT_FDCWD, &filename, &argv, &envp, 0\);\n#endif/,
-    sub {
-        my $m = shift;
-        return $m . "\n" . <<'CODE';
-#ifdef CONFIG_KSU_SUSFS
-	if (likely(!susfs_is_current_proc_umounted())) {
-		if (static_branch_likely(&ksu_su_compat_enabled))
-			ksu_handle_execveat_sucompat((int *)AT_FDCWD, &filename, &argv, &envp, 0);
-	}
-#endif
-CODE
-    },
-    2,
-    'fs/exec.c call sites (do_execve + compat)',
-);
-
-# ---------- fs/open.c ----------
-patch_file(
-    'fs/open.c',
-    qr/extern int ksu_handle_faccessat\(int \*dfd, const char __user \*\*filename_user,\n\t\t\t\tint \*mode, int \*flags\);\n#endif/,
-    sub {
-        my $m = shift;
-        return $m . "\n" . <<'CODE';
-
-#ifdef CONFIG_KSU_SUSFS
-extern struct static_key_true ksu_su_compat_enabled;
-extern bool __ksu_is_allow_uid_for_current(uid_t uid);
-extern int ksu_handle_faccessat_sucompat(int *dfd, const char __user **filename_user,
-				int *mode, int *flags);
-#endif
-CODE
-    },
-    1,
-    'fs/open.c extern decl',
-);
-
-patch_file(
-    'fs/open.c',
-    qr/\tksu_handle_faccessat\(&dfd, &filename, &mode, NULL\);\n#endif/,
-    sub {
-        my $m = shift;
-        return $m . "\n" . <<'CODE';
-#ifdef CONFIG_KSU_SUSFS
-	if (likely(!susfs_is_current_proc_umounted())) {
-		if (static_branch_likely(&ksu_su_compat_enabled))
-			ksu_handle_faccessat_sucompat(&dfd, &filename, &mode, NULL);
-	}
-#endif
-CODE
-    },
-    1,
-    'fs/open.c call site',
-);
-
-# ---------- kernel/reboot.c ----------
-patch_file(
-    'kernel/reboot.c',
-    qr/extern int ksu_handle_sys_reboot\(int magic1, int magic2, unsigned int cmd, void __user \*\*arg\);\n#endif/,
-    sub {
-        my $m = shift;
-        return $m . "\n" . <<'CODE';
-
-#ifdef CONFIG_KSU_SUSFS
-extern int ksu_handle_sys_reboot_sucompat(int magic1, int magic2, unsigned int cmd, void __user **arg);
-#endif
-CODE
-    },
-    1,
-    'kernel/reboot.c extern decl',
-);
-
-patch_file(
-    'kernel/reboot.c',
-    qr/\tksu_handle_sys_reboot\(magic1, magic2, cmd, &arg\);\n#endif/,
-    sub {
-        my $m = shift;
-        return $m . "\n" . <<'CODE';
-#ifdef CONFIG_KSU_SUSFS
-	if (system_state == SYSTEM_RUNNING) {
-		ksu_handle_sys_reboot_sucompat(magic1, magic2, cmd, &arg);
-	}
-#endif
-CODE
-    },
-    1,
-    'kernel/reboot.c call site',
-);
-PERLEOF
+          #!/usr/bin/perl
+          use strict;
+          use warnings;
+          
+          sub patch_file {
+              my ($path, $anchor_re, $build_insert, $expect_count, $label) = @_;
+              open(my $fh, '<', $path) or die "susfs-bridge: tidak bisa buka $path: $!\n";
+              local $/;
+              my $content = <$fh>;
+              close $fh;
+          
+              my $n = () = $content =~ /$anchor_re/gs;
+              if ($n != $expect_count) {
+                  die "susfs-bridge: anchor '$label' ketemu $n kali (harus $expect_count) di $path.\n" .
+                      "Source kernel ini kemungkinan beda dari yang sudah dianalisis manual.\n" .
+                      "Kirim balik isi fungsi terkait dari source asli supaya anchor disesuaikan.\n";
+              }
+          
+              $content =~ s/($anchor_re)/$build_insert->($1)/ges;
+          
+              open(my $out, '>', $path) or die "susfs-bridge: tidak bisa tulis $path: $!\n";
+              print $out $content;
+              close $out;
+              print "susfs-bridge: hook '$label' berhasil disisipkan ke $path\n";
+          }
+          
+          # ---------- fs/exec.c ----------
+          # 1) Deklarasi tambahan setelah extern ksu_handle_execveat yang sudah ada
+          patch_file(
+              'fs/exec.c',
+              qr/extern int ksu_handle_execveat\(int \*fd, struct filename \*\*filename_ptr,\n\t\t\t\tvoid \*argv, void \*envp, int \*flags\);\n#endif/,
+              sub {
+                  my $m = shift;
+                  return $m . "\n" . <<'CODE';
+          
+          #ifdef CONFIG_KSU_SUSFS
+          extern struct static_key_true ksu_su_compat_enabled;
+          extern struct static_key_true susfs_is_sdcard_android_data_not_decrypted;
+          extern bool __ksu_is_allow_uid_for_current(uid_t uid);
+          extern int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
+          				void *argv, void *envp, int *flags);
+          #endif
+          CODE
+              },
+              1,
+              'fs/exec.c extern decl',
+          );
+          
+          # 2) Panggilan susfs-aware di KEDUA titik panggil ksu_handle_execveat yang sudah ada
+          patch_file(
+              'fs/exec.c',
+              qr/\tksu_handle_execveat\(\(int \*\)AT_FDCWD, &filename, &argv, &envp, 0\);\n#endif/,
+              sub {
+                  my $m = shift;
+                  return $m . "\n" . <<'CODE';
+          #ifdef CONFIG_KSU_SUSFS
+          	if (likely(!susfs_is_current_proc_umounted())) {
+          		if (static_branch_likely(&ksu_su_compat_enabled))
+          			ksu_handle_execveat_sucompat((int *)AT_FDCWD, &filename, &argv, &envp, 0);
+          	}
+          #endif
+          CODE
+              },
+              2,
+              'fs/exec.c call sites (do_execve + compat)',
+          );
+          
+          # ---------- fs/open.c ----------
+          patch_file(
+              'fs/open.c',
+              qr/extern int ksu_handle_faccessat\(int \*dfd, const char __user \*\*filename_user,\n\t\t\t\tint \*mode, int \*flags\);\n#endif/,
+              sub {
+                  my $m = shift;
+                  return $m . "\n" . <<'CODE';
+          
+          #ifdef CONFIG_KSU_SUSFS
+          extern struct static_key_true ksu_su_compat_enabled;
+          extern bool __ksu_is_allow_uid_for_current(uid_t uid);
+          extern int ksu_handle_faccessat_sucompat(int *dfd, const char __user **filename_user,
+          				int *mode, int *flags);
+          #endif
+          CODE
+              },
+              1,
+              'fs/open.c extern decl',
+          );
+          
+          patch_file(
+              'fs/open.c',
+              qr/\tksu_handle_faccessat\(&dfd, &filename, &mode, NULL\);\n#endif/,
+              sub {
+                  my $m = shift;
+                  return $m . "\n" . <<'CODE';
+          #ifdef CONFIG_KSU_SUSFS
+          	if (likely(!susfs_is_current_proc_umounted())) {
+          		if (static_branch_likely(&ksu_su_compat_enabled))
+          			ksu_handle_faccessat_sucompat(&dfd, &filename, &mode, NULL);
+          	}
+          #endif
+          CODE
+              },
+              1,
+              'fs/open.c call site',
+          );
+          
+          # ---------- kernel/reboot.c ----------
+          patch_file(
+              'kernel/reboot.c',
+              qr/extern int ksu_handle_sys_reboot\(int magic1, int magic2, unsigned int cmd, void __user \*\*arg\);\n#endif/,
+              sub {
+                  my $m = shift;
+                  return $m . "\n" . <<'CODE';
+          
+          #ifdef CONFIG_KSU_SUSFS
+          extern int ksu_handle_sys_reboot_sucompat(int magic1, int magic2, unsigned int cmd, void __user **arg);
+          #endif
+          CODE
+              },
+              1,
+              'kernel/reboot.c extern decl',
+          );
+          
+          patch_file(
+              'kernel/reboot.c',
+              qr/\tksu_handle_sys_reboot\(magic1, magic2, cmd, &arg\);\n#endif/,
+              sub {
+                  my $m = shift;
+                  return $m . "\n" . <<'CODE';
+          #ifdef CONFIG_KSU_SUSFS
+          	if (system_state == SYSTEM_RUNNING) {
+          		ksu_handle_sys_reboot_sucompat(magic1, magic2, cmd, &arg);
+          	}
+          #endif
+          CODE
+              },
+              1,
+              'kernel/reboot.c call site',
+          );
+          PERLEOF
           perl /tmp/apply_susfs_bridge.pl
           grep -c CONFIG_KSU_SUSFS fs/exec.c fs/open.c kernel/reboot.c
 
