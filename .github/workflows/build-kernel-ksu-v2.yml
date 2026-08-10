@@ -73,6 +73,21 @@ jobs:
           git clone --depth=1 -b rosemary-13 \
             https://github.com/dlagia/android_kernel_xiaomi_rosemary.git kernel
 
+      - name: Samakan SUBLEVEL dengan versi stock (4.14.186) - hasil temuan fsck.f2fs
+        working-directory: kernel
+        run: |
+          # fsck.f2fs vendor Xiaomi (biner terpisah, di luar build ini) hardcode
+          # "4.14.186-perf" sebagai versi kernel yang ia harapkan. Supaya uname -r
+          # kernel custom ini SAMA PERSIS dengan itu (bukan cuma LOCALVERSION-nya,
+          # tapi angka SUBLEVEL asli di Makefile), ubah di sini SEBELUM apa pun
+          # lain dibangun - supaya konsisten di seluruh proses compile & versi
+          # LINUX_VERSION_CODE yang dipakai kode sumber (masih di rentang 4.14.x
+          # yang sama, jadi tidak mempengaruhi cabang kondisional versi manapun
+          # di patch ReSukiSU/NoMount/Re-Kernel/CVE).
+          grep -n '^SUBLEVEL = ' Makefile
+          sed -i 's/^SUBLEVEL = .*/SUBLEVEL = 186/' Makefile
+          grep -n '^SUBLEVEL = ' Makefile
+
       - name: Integrasikan ReSukiSU (setup.sh terbaru)
         working-directory: kernel
         run: |
@@ -272,74 +287,6 @@ jobs:
           else:
               print("SKIP: kernel/utsname_sysctl.c sudah punya fixup")
           PYEOF
-
-      - name: Bangun ksu_susfs resmi SUSFS v2.2.0
-        run: |
-          set -e
-          # Gunakan tree SUSFS resmi; cari commit yang menaikkan ksu_module_susfs
-          # ke v2.2.0, lalu checkout commit tersebut agar helper tidak tercampur
-          # dengan versi 1.3.8 atau tree lain.
-          git clone --filter=blob:none --no-checkout \
-            https://gitlab.com/simonpunk/susfs4ksu.git susfs4ksu
-          cd susfs4ksu
-          git fetch --unshallow 2>/dev/null || true
-          SUSFS_COMMIT="$(git log --all --format='%H' -S'2.2.0' -- ksu_module_susfs/module.prop | head -1)"
-          [ -n "$SUSFS_COMMIT" ] || {
-            echo "GAGAL: commit SUSFS v2.2.0 tidak ditemukan"
-            exit 1
-          }
-          git checkout "$SUSFS_COMMIT"
-          echo "SUSFS v2.2.0 commit: $SUSFS_COMMIT"
-          grep -E '^(version|versionCode)=' ksu_module_susfs/module.prop || true
-
-          # build_ksu_susfs_tool.sh resmi SUSFS memakai ndk-build.
-          cd ..
-          curl -L --fail -o android-ndk.zip \
-            https://dl.google.com/android/repository/android-ndk-r27c-linux.zip
-          unzip -q android-ndk.zip
-          export ANDROID_NDK_ROOT="$GITHUB_WORKSPACE/android-ndk-r27c"
-          export PATH="$ANDROID_NDK_ROOT:$PATH"
-
-          cd susfs4ksu
-          chmod +x build_ksu_susfs_tool.sh
-          ./build_ksu_susfs_tool.sh
-
-          test -x ksu_module_susfs/tools/ksu_susfs_arm64
-          file ksu_module_susfs/tools/ksu_susfs_arm64
-
-      - name: Siapkan modul SUSFS 2.2.0 + spoof uname stock
-        run: |
-          set -e
-          rm -rf susfs-uname-module
-          cp -a susfs4ksu/ksu_module_susfs susfs-uname-module
-
-          # Pastikan helper yang dipaketkan adalah hasil build dari source SUSFS 2.2.0.
-          test -x susfs-uname-module/tools/ksu_susfs_arm64
-
-          # SUSFS sendiri mendokumentasikan set_uname pada post-fs-data.
-          # Target dibuat persis seperti string uname stock yang ingin ditiru.
-          python3 - <<'PYEOF'
-          from pathlib import Path
-          p = Path("susfs-uname-module/post-fs-data.sh")
-          s = p.read_text()
-          needle = 'SUSFS_BIN=/data/adb/ksu/bin/ksu_susfs\n'
-          cmd = 'SUSFS_BIN=/data/adb/ksu/bin/ksu_susfs\n\n# Stock uname spoof\n${SUSFS_BIN} set_uname "4.14.186-perf" "#1 SMP PREEMPT Tue Jul 1 10:22:58 UTC 2024"\n'
-          if needle not in s:
-              raise SystemExit("post-fs-data.sh: SUSFS_BIN anchor tidak ditemukan")
-          if 'set_uname "4.14.186-perf"' not in s:
-              s = s.replace(needle, cmd, 1)
-          p.write_text(s)
-          PYEOF
-
-          chmod 0755 susfs-uname-module/post-fs-data.sh
-          grep -n 'set_uname' susfs-uname-module/post-fs-data.sh
-
-          # Jangan biarkan template contoh yang membuat modul bergantung pada
-          # konfigurasi spoof lain; set_uname adalah satu-satunya aksi tambahan.
-          rm -f susfs-uname-module/.gitignore 2>/dev/null || true
-
-          ( cd susfs-uname-module && zip -r9 "../susfs4ksu-uname-v2.2.0.zip" . -x '.git*' )
-          unzip -l susfs4ksu-uname-v2.2.0.zip | head -80
 
       - name: Integrasikan NoMount (kernel-side, tertanam & terverifikasi)
         working-directory: kernel
@@ -573,7 +520,7 @@ jobs:
             echo "CONFIG_KSU_SUSFS_SUS_MAP=y"
             echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y"
             echo "CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y"
-            echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y"
+            echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=n"
             echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y"
             echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y"
             echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y"
@@ -614,8 +561,11 @@ jobs:
           export SUBARCH=arm64
           export KBUILD_BUILD_USER=build
           export KBUILD_BUILD_HOST=kernel
-          # Timestamp build dipertahankan dari workflow asli. Spoof uname stock dilakukan
-          # terpisah oleh SUSFS pada post-fs-data, jadi SUBLEVEL/source kernel tidak diubah.
+          # Timestamp build ditetapkan manual (bukan waktu build CI sebenarnya) supaya
+          # cocok dengan tanggal pembaruan keamanan yang ditampilkan di HP (2024-07-01).
+          # Format persis output 'date' asli Linux: nama hari/bulan singkatan 3 huruf,
+          # tanggal di-pad SPASI (bukan nol) kalau <10 - 1 Juli 2024 jatuh hari SENIN,
+          # bukan Sabtu, supaya hari & tanggal tetap konsisten satu sama lain.
           export KBUILD_BUILD_TIMESTAMP="Mon Jul  1 17:32:55 CST 2024"
           make O=out rosemary_defconfig
           set -o pipefail
