@@ -73,21 +73,6 @@ jobs:
           git clone --depth=1 -b rosemary-13 \
             https://github.com/dlagia/android_kernel_xiaomi_rosemary.git kernel
 
-      - name: Samakan SUBLEVEL dengan versi stock (4.14.186) - hasil temuan fsck.f2fs
-        working-directory: kernel
-        run: |
-          # fsck.f2fs vendor Xiaomi (biner terpisah, di luar build ini) hardcode
-          # "4.14.186-perf" sebagai versi kernel yang ia harapkan. Supaya uname -r
-          # kernel custom ini SAMA PERSIS dengan itu (bukan cuma LOCALVERSION-nya,
-          # tapi angka SUBLEVEL asli di Makefile), ubah di sini SEBELUM apa pun
-          # lain dibangun - supaya konsisten di seluruh proses compile & versi
-          # LINUX_VERSION_CODE yang dipakai kode sumber (masih di rentang 4.14.x
-          # yang sama, jadi tidak mempengaruhi cabang kondisional versi manapun
-          # di patch ReSukiSU/NoMount/Re-Kernel/CVE).
-          grep -n '^SUBLEVEL = ' Makefile
-          sed -i 's/^SUBLEVEL = .*/SUBLEVEL = 186/' Makefile
-          grep -n '^SUBLEVEL = ' Makefile
-
       - name: Integrasikan ReSukiSU (setup.sh terbaru)
         working-directory: kernel
         run: |
@@ -520,7 +505,7 @@ jobs:
             echo "CONFIG_KSU_SUSFS_SUS_MAP=y"
             echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y"
             echo "CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y"
-            echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=n"
+            echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y"
             echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y"
             echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y"
             echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y"
