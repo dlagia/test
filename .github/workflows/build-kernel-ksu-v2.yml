@@ -211,6 +211,83 @@ jobs:
           sed -i 's/^static const struct file_operations sel_handle_status_ops/const struct file_operations sel_handle_status_ops/' security/selinux/selinuxfs.c
           grep -n "^ssize_t (\*write_op\[\])\|^const struct file_operations sel_handle_status_ops" security/selinux/selinuxfs.c
 
+          # TEMUAN dari laporan detektor root/integrity: hook newuname() (kernel/sys.c)
+          # doang TIDAK CUKUP untuk CONFIG_KSU_SUSFS_SPOOF_UNAME. /proc/version dan
+          # /proc/sys/kernel/{osrelease,version} baca utsname() GLOBAL secara langsung,
+          # sama sekali tidak lewat hook newuname() - jadi uname() kelihatan spoofed
+          # sementara /proc/version tetap nunjukin release/build-date ASLI. Detektor yang
+          # membandingkan kedua sumber ini akan melihat MISMATCH dan flag "uname spoofing
+          # detected" + "futile hide (build date)" - persis gejala yang dilaporkan.
+          # Fix: /proc/version & kedua sysctl itu ikut overlay spoof yang sama supaya
+          # ketiganya konsisten, bukan cuma salah satu.
+          python3 - << 'PYEOF'
+          p = "fs/proc/version.c"
+          s = open(p).read()
+          if "susfs_spoof_uname" not in s:
+              anchor = ('static int version_proc_show(struct seq_file *m, void *v)\n'
+                         '{\n\tseq_printf(m, linux_proc_banner,\n'
+                         '\t\tutsname()->sysname,\n\t\tutsname()->release,\n\t\tutsname()->version);\n'
+                         '\treturn 0;\n}')
+              assert s.count(anchor) == 1, "anchor fs/proc/version.c tidak ketemu 1x - review manual"
+              new = ('#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME\n'
+                     'extern struct static_key_false susfs_is_uname_spoof_buffer_set;\n'
+                     'extern void susfs_spoof_uname(struct new_utsname* tmp);\n'
+                     '#endif\n\n'
+                     'static int version_proc_show(struct seq_file *m, void *v)\n'
+                     '{\n'
+                     '#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME\n'
+                     '\tstruct new_utsname tmp;\n\n'
+                     '\tmemcpy(&tmp, utsname(), sizeof(tmp));\n'
+                     '\tif (static_branch_likely(&susfs_is_uname_spoof_buffer_set))\n'
+                     '\t\tsusfs_spoof_uname(&tmp);\n'
+                     '\tseq_printf(m, linux_proc_banner,\n'
+                     '\t\ttmp.sysname,\n\t\ttmp.release,\n\t\ttmp.version);\n'
+                     '#else\n'
+                     '\tseq_printf(m, linux_proc_banner,\n'
+                     '\t\tutsname()->sysname,\n\t\tutsname()->release,\n\t\tutsname()->version);\n'
+                     '#endif\n'
+                     '\treturn 0;\n}')
+              open(p, "w").write(s.replace(anchor, new))
+              print("OK: fs/proc/version.c spoof overlay terpasang")
+          else:
+              print("SKIP: fs/proc/version.c sudah punya fixup")
+
+          p = "kernel/utsname_sysctl.c"
+          s = open(p).read()
+          if "susfs_spoof_uname" not in s:
+              inc_anchor = "#include <linux/wait.h>\n#include <linux/rwsem.h>"
+              assert s.count(inc_anchor) == 1, "anchor include utsname_sysctl.c tidak ketemu 1x - review manual"
+              s = s.replace(inc_anchor,
+                  "#include <linux/wait.h>\n#include <linux/rwsem.h>\n"
+                  "#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME\n"
+                  "extern struct static_key_false susfs_is_uname_spoof_buffer_set;\n"
+                  "extern void susfs_spoof_uname(struct new_utsname* tmp);\n"
+                  "#endif")
+              call_anchor = ("\tdown_read(&uts_sem);\n\tmemcpy(tmp_data, get_uts(table), sizeof(tmp_data));\n"
+                             "\tup_read(&uts_sem);\n\tr = proc_dostring(&uts_table, write, buffer, lenp, ppos);")
+              assert s.count(call_anchor) == 1, "anchor call utsname_sysctl.c tidak ketemu 1x - review manual"
+              s = s.replace(call_anchor,
+                  "\tdown_read(&uts_sem);\n\tmemcpy(tmp_data, get_uts(table), sizeof(tmp_data));\n"
+                  "\tup_read(&uts_sem);\n"
+                  "#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME\n"
+                  "\tif (!write && static_branch_likely(&susfs_is_uname_spoof_buffer_set) &&\n"
+                  "\t    (!strcmp(table->procname, \"osrelease\") || !strcmp(table->procname, \"version\"))) {\n"
+                  "\t\tstruct new_utsname spoofed;\n\n"
+                  "\t\tmemcpy(&spoofed, utsname(), sizeof(spoofed));\n"
+                  "\t\tsusfs_spoof_uname(&spoofed);\n"
+                  "\t\tif (!strcmp(table->procname, \"osrelease\"))\n"
+                  "\t\t\tmemcpy(tmp_data, spoofed.release, sizeof(tmp_data));\n"
+                  "\t\telse\n"
+                  "\t\t\tmemcpy(tmp_data, spoofed.version, sizeof(tmp_data));\n"
+                  "\t}\n"
+                  "#endif\n"
+                  "\tr = proc_dostring(&uts_table, write, buffer, lenp, ppos);")
+              open(p, "w").write(s)
+              print("OK: kernel/utsname_sysctl.c spoof overlay terpasang")
+          else:
+              print("SKIP: kernel/utsname_sysctl.c sudah punya fixup")
+          PYEOF
+
       - name: Integrasikan NoMount (kernel-side, tertanam & terverifikasi)
         working-directory: kernel
         run: |
@@ -357,15 +434,23 @@ jobs:
           # tertanam manual, jadi selalu ambil versi terbaru tiap build.
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
 
-          # LSM baru harus didaftarkan ke daftar default LSM stack di security/Kconfig
-          # supaya benar-benar aktif tanpa perlu di-set manual lewat cmdline kernel.
-          # Ini command RESMI dari README proyek, khusus untuk build otomatis/CI
-          # (peringatan resmi: setup.sh --cleanup akan menghapus semua default LSM
-          # Kconfig kalau dijalankan, makanya proyeknya sendiri menyarankan sed
-          # langsung ini untuk skrip build otomatis, bukan menjalankan --cleanup).
-          grep -q 'baseband_guard' security/Kconfig && echo "baseband_guard: sudah terdaftar di default LSM list" || \
-            sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' security/Kconfig
-          grep -n 'baseband_guard' security/Kconfig || echo "baseband_guard: PERINGATAN - tidak ketemu di security/Kconfig setelah sed, cek manual"
+          # LSM baru IDEALNYA didaftarkan ke daftar default LSM stack di security/Kconfig
+          # (mekanisme modern, kernel 5.1+). TAPI kernel 4.14 ini TIDAK PUNYA blok
+          # "config LSM" sama sekali (dikonfirmasi: grep '^config LSM$' security/Kconfig
+          # tidak ketemu apa pun) - itu memang konstruksi kernel baru, bukan hilang
+          # karena error. Baseband-guard sendiri sudah mendeteksi ini ("Modern LSM
+          # infrastructure not detected (pre-5.1 kernel style)") dan mendaftarkan diri
+          # lewat security_initcall(bbg_init) di baseband_guard.c - mekanisme lama yang
+          # TIDAK butuh entry di security/Kconfig sama sekali. Diverifikasi compile:
+          # build BBG sendiri mencetak "-- BBG was enabled!" tanpa sed ini pernah kena.
+          if grep -q '^config LSM$' security/Kconfig; then
+            grep -q 'baseband_guard' security/Kconfig && echo "baseband_guard: sudah terdaftar di default LSM list" || \
+              sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' security/Kconfig
+            grep -n 'baseband_guard' security/Kconfig || echo "baseband_guard: PERINGATAN - tidak ketemu di security/Kconfig setelah sed, cek manual"
+          else
+            echo "baseband_guard: kernel ini tidak punya blok 'config LSM' (gaya pre-5.1)"
+            echo "baseband_guard: registrasi otomatis lewat security_initcall() - tidak perlu sed Kconfig, ini NORMAL bukan error"
+          fi
 
       - name: Pra-compile - perbaikan build source MTK (verified reusable)
         working-directory: kernel
