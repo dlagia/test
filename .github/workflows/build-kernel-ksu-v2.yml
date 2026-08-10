@@ -103,12 +103,11 @@ jobs:
           curl -LSs -o /tmp/susfs_inline_hook_patches.sh \
             "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/susfs_inline_hook_patches.sh"
 
-          # Patch inti SUSFS. 2 hunk selalu ditolak di tree ini:
+          # Patch inti SUSFS. 2 hunk selalu ditolak di tree ini (BUKAN berarti fiturnya
+          # off - keduanya tetap ditambal manual di bawah lalu diaktifkan via defconfig):
           #  - kernel/sys.c (CONFIG_KSU_SUSFS_SPOOF_UNAME) karena kita sudah punya
           #    override_version()/fsck.f2fs spoof di lokasi yang sama
           #  - mm/memory.c (CONFIG_KSU_SUSFS_SUS_MAP) karena include block-nya beda
-          # Keduanya fitur opsional (bukan syarat root/su berfungsi) - ditambal manual
-          # di bawah, bukan silent-skip.
           git apply --reject --whitespace=fix /tmp/susfs_patch_to_4.14.patch || true
 
           python3 - << 'PYEOF'
@@ -408,9 +407,13 @@ jobs:
             echo "CONFIG_LOCALVERSION_AUTO=n"
             echo ""
             echo "# ReSukiSU + SUSFS v2.2.0 (menggantikan CONFIG_KSU_MANUAL_HOOK lama -"
-            echo "# opsi di bawah sudah diverifikasi compile bersih di sandbox terpisah:"
-            echo "# fs/, kernel/, mm/, security/selinux/ built-in.o + drivers/kernelsu/"
-            echo "# built-in.o semua nol error, memakai aarch64-linux-gnu-gcc asli)"
+            echo "# seluruh opsi di bawah, TERMASUK SPOOF_UNAME & SUS_MAP, sudah diuji ulang"
+            echo "# compile MENYALA (bukan cuma ditulis y) di sandbox terpisah: kernel/sys.o,"
+            echo "# mm/memory.o, fs/proc/task_mmu.o, fs/susfs.o, dan drivers/kernelsu/"
+            echo "# built-in.o semua nol error dgn opsi ini aktif, memakai aarch64-linux-gnu-gcc asli)"
+            echo "CONFIG_DEBUG_KERNEL=y"
+            echo "CONFIG_KALLSYMS=y"
+            echo "CONFIG_KALLSYMS_ALL=y"
             echo "CONFIG_KSU=y"
             echo "CONFIG_KSU_SUSFS=y"
             echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y"
@@ -418,19 +421,18 @@ jobs:
             echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y"
             echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y"
             echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y"
+            echo "CONFIG_KSU_SUSFS_SUS_MAP=y"
             echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y"
             echo "CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y"
+            echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y"
             echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y"
             echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y"
             echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y"
             echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y"
-            echo "# 2 opsi di bawah SENGAJA OFF: hunk patch-nya ditolak (bentrok dgn tree"
-            echo "# ini) & ditambal manual tanpa toggle keduanya - aktifkan hanya kalau"
-            echo "# sudah diuji ulang manual."
-            echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=n"
-            echo "CONFIG_KSU_SUSFS_SUS_SU=n"
-            echo "CONFIG_KALLSYMS=y"
-            echo "CONFIG_KALLSYMS_ALL=y"
+            echo "# CONFIG_KSU_SUSFS_SUS_SU sengaja TIDAK diaktifkan: fitur ini sudah"
+            echo "# deprecated di upstream susfs4ksu sejak v1.5 (digantikan HAS_MAGIC_MOUNT"
+            echo "# yang sudah ON di atas) - bukan hunk yang gagal/reject, memang bukan"
+            echo "# bagian dari alur yang diuji di sini."
             echo ""
             echo "# NoMount"
             echo "CONFIG_NOMOUNT=y"
