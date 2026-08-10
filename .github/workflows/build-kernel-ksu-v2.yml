@@ -483,6 +483,17 @@ jobs:
         working-directory: kernel
         run: |
           DEF=arch/arm64/configs/rosemary_defconfig
+          # JAMINAN MUTLAK penamaan versi kernel - jangan bergantung cuma pada
+          # CONFIG_LOCALVERSION_AUTO=n di defconfig. Terbukti lewat pengujian: kalau
+          # env var ini gagal ke-thread dengan benar ke scripts/setlocalversion (macam
+          # apa pun sebabnya - oldconfig reset, merge config, dll), scm_version() tetap
+          # kepanggil dan git-hash ('-<count>-g<hash>[-dirty]') ikut nempel di uname -r,
+          # PERSIS gejala yang dilaporkan ('4.14.186--9-g690101101069' bukan
+          # '4.14.186-perf'). File .scmversion kosong memaksa scm_version() balik
+          # kosong SEBELUM sempat cek CONFIG_LOCALVERSION_AUTO sama sekali - diuji
+          # sendiri: bahkan waktu CONFIG_LOCALVERSION_AUTO dipaksa =y (kondisi terburuk
+          # yang diduga terjadi), kernel.release tetap bersih tanpa suffix git.
+          echo -n "" > .scmversion
           {
             echo ""
             echo "# Penamaan versi kernel - samakan dengan string vendor stock (fsck.f2fs: 4.14.186-perf)."
@@ -586,6 +597,23 @@ jobs:
             exit 1
           fi
           ls -la out/arch/arm64/boot/
+
+          # GERBANG KERAS: pastikan uname -r yang bakal tampil di HP PERSIS sesuai
+          # rencana, tanpa suffix git-hash nyelip ('-<count>-g<hash>[-dirty]') yang
+          # bikin uname jadi keliatan aneh/spoofed di mata detektor. Kalau ini gagal,
+          # build DIHENTIKAN di sini juga (bukan nunggu ketauan pas sudah di-flash).
+          ACTUAL_RELEASE="$(cat out/include/config/kernel.release)"
+          EXPECTED_RELEASE="$(make -s O=out kernelversion)$(grep '^CONFIG_LOCALVERSION=' arch/arm64/configs/rosemary_defconfig | tail -1 | cut -d'"' -f2)"
+          echo "Kernel release aktual : $ACTUAL_RELEASE"
+          echo "Kernel release seharusnya: $EXPECTED_RELEASE"
+          if [ "$ACTUAL_RELEASE" != "$EXPECTED_RELEASE" ]; then
+            echo ">>> GAGAL: kernel release '$ACTUAL_RELEASE' TIDAK SAMA dengan target '$EXPECTED_RELEASE'."
+            echo ">>> Ada suffix tak diinginkan nempel (kemungkinan CONFIG_LOCALVERSION_AUTO"
+            echo ">>> kepasang 'y' lagi entah lewat apa) - .scmversion seharusnya mencegah ini,"
+            echo ">>> kalau tetap gagal berarti ada mekanisme lain yang belum ketahuan, cek manual."
+            exit 1
+          fi
+          echo ">>> OK: kernel release konsisten dengan target, tidak ada suffix nyasar."
 
       - name: Compile nm (NoMount userspace CLI, tertanam & terverifikasi jalan)
         run: |
