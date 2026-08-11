@@ -221,6 +221,38 @@ jobs:
           sed -i 's/^static const struct file_operations sel_handle_status_ops/const struct file_operations sel_handle_status_ops/' security/selinux/selinuxfs.c
           grep -n "^ssize_t (\*write_op\[\])\|^const struct file_operations sel_handle_status_ops" security/selinux/selinuxfs.c
 
+          # WORKAROUND bug branch auto-hook ReSukiSU (bukan bug patch SUSFS di atas):
+          # kernel/tools/auto_hook_detect.mk cek fs/stat.c, tidak nemu string
+          # "ksu_handle_newfstat_ret"/"ksu_handle_fstat64_ret" (memang bukan bagian dari
+          # susfs_inline_hook_patches.sh - itu hook TERPISAH utk syscall fstat/fstat64
+          # mentah, sekadar nambahin st_size biar folder modul KSU nggak ketauan), jadi
+          # otomatis nyalain -DKSU_HOOK_AUTO_NEWFSTAT_HOOK / -DKSU_HOOK_AUTO_FSTAT64_HOOK.
+          # Tapi implementasi fungsi itu di kernel/runtime/ksud_integration.c dibungkus
+          # "#ifdef CONFIG_KSU_MANUAL_HOOK" - yang SENGAJA kita matikan (defconfig pakai
+          # CONFIG_KSU_SUSFS=y). Auto-hook_detect.mk belum ngecek kondisi ini, jadi
+          # auto_hook.c manggil fungsi yang badannya kosong -> "undefined reference to
+          # `ksu_handle_newfstat_ret'"/"`ksu_handle_fstat64_ret'" pas linking vmlinux.
+          # Fix: taruh string itu di komentar fs/stat.c supaya grep auto_hook_detect.mk
+          # nemu (jadi ccflag TIDAK dinyalakan). Fitur yang kena imbas cuma kosmetik
+          # (padding st_size fstat/fstat64 mentah), TIDAK menyentuh root-grant inti
+          # (execve/faccessat/setresuid tetap lewat susfs_inline_hook_patches.sh normal).
+          if ! grep -q "ksu_handle_newfstat_ret" fs/stat.c; then
+            cat >> fs/stat.c << 'EOF'
+
+          /* WORKAROUND kernel/tools/auto_hook_detect.mk (branch auto-hook ReSukiSU):
+           * mencegah -DKSU_HOOK_AUTO_NEWFSTAT_HOOK / -DKSU_HOOK_AUTO_FSTAT64_HOOK dinyalakan
+           * karena implementasi ksu_handle_newfstat_ret/ksu_handle_fstat64_ret di
+           * kernel/runtime/ksud_integration.c cuma ada saat CONFIG_KSU_MANUAL_HOOK,
+           * sementara kernel ini pakai CONFIG_KSU_SUSFS. Referensi string saja (tidak
+           * dipanggil): ksu_handle_newfstat_ret ksu_handle_fstat64_ret
+           */
+          EOF
+            echo "OK: workaround newfstat/fstat64 auto-hook terpasang di fs/stat.c"
+          else
+            echo "SKIP: fs/stat.c sudah punya referensi ksu_handle_newfstat_ret"
+          fi
+          grep -n "ksu_handle_newfstat_ret\|ksu_handle_fstat64_ret" fs/stat.c
+
           # TEMUAN dari laporan detektor root/integrity: hook newuname() (kernel/sys.c)
           # doang TIDAK CUKUP untuk CONFIG_KSU_SUSFS_SPOOF_UNAME. /proc/version dan
           # /proc/sys/kernel/{osrelease,version} baca utsname() GLOBAL secara langsung,
