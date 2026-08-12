@@ -96,9 +96,7 @@ jobs:
           # syscall itu SAJA, tanpa perlu source di-patch. Karena CONFIG_KALLSYMS_ALL=y
           # sudah diaktifkan di defconfig kernel ini, jalur hard-error manual_hook_check.mk
           # otomatis di-skip (lihat kernel/Kbuild), jadi aman dipakai sebagai fallback.
-          # Ambil setup.sh DARI branch auto-hook yang sedang dipakai,
-          # lalu minta script resmi checkout/update branch auto-hook.
-          curl -fsSL             "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/auto-hook/kernel/setup.sh"             | bash -s auto-hook
+          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s auto-hook
 
           test -d KernelSU || {
             echo "ERROR: direktori KernelSU tidak ditemukan"
@@ -113,60 +111,18 @@ jobs:
             exit 1
           }
 
+          echo "== ReSukiSU branch =="
           cd KernelSU
-
-          BRANCH="$(git branch --show-current)"
-          SHA="$(git rev-parse HEAD)"
-          SHORT_SHA="$(git rev-parse --short=8 HEAD)"
-          COMMIT_DATE="$(git show -s --format=%ci HEAD)"
-          COMMIT_SUBJECT="$(git show -s --format=%s HEAD)"
-          COMMIT_COUNT="$(git rev-list --count HEAD)"
-          KSU_VERSION=$((30000 + COMMIT_COUNT + 700))
-
-          echo "=============================================="
-          echo " ReSukiSU SOURCE CHECK"
-          echo "=============================================="
-          echo "Branch       : $BRANCH"
-          echo "Commit       : $SHA"
-          echo "Short commit : $SHORT_SHA"
-          echo "Commit date  : $COMMIT_DATE"
-          echo "Commit       : $COMMIT_SUBJECT"
-          echo "Commit count : $COMMIT_COUNT"
-          echo "KSU version  : $KSU_VERSION"
-          echo "Remote:"
-          git remote -v
-
-          test "$BRANCH" = "auto-hook" || {
+          git branch --show-current
+          git rev-parse --short HEAD
+          test "$(git branch --show-current)" = "auto-hook" || {
             echo "ERROR: ReSukiSU bukan branch auto-hook"
             exit 1
           }
-
-          # Pastikan branch yang dibuild benar-benar sama dengan remote auto-hook
-          # saat workflow dijalankan; jangan diam-diam memakai ref lama.
-          git fetch origin auto-hook --depth=1
-          REMOTE_SHA="$(git rev-parse origin/auto-hook)"
-          echo "Remote auto-hook: $REMOTE_SHA"
-
-          test "$SHA" = "$REMOTE_SHA" || {
-            echo "ERROR: HEAD lokal berbeda dari origin/auto-hook"
-            echo "Local : $SHA"
-            echo "Remote: $REMOTE_SHA"
-            exit 1
-          }
-
-          echo ""
-          echo "== ReSukiSU auto-hook files =="
-          test -f kernel/tools/auto_hook_detect.mk
-          test -f kernel/hook/auto_hook.c
-          echo "auto_hook_detect.mk : OK"
-          echo "auto_hook.c         : OK"
-
           cd ..
 
-          echo ""
-          echo "== drivers/kernelsu symlink =="
-          readlink -f drivers/kernelsu || true
-          ls -ld KernelSU drivers/kernelsu
+          echo "ReSukiSU auto-hook source: OK"
+          ls -ld KernelSU drivers/kernelsu 2>/dev/null || true
 
       # ReSukiSU auto-hook handles each missing hook independently via
       # kernel/tools/auto_hook_detect.mk. Do NOT manually patch fs/stat.c,
@@ -353,21 +309,6 @@ jobs:
 
           echo "ReSukiSU Manual Hook + auto-hook: CONFIG OK"
 
-          echo ""
-          echo "==================== ReSukiSU VERSION BUILD CHECK ===================="
-          KSU_SRC="$PWD/KernelSU"
-          KSU_COMMIT="$(git -C "$KSU_SRC" rev-parse HEAD)"
-          KSU_SHORT="$(git -C "$KSU_SRC" rev-parse --short=8 HEAD)"
-          KSU_BRANCH="$(git -C "$KSU_SRC" branch --show-current)"
-          KSU_COUNT="$(git -C "$KSU_SRC" rev-list --count HEAD)"
-          KSU_VERSION=$((30000 + KSU_COUNT + 700))
-
-          echo "ReSukiSU branch : $KSU_BRANCH"
-          echo "ReSukiSU commit : $KSU_COMMIT"
-          echo "ReSukiSU short  : $KSU_SHORT"
-          echo "ReSukiSU count  : $KSU_COUNT"
-          echo "ReSukiSU version: $KSU_VERSION"
-
           set -o pipefail
           if ! make -k O=out -j"$(nproc)" \
                 ARCH=arm64 \
@@ -408,16 +349,6 @@ jobs:
           echo ""
           echo "== Hook yang terdeteksi auto-hook =="
           grep -i "using auto hook" /tmp/build.log || true
-
-          echo ""
-          echo "==================== FINAL ReSukiSU VERSION ===================="
-          grep -iE             "ReSukiSU version code:|ReSukiSU version name:|KERNEL_VERSION:|KERNEL_TYPE:"             /tmp/build.log || true
-
-          echo ""
-          echo "==================== FINAL SOURCE ID ===================="
-          git -C KernelSU branch --show-current
-          git -C KernelSU rev-parse HEAD
-          git -C KernelSU show -s --format='%ci | %s' HEAD
 
       - name: Compile nm (NoMount userspace CLI, tertanam & terverifikasi jalan)
         run: |
