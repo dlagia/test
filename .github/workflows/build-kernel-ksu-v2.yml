@@ -112,8 +112,15 @@ jobs:
 
           echo "== ReSukiSU branch =="
           cd KernelSU
-          git branch --show-current
-          git rev-parse --short HEAD
+          echo "Branch: $(git branch --show-current)"
+          echo "Commit: $(git rev-parse HEAD)"
+          echo "Short commit: $(git rev-parse --short HEAD)"
+          echo "Git status setelah setup.sh:"
+          git status --short
+          echo "Git diff stat setelah setup.sh:"
+          git diff --stat || true
+          echo "Git describe:"
+          git describe --always --dirty
           test "$(git branch --show-current)" = "auto-hook" || {
             echo "ERROR: ReSukiSU bukan branch auto-hook"
             exit 1
