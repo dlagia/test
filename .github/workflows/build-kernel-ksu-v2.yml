@@ -417,15 +417,37 @@ jobs:
           # tertanam manual, jadi selalu ambil versi terbaru tiap build.
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
 
-          # LSM baru harus didaftarkan ke daftar default LSM stack di security/Kconfig
-          # supaya benar-benar aktif tanpa perlu di-set manual lewat cmdline kernel.
-          # Ini command RESMI dari README proyek, khusus untuk build otomatis/CI
-          # (peringatan resmi: setup.sh --cleanup akan menghapus semua default LSM
-          # Kconfig kalau dijalankan, makanya proyeknya sendiri menyarankan sed
-          # langsung ini untuk skrip build otomatis, bukan menjalankan --cleanup).
-          grep -q 'baseband_guard' security/Kconfig && echo "baseband_guard: sudah terdaftar di default LSM list" || \
-            sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' security/Kconfig
-          grep -n 'baseband_guard' security/Kconfig || echo "baseband_guard: PERINGATAN - tidak ketemu di security/Kconfig setelah sed, cek manual"
+          # Verifikasi 3 perubahan yang SEHARUSNYA sudah dibuat setup.sh sendiri:
+          # symlink security/baseband-guard, entri "source" di security/Kconfig,
+          # dan baris obj-$(CONFIG_BBG) di security/Makefile.
+          [ -L security/baseband-guard ] && echo "baseband_guard: symlink security/baseband-guard terpasang" \
+            || echo "baseband_guard: PERINGATAN - symlink security/baseband-guard tidak ditemukan, cek manual"
+          grep -q 'source "security/baseband-guard/Kconfig"' security/Kconfig && echo "baseband_guard: source Kconfig terdaftar" \
+            || echo "baseband_guard: PERINGATAN - baris source Kconfig tidak ditemukan, cek manual"
+          grep -q 'baseband-guard/' security/Makefile && echo "baseband_guard: entri Makefile (obj-\$(CONFIG_BBG)) terdaftar" \
+            || echo "baseband_guard: PERINGATAN - entri Makefile tidak ditemukan, cek manual"
+
+          # CATATAN penting soal README resmi proyek: sed CONFIG_LSM di README
+          #   sed -i '/^config LSM$/,/^help$/{ ... s/selinux/selinux,baseband_guard/ }' security/Kconfig
+          # itu HANYA berlaku untuk kernel modern (GKI/5.1+) yang punya blok
+          # "config LSM" dengan daftar default LSM yang bisa di-stack. Kernel 4.14
+          # non-GKI ini masih pakai skema LSM lama (satu security module lewat
+          # CONFIG_DEFAULT_SECURITY_*), jadi blok "config LSM" itu memang TIDAK ADA
+          # di security/Kconfig kernel ini - sed di atas gagal menemukannya BUKAN
+          # karena BBG gagal terpasang, melainkan karena skema itu tidak relevan
+          # di kernel ini. setup.sh sendiri sudah mendeteksi kondisi ini lewat
+          # keberadaan `#define DEFINE_LSM(lsm)` di include/linux/lsm_hooks.h; kalau
+          # tidak ada (pre-5.1 style, kasus kernel 4.14 ini), ia otomatis menempel
+          # BBG langsung ke SELinux (patch security/selinux/Makefile +
+          # security/selinux/include/objsec.h, plus symlink bbg_tracing.h) alih-alih
+          # lewat mekanisme CONFIG_LSM stacking. Maka yang perlu diverifikasi di
+          # kernel ini adalah jalur SELinux-patch itu, bukan string "baseband_guard"
+          # di security/Kconfig:
+          if [ -f security/selinux/Makefile.bak ] && [ -f security/selinux/include/objsec.h.bak ]; then
+            echo "baseband_guard: patch SELinux utk kernel non-modern-LSM berhasil diterapkan"
+          else
+            echo "baseband_guard: PERINGATAN - patch SELinux (Makefile.bak/objsec.h.bak) tidak ditemukan, cek manual"
+          fi
 
       - name: Pra-compile - perbaikan build source MTK (verified reusable)
         working-directory: kernel
