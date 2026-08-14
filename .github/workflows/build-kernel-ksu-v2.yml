@@ -112,15 +112,8 @@ jobs:
 
           echo "== ReSukiSU branch =="
           cd KernelSU
-          echo "Branch: $(git branch --show-current)"
-          echo "Commit: $(git rev-parse HEAD)"
-          echo "Short commit: $(git rev-parse --short HEAD)"
-          echo "Git status setelah setup.sh:"
-          git status --short
-          echo "Git diff stat setelah setup.sh:"
-          git diff --stat || true
-          echo "Git describe:"
-          git describe --always --dirty
+          git branch --show-current
+          git rev-parse --short HEAD
           test "$(git branch --show-current)" = "auto-hook" || {
             echo "ERROR: ReSukiSU bukan branch auto-hook"
             exit 1
@@ -138,27 +131,50 @@ jobs:
         working-directory: kernel
         run: |
           # NoMount branch: maxsteeel/nomount experimental/hookless
-          # Untuk kernel 4.14 branch ini menyediakan patch integrasi minimal:
-          # hanya fs/Kconfig + fs/Makefile. Tidak lagi menyuntik hook manual
-          # ke fs/namei.c, fs/dcache.c, fs/readdir.c, fs/stat.c, dst.
-          #
-          # Source kernel NoMount dan userspace CLI diambil LANGSUNG dari branch
-          # yang sama agar API kernel <-> nm tetap sinkron.
+          # Ikuti struktur resmi branch ini untuk kernel 4.14:
+          #   fs/nomount -> ../NoMount/kernel/src
+          #   fs/Kconfig -> source "fs/nomount/Kconfig"
+          #   fs/Makefile -> obj-$(CONFIG_NOMOUNT) += nomount/
+          # Tidak menyalin nomount.c/nomount.h langsung ke fs/.
+          # Tidak menyuntik hook manual ke fs/namei.c, fs/dcache.c,
+          # fs/readdir.c, fs/stat.c, fs/proc/task_mmu.c, atau fs/statfs.c.
+
+          rm -rf NoMount
           git clone --depth=1 -b experimental/hookless \
-            https://github.com/maxsteeel/nomount.git /tmp/nomount
+            https://github.com/maxsteeel/nomount.git NoMount
 
-          cp /tmp/nomount/kernel/src/nomount.c fs/nomount.c
-          cp /tmp/nomount/kernel/src/nomount.h fs/nomount.h
+          # Pastikan source branch yang dipakai benar-benar memiliki
+          # layout kernel/src yang diharapkan oleh patch 4.14.
+          test -s NoMount/kernel/src/Kconfig
+          test -s NoMount/kernel/src/Makefile
+          test -s NoMount/kernel/src/nomount.c
+          test -s NoMount/kernel/src/nomount.h
 
-          git apply --verbose /tmp/nomount/kernel/patches/nomount_4.14_kernel_integration.patch
+          # fs/nomount adalah symlink ke kernel/src, sesuai setup.sh resmi.
+          rm -rf fs/nomount
+          ln -s ../NoMount/kernel/src fs/nomount
+
+          # Terapkan patch integrasi resmi 4.14 dari branch experimental/hookless.
+          git apply --verbose NoMount/kernel/patches/nomount_4.14_kernel_integration.patch
 
           echo "==================== NoMount HOOKLESS ===================="
-          grep -n 'config NOMOUNT' fs/Kconfig
-          grep -n 'obj-$(CONFIG_NOMOUNT).*nomount.o' fs/Makefile
-          test -s fs/nomount.c
-          test -s fs/nomount.h
+          echo "NoMount source: $(readlink -f fs/nomount)"
+          echo "NoMount commit: $(git -C NoMount rev-parse --short HEAD)"
+          echo ""
+          echo "== fs/Kconfig =="
+          grep -nF 'source "fs/nomount/Kconfig"' fs/Kconfig
+          echo "== fs/Makefile =="
+          grep -nF 'obj-$(CONFIG_NOMOUNT) += nomount/' fs/Makefile
+          echo "== NoMount source =="
+          test -L fs/nomount
+          test -s fs/nomount/Kconfig
+          test -s fs/nomount/Makefile
+          test -s fs/nomount/nomount.c
+          test -s fs/nomount/nomount.h
+          grep -n '^config NOMOUNT' fs/nomount/Kconfig
+          grep -n 'obj-$(CONFIG_NOMOUNT).*nomount.o' fs/nomount/Makefile
 
-          # Pastikan patch hook lama TIDAK ikut masuk ke source.
+          # Pastikan hook NoMount lama TIDAK ikut masuk ke source kernel.
           if grep -R -nE 'nomount_hooks.patch|nomount_handle_(getname|permission|dpath|iterate_dir|getattr)|nomount_spoof_(mmap_metadata|statfs)' \
               fs/namei.c fs/dcache.c fs/readdir.c fs/stat.c fs/proc/task_mmu.c fs/statfs.c 2>/dev/null; then
             echo "ERROR: hook NoMount lama masih terdeteksi di source kernel"
