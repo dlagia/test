@@ -143,6 +143,10 @@ jobs:
               Path(path).write_text(data)
 
           def function_bounds(s, sig, label):
+              # sig sekarang hanya perlu menemukan awal fungsi/macro.
+              # Jangan mensyaratkan format signature atau posisi "{" karena
+              # kernel 4.14 sering membungkus parameter syscall ke beberapa
+              # baris.
               m = re.search(sig, s, re.MULTILINE)
               if not m:
                   fail(f"fungsi {label!r} tidak ditemukan")
@@ -150,13 +154,15 @@ jobs:
               if brace < 0:
                   fail(f"body {label!r} tidak ditemukan")
               depth = 0
-              for i in range(brace, len(s)):
+              i = brace
+              while i < len(s):
                   if s[i] == "{":
                       depth += 1
                   elif s[i] == "}":
                       depth -= 1
                       if depth == 0:
                           return m.start(), brace, i + 1
+                  i += 1
               fail(f"akhir body {label!r} tidak ditemukan")
 
           def insert_after_open(path, sig, code, marker, label):
@@ -274,7 +280,7 @@ jobs:
               )
               body = s[brace + 1:end - 1]
               m = re.search(
-                  r'^[ \t]*return[ \t]+do_execveat_common\(AT_FDCWD,[^\n]*\);',
+                  r'^[ \t]*return[ \t]+do_execveat_common\(AT_FDCWD,[\s\S]*?\);',
                   body, re.MULTILINE
               )
               if not m:
