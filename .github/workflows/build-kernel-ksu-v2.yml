@@ -22,9 +22,10 @@
 # SAMA seperti Fase 1. Kernel ini basis sama dengan yang sudah terbukti
 # boot, tapi NoMount menyentuh VFS inti - tetap test dulu.
 #
-# ReSukiSU diintegrasikan melalui setup.sh branch auto-hook. Untuk kernel
-# 4.14, gunakan CONFIG_KSU_MANUAL_HOOK=y; auto_hook_detect.mk menangani
-# hook yang belum tersedia di source tanpa patch manual fs/*.c/reboot.c.
+# ReSukiSU diintegrasikan mengikuti setup.sh resmi branch main.
+# Untuk kernel 4.14 digunakan CONFIG_KSU_MANUAL_HOOK=y dan manual hooks
+# yang diwajibkan oleh manual_hook_check.mk. Hook otomatis LSM hanya dipakai
+# untuk input/setuid/initrc sesuai kemampuan kernel 4.14.
 # Patch lain (NoMount/Re:Kernel/CVE/Baseband) tetap dipisahkan dari ReSukiSU.
 #
 # Re:Kernel (github.com/Sakion-Team/Re-Kernel): membuka netlink server
@@ -84,48 +85,324 @@ jobs:
           sed -i 's/^SUBLEVEL = .*/SUBLEVEL = 186/' Makefile
           grep -n '^SUBLEVEL = ' Makefile
 
-      - name: Integrasikan ReSukiSU (branch auto-hook)
+      - name: Integrasikan ReSukiSU resmi (branch main)
         working-directory: kernel
         run: |
-          # Branch "auto-hook" ReSukiSU: tetap pakai CONFIG_KSU_MANUAL_HOOK=y (tidak
-          # perlu diubah), tapi Kbuild-nya menambahkan lapisan fallback: kernel/tools/
-          # auto_hook_detect.mk mengecek tiap syscall (fs/exec.c, fs/stat.c, fs/open.c,
-          # kernel/reboot.c, dst) - kalau simbol hook manual TIDAK ditemukan di source,
-          # ia otomatis pasang inline-hook runtime (kernel/hook/auto_hook.c) untuk
-          # syscall itu SAJA, tanpa perlu source di-patch. Karena CONFIG_KALLSYMS_ALL=y
-          # sudah diaktifkan di defconfig kernel ini, jalur hard-error manual_hook_check.mk
-          # otomatis di-skip (lihat kernel/Kbuild), jadi aman dipakai sebagai fallback.
-          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s auto-hook
+          # Gunakan setup.sh RESMI ReSukiSU tanpa branch Manual Hook.
+          # setup.sh resmi saat ini:
+          #   - clone https://github.com/ReSukiSU/ReSukiSU -> KernelSU
+          #   - checkout main
+          #   - symlink drivers/kernelsu -> KernelSU/kernel
+          #   - menambahkan Kconfig/Makefile integration
+          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
 
           test -d KernelSU || {
             echo "ERROR: direktori KernelSU tidak ditemukan"
             exit 1
           }
-          test -f KernelSU/kernel/tools/auto_hook_detect.mk || {
-            echo "ERROR: auto_hook_detect.mk tidak ditemukan"
-            exit 1
-          }
-          test -f KernelSU/kernel/hook/auto_hook.c || {
-            echo "ERROR: kernel/hook/auto_hook.c tidak ditemukan"
+          test -L drivers/kernelsu || {
+            echo "ERROR: drivers/kernelsu bukan symlink hasil setup.sh resmi"
             exit 1
           }
 
-          echo "== ReSukiSU branch =="
+          echo "==================== ReSukiSU SOURCE ===================="
           cd KernelSU
-          git branch --show-current
-          git rev-parse --short HEAD
-          test "$(git branch --show-current)" = "auto-hook" || {
-            echo "ERROR: ReSukiSU bukan branch auto-hook"
+          echo "branch : $(git branch --show-current)"
+          echo "commit : $(git rev-parse HEAD)"
+          echo "short  : $(git rev-parse --short HEAD)"
+          echo "date   : $(git log -1 --format=%ci)"
+          echo "subject: $(git log -1 --format=%s)"
+          test "$(git branch --show-current)" = "main" || {
+            echo "ERROR: ReSukiSU harus berasal dari branch main resmi"
             exit 1
           }
           cd ..
 
-          echo "ReSukiSU auto-hook source: OK"
-          ls -ld KernelSU drivers/kernelsu 2>/dev/null || true
+          echo "ReSukiSU official main source: OK"
+          readlink -f drivers/kernelsu
 
-      # ReSukiSU auto-hook handles each missing hook independently via
-      # kernel/tools/auto_hook_detect.mk. Do NOT manually patch fs/stat.c,
-      # fs/open.c, fs/exec.c, or kernel/reboot.c here.
+      - name: Terapkan Manual Hook ReSukiSU untuk kernel 4.14
+        working-directory: kernel
+        run: |
+          # ReSukiSU resmi TIDAK memakai Manual Hook branch di sini.
+          # manual_hook_check.mk akan memeriksa hook yang diwajibkan.
+          #
+          # Untuk kernel 4.14 rosemary ini, hook yang wajib dipasang manual:
+          #   fs/stat.c      : ksu_handle_stat
+          #                    ksu_handle_newfstat_ret
+          #                    ksu_handle_fstat64_ret
+          #   fs/exec.c      : ksu_handle_execveat
+          #   fs/open.c      : ksu_handle_faccessat
+          #   kernel/reboot.c: ksu_handle_sys_reboot
+          #
+          # Input/setuid/initrc dapat menggunakan LSM auto hooks pada kernel
+          # lama, sehingga diaktifkan lewat CONFIG_KSU_MANUAL_HOOK_AUTO_*.
+          #
+          # Pola patch di bawah mengikuti dokumentasi resmi ReSukiSU
+          # manual-integrate dan gagal keras bila anchor source berubah.
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new, label):
+              p = Path(path)
+              s = p.read_text()
+              n = s.count(old)
+              if n != 1:
+                  raise SystemExit(
+                      f"ERROR: anchor {label!r} di {path} ditemukan {n} kali; "
+                      "source kernel berbeda dari layout yang diharapkan."
+                  )
+              p.write_text(s.replace(old, new, 1))
+
+          # ------------------------------------------------------------
+          # fs/stat.c
+          # ------------------------------------------------------------
+          replace_once(
+              "fs/stat.c",
+              """SYSCALL_DEFINE2(newlstat, const char __user *, filename,
+                          struct stat __user *, statbuf)
+          {""",
+              """#ifdef CONFIG_KSU_MANUAL_HOOK
+          __attribute__((hot))
+          extern int ksu_handle_stat(int *dfd, const char __user **filename_user,
+                                      int *flags);
+          extern void ksu_handle_newfstat_ret(unsigned int *fd,
+                                               struct stat __user **statbuf_ptr);
+          #if defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_COMPAT_STAT64)
+          extern void ksu_handle_fstat64_ret(unsigned long *fd,
+                                              struct stat64 __user **statbuf_ptr);
+          #endif
+          #endif
+
+          SYSCALL_DEFINE2(newlstat, const char __user *, filename,
+                          struct stat __user *, statbuf)
+          {""",
+              "stat declarations",
+          )
+
+          replace_once(
+              "fs/stat.c",
+              """\terror = vfs_fstatat(dfd, filename, &stat, flag);
+          \tif (error)
+          \t\treturn error;
+          \treturn cp_new_stat(&stat, statbuf);
+          }
+          #endif""",
+              """#ifdef CONFIG_KSU_MANUAL_HOOK
+          \tksu_handle_stat(&dfd, &filename, &flag);
+          #endif
+          \terror = vfs_fstatat(dfd, filename, &stat, flag);
+          \tif (error)
+          \t\treturn error;
+          \treturn cp_new_stat(&stat, statbuf);
+          }
+          #endif""",
+              "newfstatat hook",
+          )
+
+          replace_once(
+              "fs/stat.c",
+              """\tif (!error)
+          \t\terror = cp_new_stat(&stat, statbuf);
+
+          \treturn error;
+          }
+
+          #if defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_COMPAT_STAT64)""",
+              """\tif (!error)
+          \t\terror = cp_new_stat(&stat, statbuf);
+
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          \tksu_handle_newfstat_ret(&fd, &statbuf);
+          #endif
+          \treturn error;
+          }
+
+          #if defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_COMPAT_STAT64)""",
+              "newfstat return hook",
+          )
+
+          replace_once(
+              "fs/stat.c",
+              """\tif (!error)
+          \t\terror = cp_new_stat64(&stat, statbuf);
+
+          \treturn error;
+          }
+
+          SYSCALL_DEFINE4(fstatat64, int, dfd, const char __user *, filename,""",
+              """\tif (!error)
+          \t\terror = cp_new_stat64(&stat, statbuf);
+
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          \tksu_handle_fstat64_ret(&fd, &statbuf);
+          #endif
+          \treturn error;
+          }
+
+          SYSCALL_DEFINE4(fstatat64, int, dfd, const char __user *, filename,""",
+              "fstat64 return hook",
+          )
+
+          replace_once(
+              "fs/stat.c",
+              """\terror = vfs_fstatat(dfd, filename, &stat, flag);
+          \tif (error)
+          \t\treturn error;
+          \treturn cp_new_stat64(&stat, statbuf);
+          }
+          #endif /* __ARCH_WANT_STAT64 || __ARCH_WANT_COMPAT_STAT64 */""",
+              """#ifdef CONFIG_KSU_MANUAL_HOOK
+          \tksu_handle_stat(&dfd, &filename, &flag);
+          #endif
+          \terror = vfs_fstatat(dfd, filename, &stat, flag);
+          \tif (error)
+          \t\treturn error;
+          \treturn cp_new_stat64(&stat, statbuf);
+          }
+          #endif /* __ARCH_WANT_STAT64 || __ARCH_WANT_COMPAT_STAT64 */""",
+              "fstatat64 hook",
+          )
+
+          # ------------------------------------------------------------
+          # fs/exec.c — kernel 3.14+ variant: ksu_handle_execveat
+          # ------------------------------------------------------------
+          replace_once(
+              "fs/exec.c",
+              """int do_execve(struct filename *filename,
+          \tconst char __user *const __user *__argv,""",
+              """#ifdef CONFIG_KSU_MANUAL_HOOK
+          __attribute__((hot))
+          extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr,
+                                          void *argv, void *envp, int *flags);
+          #endif
+
+          int do_execve(struct filename *filename,
+          \tconst char __user *const __user *__argv,""",
+              "execve declaration",
+          )
+
+          replace_once(
+              "fs/exec.c",
+              """\tstruct user_arg_ptr argv = { .ptr.native = __argv };
+          \tstruct user_arg_ptr envp = { .ptr.native = __envp };
+          \treturn do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
+          }""",
+              """\tstruct user_arg_ptr argv = { .ptr.native = __argv };
+          \tstruct user_arg_ptr envp = { .ptr.native = __envp };
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          \tksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, 0);
+          #endif
+          \treturn do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
+          }""",
+              "execve hook",
+          )
+
+          replace_once(
+              "fs/exec.c",
+              """\tstruct user_arg_ptr envp = {
+          \t\t.is_compat = true,
+          \t\t.ptr.compat = __envp,
+          \t};
+          \treturn do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
+          }""",
+              """\tstruct user_arg_ptr envp = {
+          \t\t.is_compat = true,
+          \t\t.ptr.compat = __envp,
+          \t};
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          \tksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, 0);
+          #endif
+          \treturn do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
+          }""",
+              "compat execve hook",
+          )
+
+          # ------------------------------------------------------------
+          # fs/open.c — 4.19- variant
+          # ------------------------------------------------------------
+          replace_once(
+              "fs/open.c",
+              """/* 
+           * access() needs to use the real uid/gid, not the effective uid/gid.""",
+              """#ifdef CONFIG_KSU_MANUAL_HOOK
+          __attribute__((hot))
+          extern int ksu_handle_faccessat(int *dfd,
+                                           const char __user **filename_user,
+                                           int *mode, int *flags);
+          #endif
+
+          /*
+           * access() needs to use the real uid/gid, not the effective uid/gid.""",
+              "faccessat declaration",
+          )
+
+          replace_once(
+              "fs/open.c",
+              """SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
+          {
+          \tconst struct cred *old_cred;""",
+              """SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
+          {
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          \tksu_handle_faccessat(&dfd, &filename, &mode, NULL);
+          #endif
+          \tconst struct cred *old_cred;""",
+              "faccessat hook",
+          )
+
+          # ------------------------------------------------------------
+          # kernel/reboot.c — kernel 3.12+ variant
+          # ------------------------------------------------------------
+          replace_once(
+              "kernel/reboot.c",
+              """static DEFINE_MUTEX(reboot_mutex);
+
+          /*
+           * Reboot system call:""",
+              """static DEFINE_MUTEX(reboot_mutex);
+
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          extern int ksu_handle_sys_reboot(int magic1, int magic2,
+                                           unsigned int cmd, void __user **arg);
+          #endif
+
+          /*
+           * Reboot system call:""",
+              "reboot declaration",
+          )
+
+          replace_once(
+              "kernel/reboot.c",
+              """\tchar buffer[256];
+          \tint ret = 0;
+
+          \t/* We only trust the superuser with rebooting the system. */""",
+              """\tchar buffer[256];
+          \tint ret = 0;
+
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          \tksu_handle_sys_reboot(magic1, magic2, cmd, &arg);
+          #endif
+
+          \t/* We only trust the superuser with rebooting the system. */""",
+              "reboot hook",
+          )
+
+          print("ReSukiSU manual hooks: all required 4.14 anchors patched exactly once.")
+          PY
+
+          echo "==================== VERIFY ReSukiSU MANUAL HOOKS ===================="
+          for f in fs/stat.c fs/exec.c fs/open.c kernel/reboot.c; do
+            test -f "$f"
+          done
+          grep -n "ksu_handle_stat" fs/stat.c
+          grep -n "ksu_handle_newfstat_ret" fs/stat.c
+          grep -n "ksu_handle_fstat64_ret" fs/stat.c
+          grep -n "ksu_handle_execveat" fs/exec.c
+          grep -n "ksu_handle_faccessat" fs/open.c
+          grep -n "ksu_handle_sys_reboot" kernel/reboot.c
 
       - name: Integrasikan NoMount (experimental/hookless)
         working-directory: kernel
@@ -282,10 +559,13 @@ jobs:
             echo 'CONFIG_LOCALVERSION="-perf"'
             echo "CONFIG_LOCALVERSION_AUTO=n"
             echo ""
-            echo "# ReSukiSU auto-hook"
+            echo "# ReSukiSU Manual Hook"
             echo "CONFIG_KSU=y"
             echo "CONFIG_KSU_TRACEPOINT_HOOK=n"
             echo "CONFIG_KSU_MANUAL_HOOK=y"
+            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INPUT_HOOK=y"
+            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK=y"
+            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK=y"
             echo "CONFIG_KSU_SUSFS=n"
             echo "CONFIG_KALLSYMS=y"
             echo "CONFIG_KALLSYMS_ALL=y"
@@ -353,7 +633,20 @@ jobs:
             exit 1
           fi
 
-          echo "ReSukiSU Manual Hook + auto-hook: CONFIG OK"
+          grep -q '^CONFIG_KSU_MANUAL_HOOK_AUTO_INPUT_HOOK=y$' out/.config || {
+            echo "ERROR: CONFIG_KSU_MANUAL_HOOK_AUTO_INPUT_HOOK tidak resolve ke y"
+            exit 1
+          }
+          grep -q '^CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK=y$' out/.config || {
+            echo "ERROR: CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK tidak resolve ke y"
+            exit 1
+          }
+          grep -q '^CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK=y$' out/.config || {
+            echo "ERROR: CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK tidak resolve ke y"
+            exit 1
+          }
+
+          echo "ReSukiSU official main + Manual Hook: CONFIG OK"
 
           set -o pipefail
           if ! make -k O=out -j"$(nproc)" \
@@ -385,16 +678,10 @@ jobs:
           fi
           ls -la out/arch/arm64/boot/
           echo ""
-          echo "==================== VERIFIKASI AUTO-HOOK ===================="
-          echo "ReSukiSU auto_hook_detect.mk menentukan hook mana yang perlu fallback."
-          echo "Tidak semua 9 pesan di bawah wajib muncul: jika hook manual sudah ada"
-          echo "di source kernel, auto-hook memang tidak akan diaktifkan untuk hook tersebut."
+          echo "==================== VERIFIKASI ReSukiSU MANUAL HOOK ===================="
+          grep -iE "manual_hook|You lost|You should integrate|incompatible hook" /tmp/build.log || true
           echo ""
-          echo "== Semua pesan hook dari Kbuild =="
-          grep -iE "auto_hook|manual hook|using .* hook" /tmp/build.log || true
-          echo ""
-          echo "== Hook yang terdeteksi auto-hook =="
-          grep -i "using auto hook" /tmp/build.log || true
+          echo "Jika ada 'You lost ... hook', build dihentikan oleh manual_hook_check.mk."
 
       - name: Compile nm (NoMount userspace CLI dari experimental/hookless)
         run: |
