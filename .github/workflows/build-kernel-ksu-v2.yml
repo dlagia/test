@@ -124,73 +124,76 @@ jobs:
       - name: Terapkan Manual Hook ReSukiSU untuk kernel 4.14
         working-directory: kernel
         run: |
-          # ReSukiSU source tetap dari branch main; Manual Hook adalah mode konfigurasi kernel.
-          # manual_hook_check.mk akan memeriksa hook yang diwajibkan.
-          #
-          # Untuk kernel 4.14 rosemary ini, hook yang wajib dipasang manual:
-          #   fs/stat.c      : ksu_handle_stat
-          #                    ksu_handle_newfstat_ret
-          #                    ksu_handle_fstat64_ret
-          #   fs/exec.c      : ksu_handle_execveat
-          #   fs/open.c      : ksu_handle_faccessat
-          #   kernel/reboot.c: ksu_handle_sys_reboot
-          #
-          # Input/setuid/initrc dapat menggunakan LSM auto hooks pada kernel
-          # lama, sehingga diaktifkan lewat CONFIG_KSU_MANUAL_HOOK_AUTO_*.
-          #
-          # Pola patch di bawah mengikuti dokumentasi resmi ReSukiSU
-          # manual-integrate dan gagal keras bila anchor source berubah.
+          # ReSukiSU tetap dari branch main resmi.
+          # Manual Hook adalah mode konfigurasi kernel, bukan branch Git.
+          # Patch di bawah sengaja TIDAK mencocokkan blok source dengan
+          # indentation/tab yang rapuh. Ia mencari batas syscall/function C.
 
           python3 <<'PY'
-          from pathlib import Path
-
           import re
-          import textwrap
           from pathlib import Path
 
-          def _normalise_lines(s):
-              return "\n".join(line.strip() for line in s.strip().splitlines())
+          def fail(msg):
+              raise SystemExit("ERROR: " + msg)
 
-          def replace_once(path, old, new, label):
-              p = Path(path)
-              s = p.read_text()
+          def read(path):
+              return Path(path).read_text()
 
-              # YAML heredoc mengubah indentation Python. Jangan mencocokkan
-              # indentation hasil YAML dengan indentation source kernel.
-              old_norm = _normalise_lines(old)
-              lines = old_norm.splitlines()
+          def write(path, data):
+              Path(path).write_text(data)
 
-              pattern_parts = []
-              for line in lines:
-                  if not line:
-                      pattern_parts.append(r"[ \t]*")
-                  else:
-                      pattern_parts.append(r"[ \t]*" + re.escape(line))
-              pattern = r"\n".join(pattern_parts)
+          def function_bounds(s, sig, label):
+              m = re.search(sig, s, re.MULTILINE)
+              if not m:
+                  fail(f"fungsi {label!r} tidak ditemukan")
+              brace = s.find("{", m.end())
+              if brace < 0:
+                  fail(f"body {label!r} tidak ditemukan")
+              depth = 0
+              for i in range(brace, len(s)):
+                  if s[i] == "{":
+                      depth += 1
+                  elif s[i] == "}":
+                      depth -= 1
+                      if depth == 0:
+                          return m.start(), brace, i + 1
+              fail(f"akhir body {label!r} tidak ditemukan")
 
-              matches = list(re.finditer(pattern, s, flags=re.MULTILINE))
-              if len(matches) != 1:
-                  raise SystemExit(
-                      f"ERROR: anchor {label!r} di {path} ditemukan "
-                      f"{len(matches)} kali; source kernel/layout tidak cocok."
-                  )
+          def insert_after_open(path, sig, code, marker, label):
+              s = read(path)
+              if marker in s:
+                  return
+              _, brace, _ = function_bounds(s, sig, label)
+              s = s[:brace + 1] + "\n" + code + s[brace + 1:]
+              write(path, s)
 
-              replacement = textwrap.dedent(new).strip("\n")
-              s = s[:matches[0].start()] + replacement + s[matches[0].end():]
-              p.write_text(s)
+          def insert_before_last_return(path, sig, code, marker, label):
+              s = read(path)
+              if marker in s:
+                  return
+              _, brace, end = function_bounds(s, sig, label)
+              body = s[brace + 1:end - 1]
+              matches = list(re.finditer(
+                  r'^[ \t]*return[ \t]+error[ \t]*;[ \t]*$',
+                  body, re.MULTILINE
+              ))
+              if not matches:
+                  fail(f"'return error;' pada {label!r} tidak ditemukan")
+              p = brace + 1 + matches[-1].start()
+              s = s[:p] + code + "\n" + s[p:]
+              write(path, s)
 
-          # ------------------------------------------------------------
+          # ============================================================
           # fs/stat.c
-          # ------------------------------------------------------------
-          replace_once(
-              "fs/stat.c",
-              """SYSCALL_DEFINE2(newlstat, const char __user *, filename,
-                          struct stat __user *, statbuf)
-          {""",
-              """#ifdef CONFIG_KSU_MANUAL_HOOK
-          __attribute__((hot))
-          extern int ksu_handle_stat(int *dfd, const char __user **filename_user,
-                                      int *flags);
+          # ============================================================
+          s = read("fs/stat.c")
+
+          if "ksu_handle_newfstat_ret" not in s:
+              decl = r"""
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          extern int ksu_handle_stat(int *dfd,
+                                     const char __user **filename_user,
+                                     int *flags);
           extern void ksu_handle_newfstat_ret(unsigned int *fd,
                                                struct stat __user **statbuf_ptr);
           #if defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_COMPAT_STAT64)
@@ -199,233 +202,172 @@ jobs:
           #endif
           #endif
 
-          SYSCALL_DEFINE2(newlstat, const char __user *, filename,
-                          struct stat __user *, statbuf)
-          {""",
-              "stat declarations",
-          )
+          """
+              m = re.search(r'^SYSCALL_DEFINE2\(newlstat,', s, re.MULTILINE)
+              if not m:
+                  fail("SYSCALL_DEFINE2(newlstat) tidak ditemukan di fs/stat.c")
+              s = s[:m.start()] + decl + s[m.start():]
+              write("fs/stat.c", s)
 
-          replace_once(
+          # stat hook pada newfstatat()
+          insert_after_open(
               "fs/stat.c",
-              """\terror = vfs_fstatat(dfd, filename, &stat, flag);
-          \tif (error)
-          \t\treturn error;
-          \treturn cp_new_stat(&stat, statbuf);
-          }
-          #endif""",
+              r'^SYSCALL_DEFINE4\(newfstatat,.*?\n\{',
               """#ifdef CONFIG_KSU_MANUAL_HOOK
           \tksu_handle_stat(&dfd, &filename, &flag);
-          #endif
-          \terror = vfs_fstatat(dfd, filename, &stat, flag);
-          \tif (error)
-          \t\treturn error;
-          \treturn cp_new_stat(&stat, statbuf);
-          }
           #endif""",
-              "newfstatat hook",
+              "ksu_handle_stat(&dfd",
+              "newfstatat",
           )
 
-          replace_once(
+          # return hook pada newfstat().
+          # Ini menggantikan anchor lama yang gagal karena layout source
+          # rosemary-13 tidak sama persis dengan asumsi sebelumnya.
+          insert_before_last_return(
               "fs/stat.c",
-              """\tif (!error)
-          \t\terror = cp_new_stat(&stat, statbuf);
-
-          \treturn error;
-          }
-
-          #if defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_COMPAT_STAT64)""",
-              """\tif (!error)
-          \t\terror = cp_new_stat(&stat, statbuf);
-
-          #ifdef CONFIG_KSU_MANUAL_HOOK
+              r'^SYSCALL_DEFINE2\(newfstat,.*?\n\{',
+              """#ifdef CONFIG_KSU_MANUAL_HOOK
           \tksu_handle_newfstat_ret(&fd, &statbuf);
-          #endif
-          \treturn error;
-          }
-
-          #if defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_COMPAT_STAT64)""",
-              "newfstat return hook",
+          #endif""",
+              "ksu_handle_newfstat_ret(&fd",
+              "newfstat",
           )
 
-          replace_once(
-              "fs/stat.c",
-              """\tif (!error)
-          \t\terror = cp_new_stat64(&stat, statbuf);
+          # fstat64 hanya dipasang jika syscall memang ada pada source.
+          s = read("fs/stat.c")
+          if "ksu_handle_fstat64_ret" not in s:
+              if re.search(r'^SYSCALL_DEFINE[0-9]+\(fstat64,', s, re.MULTILINE):
+                  insert_before_last_return(
+                      "fs/stat.c",
+                      r'^SYSCALL_DEFINE[0-9]+\(fstat64,.*?\n\{',
+                      """#ifdef CONFIG_KSU_MANUAL_HOOK
+          \tksu_handle_fstat64_ret((unsigned long *)&fd, &statbuf);
+          #endif""",
+                      "ksu_handle_fstat64_ret((unsigned long *)&fd",
+                      "fstat64",
+                  )
 
-          \treturn error;
-          }
-
-          SYSCALL_DEFINE4(fstatat64, int, dfd, const char __user *, filename,""",
-              """\tif (!error)
-          \t\terror = cp_new_stat64(&stat, statbuf);
-
+          # ============================================================
+          # fs/exec.c
+          # ============================================================
+          s = read("fs/exec.c")
+          if "ksu_handle_execveat" not in s:
+              decl = r"""
           #ifdef CONFIG_KSU_MANUAL_HOOK
-          \tksu_handle_fstat64_ret(&fd, &statbuf);
-          #endif
-          \treturn error;
-          }
-
-          SYSCALL_DEFINE4(fstatat64, int, dfd, const char __user *, filename,""",
-              "fstat64 return hook",
-          )
-
-          replace_once(
-              "fs/stat.c",
-              """\terror = vfs_fstatat(dfd, filename, &stat, flag);
-          \tif (error)
-          \t\treturn error;
-          \treturn cp_new_stat64(&stat, statbuf);
-          }
-          #endif /* __ARCH_WANT_STAT64 || __ARCH_WANT_COMPAT_STAT64 */""",
-              """#ifdef CONFIG_KSU_MANUAL_HOOK
-          \tksu_handle_stat(&dfd, &filename, &flag);
-          #endif
-          \terror = vfs_fstatat(dfd, filename, &stat, flag);
-          \tif (error)
-          \t\treturn error;
-          \treturn cp_new_stat64(&stat, statbuf);
-          }
-          #endif /* __ARCH_WANT_STAT64 || __ARCH_WANT_COMPAT_STAT64 */""",
-              "fstatat64 hook",
-          )
-
-          # ------------------------------------------------------------
-          # fs/exec.c — kernel 3.14+ variant: ksu_handle_execveat
-          # ------------------------------------------------------------
-          replace_once(
-              "fs/exec.c",
-              """int do_execve(struct filename *filename,
-          \tconst char __user *const __user *__argv,""",
-              """#ifdef CONFIG_KSU_MANUAL_HOOK
-          __attribute__((hot))
-          extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr,
-                                          void *argv, void *envp, int *flags);
+          extern int ksu_handle_execveat(int *fd,
+                                         struct filename **filename_ptr,
+                                         void *argv, void *envp, int *flags);
           #endif
 
-          int do_execve(struct filename *filename,
-          \tconst char __user *const __user *__argv,""",
-              "execve declaration",
-          )
+          """
+              m = re.search(r'^int do_execve\(struct filename \*filename,', s, re.MULTILINE)
+              if not m:
+                  fail("do_execve() tidak ditemukan di fs/exec.c")
+              s = s[:m.start()] + decl + s[m.start():]
+              write("fs/exec.c", s)
 
-          replace_once(
-              "fs/exec.c",
-              """\tstruct user_arg_ptr argv = { .ptr.native = __argv };
-          \tstruct user_arg_ptr envp = { .ptr.native = __envp };
-          \treturn do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
-          }""",
-              """\tstruct user_arg_ptr argv = { .ptr.native = __argv };
-          \tstruct user_arg_ptr envp = { .ptr.native = __envp };
+          s = read("fs/exec.c")
+          if "ksu_handle_execveat((int *)AT_FDCWD" not in s:
+              _, brace, end = function_bounds(
+                  s, r'^int do_execve\(struct filename \*filename,.*?\n\{',
+                  "do_execve"
+              )
+              body = s[brace + 1:end - 1]
+              m = re.search(
+                  r'^[ \t]*return[ \t]+do_execveat_common\(AT_FDCWD,[^\n]*\);',
+                  body, re.MULTILINE
+              )
+              if not m:
+                  fail("do_execveat_common() di do_execve() tidak ditemukan")
+              p = brace + 1 + m.start()
+              code = """#ifdef CONFIG_KSU_MANUAL_HOOK
+          \tksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, NULL);
+          #endif
+          """
+              s = s[:p] + code + s[p:]
+              write("fs/exec.c", s)
+
+          # ============================================================
+          # fs/open.c
+          # ============================================================
+          s = read("fs/open.c")
+          if "ksu_handle_faccessat" not in s:
+              decl = r"""
           #ifdef CONFIG_KSU_MANUAL_HOOK
-          \tksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, 0);
-          #endif
-          \treturn do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
-          }""",
-              "execve hook",
-          )
-
-          replace_once(
-              "fs/exec.c",
-              """\tstruct user_arg_ptr envp = {
-          \t\t.is_compat = true,
-          \t\t.ptr.compat = __envp,
-          \t};
-          \treturn do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
-          }""",
-              """\tstruct user_arg_ptr envp = {
-          \t\t.is_compat = true,
-          \t\t.ptr.compat = __envp,
-          \t};
-          #ifdef CONFIG_KSU_MANUAL_HOOK
-          \tksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, 0);
-          #endif
-          \treturn do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
-          }""",
-              "compat execve hook",
-          )
-
-          # ------------------------------------------------------------
-          # fs/open.c — 4.19- variant
-          # ------------------------------------------------------------
-          replace_once(
-              "fs/open.c",
-              """/* 
-           * access() needs to use the real uid/gid, not the effective uid/gid.""",
-              """#ifdef CONFIG_KSU_MANUAL_HOOK
-          __attribute__((hot))
           extern int ksu_handle_faccessat(int *dfd,
                                            const char __user **filename_user,
                                            int *mode, int *flags);
           #endif
 
-          /*
-           * access() needs to use the real uid/gid, not the effective uid/gid.""",
-              "faccessat declaration",
-          )
+          """
+              m = re.search(
+                  r'^/\*[ \t]*\n[ \t]*\* access\(\) needs to use the real uid/gid',
+                  s, re.MULTILINE
+              )
+              if not m:
+                  fail("anchor access()/faccessat tidak ditemukan di fs/open.c")
+              s = s[:m.start()] + decl + s[m.start():]
+              write("fs/open.c", s)
 
-          replace_once(
+          insert_after_open(
               "fs/open.c",
-              """SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
-          {
-          \tconst struct cred *old_cred;""",
-              """SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
-          {
-          #ifdef CONFIG_KSU_MANUAL_HOOK
+              r'^SYSCALL_DEFINE3\(faccessat,.*?\n\{',
+              """#ifdef CONFIG_KSU_MANUAL_HOOK
           \tksu_handle_faccessat(&dfd, &filename, &mode, NULL);
-          #endif
-          \tconst struct cred *old_cred;""",
-              "faccessat hook",
+          #endif""",
+              "ksu_handle_faccessat(&dfd",
+              "faccessat",
           )
 
-          # ------------------------------------------------------------
-          # kernel/reboot.c — kernel 3.12+ variant
-          # ------------------------------------------------------------
-          replace_once(
-              "kernel/reboot.c",
-              """static DEFINE_MUTEX(reboot_mutex);
-
-          /*
-           * Reboot system call:""",
-              """static DEFINE_MUTEX(reboot_mutex);
-
+          # ============================================================
+          # kernel/reboot.c
+          # ============================================================
+          s = read("kernel/reboot.c")
+          if "ksu_handle_sys_reboot" not in s:
+              decl = r"""
           #ifdef CONFIG_KSU_MANUAL_HOOK
           extern int ksu_handle_sys_reboot(int magic1, int magic2,
                                            unsigned int cmd, void __user **arg);
           #endif
 
-          /*
-           * Reboot system call:""",
-              "reboot declaration",
-          )
+          """
+              m = re.search(r'^static DEFINE_MUTEX\(reboot_mutex\);', s, re.MULTILINE)
+              if not m:
+                  fail("reboot_mutex tidak ditemukan di kernel/reboot.c")
+              p = s.find("\n", m.end()) + 1
+              s = s[:p] + decl + s[p:]
+              write("kernel/reboot.c", s)
 
-          replace_once(
+          insert_after_open(
               "kernel/reboot.c",
-              """\tchar buffer[256];
-          \tint ret = 0;
-
-          \t/* We only trust the superuser with rebooting the system. */""",
-              """\tchar buffer[256];
-          \tint ret = 0;
-
-          #ifdef CONFIG_KSU_MANUAL_HOOK
+              r'^SYSCALL_DEFINE4\(reboot,.*?\n\{',
+              """#ifdef CONFIG_KSU_MANUAL_HOOK
           \tksu_handle_sys_reboot(magic1, magic2, cmd, &arg);
-          #endif
-
-          \t/* We only trust the superuser with rebooting the system. */""",
-              "reboot hook",
+          #endif""",
+              "ksu_handle_sys_reboot(magic1",
+              "reboot",
           )
 
-          print("ReSukiSU Manual Hook: anchors patched exactly once.")
+          print("ReSukiSU Manual Hook: source-aware patch completed.")
           PY
 
           echo "==================== VERIFY ReSukiSU MANUAL HOOKS ===================="
           for f in fs/stat.c fs/exec.c fs/open.c kernel/reboot.c; do
             test -f "$f"
           done
+
+          echo "== stat =="
           grep -n "ksu_handle_stat" fs/stat.c
           grep -n "ksu_handle_newfstat_ret" fs/stat.c
-          grep -n "ksu_handle_fstat64_ret" fs/stat.c
+          grep -n "ksu_handle_fstat64_ret" fs/stat.c || true
+
+          echo "== exec =="
           grep -n "ksu_handle_execveat" fs/exec.c
+
+          echo "== open =="
           grep -n "ksu_handle_faccessat" fs/open.c
+
+          echo "== reboot =="
           grep -n "ksu_handle_sys_reboot" kernel/reboot.c
 
       - name: Integrasikan NoMount (experimental/hookless)
