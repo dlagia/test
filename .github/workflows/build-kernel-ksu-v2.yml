@@ -124,7 +124,7 @@ jobs:
       - name: Terapkan Manual Hook ReSukiSU untuk kernel 4.14
         working-directory: kernel
         run: |
-          # ReSukiSU resmi TIDAK memakai Manual Hook branch di sini.
+          # ReSukiSU source tetap dari branch main; Manual Hook adalah mode konfigurasi kernel.
           # manual_hook_check.mk akan memeriksa hook yang diwajibkan.
           #
           # Untuk kernel 4.14 rosemary ini, hook yang wajib dipasang manual:
@@ -144,16 +144,40 @@ jobs:
           python3 <<'PY'
           from pathlib import Path
 
+          import re
+          import textwrap
+          from pathlib import Path
+
+          def _normalise_lines(s):
+              return "\n".join(line.strip() for line in s.strip().splitlines())
+
           def replace_once(path, old, new, label):
               p = Path(path)
               s = p.read_text()
-              n = s.count(old)
-              if n != 1:
+
+              # YAML heredoc mengubah indentation Python. Jangan mencocokkan
+              # indentation hasil YAML dengan indentation source kernel.
+              old_norm = _normalise_lines(old)
+              lines = old_norm.splitlines()
+
+              pattern_parts = []
+              for line in lines:
+                  if not line:
+                      pattern_parts.append(r"[ \t]*")
+                  else:
+                      pattern_parts.append(r"[ \t]*" + re.escape(line))
+              pattern = r"\n".join(pattern_parts)
+
+              matches = list(re.finditer(pattern, s, flags=re.MULTILINE))
+              if len(matches) != 1:
                   raise SystemExit(
-                      f"ERROR: anchor {label!r} di {path} ditemukan {n} kali; "
-                      "source kernel berbeda dari layout yang diharapkan."
+                      f"ERROR: anchor {label!r} di {path} ditemukan "
+                      f"{len(matches)} kali; source kernel/layout tidak cocok."
                   )
-              p.write_text(s.replace(old, new, 1))
+
+              replacement = textwrap.dedent(new).strip("\n")
+              s = s[:matches[0].start()] + replacement + s[matches[0].end():]
+              p.write_text(s)
 
           # ------------------------------------------------------------
           # fs/stat.c
@@ -390,7 +414,7 @@ jobs:
               "reboot hook",
           )
 
-          print("ReSukiSU manual hooks: all required 4.14 anchors patched exactly once.")
+          print("ReSukiSU Manual Hook: anchors patched exactly once.")
           PY
 
           echo "==================== VERIFY ReSukiSU MANUAL HOOKS ===================="
