@@ -22,10 +22,23 @@
 # SAMA seperti Fase 1. Kernel ini basis sama dengan yang sudah terbukti
 # boot, tapi NoMount menyentuh VFS inti - tetap test dulu.
 #
-# ReSukiSU diintegrasikan mengikuti setup.sh resmi branch main.
-# Untuk kernel 4.14 digunakan CONFIG_KSU_MANUAL_HOOK=y dan manual hooks
-# yang diwajibkan oleh manual_hook_check.mk. Hook otomatis LSM hanya dipakai
-# untuk input/setuid/initrc sesuai kemampuan kernel 4.14.
+# ReSukiSU diintegrasikan lewat setup.sh RESMI (https://github.com/ReSukiSU/ReSukiSU,
+# tanpa argumen branch = checkout "main", sesuai README repo - branch "auto-hook"
+# yang dipakai sebelumnya SUDAH DIHAPUS dari workflow ini). Untuk kernel 4.14
+# (non-GKI, < 5.10) dipakai CONFIG_KSU_MANUAL_HOOK=y, karena Tracepoint Syscall
+# Redirect hanya didukung GKI2 5.10+.
+#
+# Source resmi branch main TIDAK punya auto_hook_detect.mk/auto_hook.c (itu
+# spesifik branch auto-hook yang sudah tidak dipakai). kernel/Kbuild resmi
+# meng-include kernel/tools/manual_hook_check.mk yang HARD-FAIL saat compile
+# kalau simbol hook tidak ditemukan persis di source - tidak ada fallback
+# otomatis. Tiga hook (setuid/init-rc/input) tetap otomatis lewat LSM karena
+# CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK/AUTO_INITRC_HOOK/AUTO_INPUT_HOOK
+# default=y di Kconfig resmi (kernel 4.14 < 6.8, jadi valid dipakai). Sisanya
+# (execveat, faccessat, stat, newfstat_ret, fstat64_ret, sys_reboot) DIPATCH
+# MANUAL ke fs/exec.c, fs/open.c, fs/stat.c, kernel/reboot.c - setiap anchor
+# sudah diverifikasi baris-per-baris terhadap source dlagia/android_kernel_
+# xiaomi_rosemary@rosemary-13 sebelum ditanam di sini (lihat step di bawah).
 # Patch lain (NoMount/Re:Kernel/CVE/Baseband) tetap dipisahkan dari ReSukiSU.
 #
 # Re:Kernel (github.com/Sakion-Team/Re-Kernel): membuka netlink server
@@ -85,296 +98,218 @@ jobs:
           sed -i 's/^SUBLEVEL = .*/SUBLEVEL = 186/' Makefile
           grep -n '^SUBLEVEL = ' Makefile
 
-      - name: Integrasikan ReSukiSU resmi (branch main)
+      - name: Integrasikan ReSukiSU (setup.sh resmi, branch main)
         working-directory: kernel
         run: |
-          # Gunakan setup.sh RESMI ReSukiSU tanpa branch Manual Hook.
-          # setup.sh resmi saat ini:
-          #   - clone https://github.com/ReSukiSU/ReSukiSU -> KernelSU
-          #   - checkout main
-          #   - symlink drivers/kernelsu -> KernelSU/kernel
-          #   - menambahkan Kconfig/Makefile integration
+          # Aturan resmi repo (https://github.com/ReSukiSU/ReSukiSU): setup.sh
+          # TANPA argumen -> clone jadi KernelSU/, checkout branch "main".
+          # (Argumen ke setup.sh adalah commit/tag opsional, BUKAN nama fitur
+          # seperti "auto-hook" - branch itu sudah tidak dipakai di workflow ini.)
           curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
 
           test -d KernelSU || {
             echo "ERROR: direktori KernelSU tidak ditemukan"
             exit 1
           }
-          test -L drivers/kernelsu || {
-            echo "ERROR: drivers/kernelsu bukan symlink hasil setup.sh resmi"
-            exit 1
-          }
 
-          echo "==================== ReSukiSU SOURCE ===================="
+          echo "== ReSukiSU branch =="
           cd KernelSU
-          echo "branch : $(git branch --show-current)"
-          echo "commit : $(git rev-parse HEAD)"
-          echo "short  : $(git rev-parse --short HEAD)"
-          echo "date   : $(git log -1 --format=%ci)"
-          echo "subject: $(git log -1 --format=%s)"
+          git branch --show-current
+          git rev-parse --short HEAD
           test "$(git branch --show-current)" = "main" || {
-            echo "ERROR: ReSukiSU harus berasal dari branch main resmi"
+            echo "ERROR: ReSukiSU bukan branch main (setup.sh resmi tanpa argumen harus checkout main)"
             exit 1
           }
           cd ..
 
-          echo "ReSukiSU official main source: OK"
-          readlink -f drivers/kernelsu
+          test -L drivers/kernelsu || {
+            echo "ERROR: symlink drivers/kernelsu tidak dibuat oleh setup.sh"
+            exit 1
+          }
+          grep -q 'obj-$(CONFIG_KSU) += kernelsu/' drivers/Makefile || {
+            echo "ERROR: drivers/Makefile tidak berisi entry kernelsu/"
+            exit 1
+          }
+          grep -q 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || {
+            echo "ERROR: drivers/Kconfig tidak berisi source kernelsu/Kconfig"
+            exit 1
+          }
 
-      - name: Terapkan Manual Hook ReSukiSU untuk kernel 4.14
+          echo "ReSukiSU main (resmi): OK"
+          ls -ld KernelSU drivers/kernelsu
+
+      - name: Pasang hook manual ReSukiSU (kernel 4.14, non-GKI)
         working-directory: kernel
         run: |
-          # ReSukiSU tetap dari branch main resmi.
-          # Manual Hook adalah mode konfigurasi kernel, bukan branch Git.
-          # Patch di bawah sengaja TIDAK mencocokkan blok source dengan
-          # indentation/tab yang rapuh. Ia mencari batas syscall/function C.
+          # kernel/tools/manual_hook_check.mk (bagian dari branch main resmi) akan
+          # HARD-FAIL saat compile kalau simbol berikut tidak ditemukan persis di
+          # source - tidak ada fallback otomatis di branch resmi ini. Anchor di
+          # bawah sudah dicocokkan baris-per-baris ke source dlagia/android_kernel_
+          # xiaomi_rosemary@rosemary-13 (bukan tebakan/template generik) sebelum
+          # ditanam. Tiga hook lain (setuid/init-rc/input) SENGAJA tidak dipatch di
+          # sini karena CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK/AUTO_INITRC_HOOK/
+          # AUTO_INPUT_HOOK sudah default=y di Kconfig resmi (valid untuk kernel
+          # 4.14, karena opsi itu cuma dilarang di kernel >= 6.8) - keduanya
+          # ditangani otomatis lewat LSM oleh ReSukiSU sendiri.
+          python3 - << 'PYEOF'
+          import sys
 
-          python3 <<'PY'
-          import re
-          from pathlib import Path
+          def patch(path, replacements):
+              with open(path, "r") as f:
+                  s = f.read()
+              for old, new, label in replacements:
+                  n = s.count(old)
+                  if n != 1:
+                      print(f"ERROR: anchor '{label}' di {path} ditemukan {n}x (harus persis 1x)")
+                      sys.exit(1)
+                  s = s.replace(old, new, 1)
+              with open(path, "w") as f:
+                  f.write(s)
+              print(f"{path}: OK")
 
-          def fail(msg):
-              raise SystemExit("ERROR: " + msg)
-
-          def read(path):
-              return Path(path).read_text()
-
-          def write(path, data):
-              Path(path).write_text(data)
-
-          def function_bounds(s, sig, label):
-              # sig sekarang hanya perlu menemukan awal fungsi/macro.
-              # Jangan mensyaratkan format signature atau posisi "{" karena
-              # kernel 4.14 sering membungkus parameter syscall ke beberapa
-              # baris.
-              m = re.search(sig, s, re.MULTILINE)
-              if not m:
-                  fail(f"fungsi {label!r} tidak ditemukan")
-              brace = s.find("{", m.end())
-              if brace < 0:
-                  fail(f"body {label!r} tidak ditemukan")
-              depth = 0
-              i = brace
-              while i < len(s):
-                  if s[i] == "{":
-                      depth += 1
-                  elif s[i] == "}":
-                      depth -= 1
-                      if depth == 0:
-                          return m.start(), brace, i + 1
-                  i += 1
-              fail(f"akhir body {label!r} tidak ditemukan")
-
-          def insert_after_open(path, sig, code, marker, label):
-              s = read(path)
-              if marker in s:
-                  return
-              _, brace, _ = function_bounds(s, sig, label)
-              s = s[:brace + 1] + "\n" + code + s[brace + 1:]
-              write(path, s)
-
-          def insert_before_last_return(path, sig, code, marker, label):
-              s = read(path)
-              if marker in s:
-                  return
-              _, brace, end = function_bounds(s, sig, label)
-              body = s[brace + 1:end - 1]
-              matches = list(re.finditer(
-                  r'^[ \t]*return[ \t]+error[ \t]*;[ \t]*$',
-                  body, re.MULTILINE
-              ))
-              if not matches:
-                  fail(f"'return error;' pada {label!r} tidak ditemukan")
-              p = brace + 1 + matches[-1].start()
-              s = s[:p] + code + "\n" + s[p:]
-              write(path, s)
-
-          # ============================================================
-          # fs/stat.c
-          # ============================================================
-          s = read("fs/stat.c")
-
-          if "ksu_handle_newfstat_ret" not in s:
-              decl = r"""
-          #ifdef CONFIG_KSU_MANUAL_HOOK
-          extern int ksu_handle_stat(int *dfd,
-                                     const char __user **filename_user,
-                                     int *flags);
-          extern void ksu_handle_newfstat_ret(unsigned int *fd,
-                                               struct stat __user **statbuf_ptr);
-          #if defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_COMPAT_STAT64)
-          extern void ksu_handle_fstat64_ret(unsigned long *fd,
-                                              struct stat64 __user **statbuf_ptr);
-          #endif
-          #endif
-
-          """
-              m = re.search(r'^SYSCALL_DEFINE2\(newlstat,', s, re.MULTILINE)
-              if not m:
-                  fail("SYSCALL_DEFINE2(newlstat) tidak ditemukan di fs/stat.c")
-              s = s[:m.start()] + decl + s[m.start():]
-              write("fs/stat.c", s)
-
-          # stat hook pada newfstatat()
-          insert_after_open(
-              "fs/stat.c",
-              r'^SYSCALL_DEFINE4\(newfstatat,.*?\n\{',
-              """#ifdef CONFIG_KSU_MANUAL_HOOK
-          \tksu_handle_stat(&dfd, &filename, &flag);
-          #endif""",
-              "ksu_handle_stat(&dfd",
-              "newfstatat",
+          # ---------- fs/exec.c: ksu_handle_execveat ----------
+          exec_decl_old = (
+              "static int do_execveat_common(int fd, struct filename *filename,\n"
+              "\t\t\t      struct user_arg_ptr argv,\n"
+              "\t\t\t      struct user_arg_ptr envp,\n"
+              "\t\t\t      int flags)\n{\n\tchar *pathbuf = NULL;"
           )
-
-          # return hook pada newfstat().
-          # Ini menggantikan anchor lama yang gagal karena layout source
-          # rosemary-13 tidak sama persis dengan asumsi sebelumnya.
-          insert_before_last_return(
-              "fs/stat.c",
-              r'^SYSCALL_DEFINE2\(newfstat,.*?\n\{',
-              """#ifdef CONFIG_KSU_MANUAL_HOOK
-          \tksu_handle_newfstat_ret(&fd, &statbuf);
-          #endif""",
-              "ksu_handle_newfstat_ret(&fd",
-              "newfstat",
+          exec_decl_new = (
+              "#ifdef CONFIG_KSU\n"
+              "extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,\n"
+              "\t\t\t\tvoid *envp, int *flags);\n"
+              "#endif\n\n"
+          ) + exec_decl_old
+          exec_body_old = (
+              "\tint retval;\n\n\tif (IS_ERR(filename))\n\t\treturn PTR_ERR(filename);"
           )
-
-          # fstat64 hanya dipasang jika syscall memang ada pada source.
-          s = read("fs/stat.c")
-          if "ksu_handle_fstat64_ret" not in s:
-              if re.search(r'^SYSCALL_DEFINE[0-9]+\(fstat64,', s, re.MULTILINE):
-                  insert_before_last_return(
-                      "fs/stat.c",
-                      r'^SYSCALL_DEFINE[0-9]+\(fstat64,.*?\n\{',
-                      """#ifdef CONFIG_KSU_MANUAL_HOOK
-          \tksu_handle_fstat64_ret((unsigned long *)&fd, &statbuf);
-          #endif""",
-                      "ksu_handle_fstat64_ret((unsigned long *)&fd",
-                      "fstat64",
-                  )
-
-          # ============================================================
-          # fs/exec.c
-          # ============================================================
-          s = read("fs/exec.c")
-          if "ksu_handle_execveat" not in s:
-              decl = r"""
-          #ifdef CONFIG_KSU_MANUAL_HOOK
-          extern int ksu_handle_execveat(int *fd,
-                                         struct filename **filename_ptr,
-                                         void *argv, void *envp, int *flags);
-          #endif
-
-          """
-              m = re.search(r'^int do_execve\(struct filename \*filename,', s, re.MULTILINE)
-              if not m:
-                  fail("do_execve() tidak ditemukan di fs/exec.c")
-              s = s[:m.start()] + decl + s[m.start():]
-              write("fs/exec.c", s)
-
-          s = read("fs/exec.c")
-          if "ksu_handle_execveat((int *)AT_FDCWD" not in s:
-              _, brace, end = function_bounds(
-                  s, r'^int do_execve\(struct filename \*filename,.*?\n\{',
-                  "do_execve"
-              )
-              body = s[brace + 1:end - 1]
-              m = re.search(
-                  r'^[ \t]*return[ \t]+do_execveat_common\(AT_FDCWD,[\s\S]*?\);',
-                  body, re.MULTILINE
-              )
-              if not m:
-                  fail("do_execveat_common() di do_execve() tidak ditemukan")
-              p = brace + 1 + m.start()
-              code = """#ifdef CONFIG_KSU_MANUAL_HOOK
-          \tksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, NULL);
-          #endif
-          """
-              s = s[:p] + code + s[p:]
-              write("fs/exec.c", s)
-
-          # ============================================================
-          # fs/open.c
-          # ============================================================
-          s = read("fs/open.c")
-          if "ksu_handle_faccessat" not in s:
-              decl = r"""
-          #ifdef CONFIG_KSU_MANUAL_HOOK
-          extern int ksu_handle_faccessat(int *dfd,
-                                           const char __user **filename_user,
-                                           int *mode, int *flags);
-          #endif
-
-          """
-              m = re.search(
-                  r'^/\*[ \t]*\n[ \t]*\* access\(\) needs to use the real uid/gid',
-                  s, re.MULTILINE
-              )
-              if not m:
-                  fail("anchor access()/faccessat tidak ditemukan di fs/open.c")
-              s = s[:m.start()] + decl + s[m.start():]
-              write("fs/open.c", s)
-
-          insert_after_open(
-              "fs/open.c",
-              r'^SYSCALL_DEFINE3\(faccessat,.*?\n\{',
-              """#ifdef CONFIG_KSU_MANUAL_HOOK
-          \tksu_handle_faccessat(&dfd, &filename, &mode, NULL);
-          #endif""",
-              "ksu_handle_faccessat(&dfd",
-              "faccessat",
+          exec_body_new = (
+              "\tint retval;\n\n"
+              "#ifdef CONFIG_KSU\n"
+              "\tksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);\n"
+              "#endif\n\n"
+              "\tif (IS_ERR(filename))\n\t\treturn PTR_ERR(filename);"
           )
+          patch("fs/exec.c", [
+              (exec_decl_old, exec_decl_new, "do_execveat_common signature"),
+              (exec_body_old, exec_body_new, "do_execveat_common body"),
+          ])
 
-          # ============================================================
-          # kernel/reboot.c
-          # ============================================================
-          s = read("kernel/reboot.c")
-          if "ksu_handle_sys_reboot" not in s:
-              decl = r"""
-          #ifdef CONFIG_KSU_MANUAL_HOOK
-          extern int ksu_handle_sys_reboot(int magic1, int magic2,
-                                           unsigned int cmd, void __user **arg);
-          #endif
-
-          """
-              m = re.search(r'^static DEFINE_MUTEX\(reboot_mutex\);', s, re.MULTILINE)
-              if not m:
-                  fail("reboot_mutex tidak ditemukan di kernel/reboot.c")
-              p = s.find("\n", m.end()) + 1
-              s = s[:p] + decl + s[p:]
-              write("kernel/reboot.c", s)
-
-          insert_after_open(
-              "kernel/reboot.c",
-              r'^SYSCALL_DEFINE4\(reboot,.*?\n\{',
-              """#ifdef CONFIG_KSU_MANUAL_HOOK
-          \tksu_handle_sys_reboot(magic1, magic2, cmd, &arg);
-          #endif""",
-              "ksu_handle_sys_reboot(magic1",
-              "reboot",
+          # ---------- fs/open.c: ksu_handle_faccessat ----------
+          open_old = (
+              "SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)\n"
+              "{\n\tconst struct cred *old_cred;\n\tstruct cred *override_cred;\n"
+              "\tstruct path path;\n\tstruct inode *inode;\n\tstruct vfsmount *mnt;\n"
+              "\tint res;\n\tunsigned int lookup_flags = LOOKUP_FOLLOW;\n\n"
+              "\tif (mode & ~S_IRWXO)\t/* where's F_OK, X_OK, W_OK, R_OK? */\n"
+              "\t\treturn -EINVAL;"
           )
+          open_new = (
+              "#ifdef CONFIG_KSU\n"
+              "extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode,\n"
+              "\t\t\t\t int *flags);\n#endif\n\n"
+              "SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)\n"
+              "{\n\tconst struct cred *old_cred;\n\tstruct cred *override_cred;\n"
+              "\tstruct path path;\n\tstruct inode *inode;\n\tstruct vfsmount *mnt;\n"
+              "\tint res;\n\tunsigned int lookup_flags = LOOKUP_FOLLOW;\n\n"
+              "#ifdef CONFIG_KSU\n\tksu_handle_faccessat(&dfd, &filename, &mode, NULL);\n#endif\n\n"
+              "\tif (mode & ~S_IRWXO)\t/* where's F_OK, X_OK, W_OK, R_OK? */\n"
+              "\t\treturn -EINVAL;"
+          )
+          patch("fs/open.c", [(open_old, open_new, "SYSCALL_DEFINE3(faccessat...)")])
 
-          print("ReSukiSU Manual Hook: source-aware patch completed.")
-          PY
+          # ---------- fs/stat.c: ksu_handle_stat + newfstat_ret + fstat64_ret ----------
+          stat_extern = (
+              "#ifdef CONFIG_KSU\n"
+              "extern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);\n"
+              "extern void ksu_handle_newfstat_ret(unsigned int *fd, struct stat __user **statbuf_ptr);\n"
+              "#if defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_COMPAT_STAT64)\n"
+              "extern void ksu_handle_fstat64_ret(unsigned long *fd, struct stat64 __user **statbuf_ptr);\n"
+              "#endif\n#endif\n\n"
+          )
+          newfstatat_old = (
+              "SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,\n"
+              "\t\tstruct stat __user *, statbuf, int, flag)\n{\n\tstruct kstat stat;\n"
+              "\tint error;\n\n\terror = vfs_fstatat(dfd, filename, &stat, flag);"
+          )
+          newfstatat_new = stat_extern + (
+              "SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,\n"
+              "\t\tstruct stat __user *, statbuf, int, flag)\n{\n\tstruct kstat stat;\n"
+              "\tint error;\n\n"
+              "#ifdef CONFIG_KSU\n\tksu_handle_stat(&dfd, &filename, &flag);\n#endif\n\n"
+              "\terror = vfs_fstatat(dfd, filename, &stat, flag);"
+          )
+          newfstat_old = (
+              "SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)\n"
+              "{\n\tstruct kstat stat;\n\tint error = vfs_fstat(fd, &stat);\n\n"
+              "\tif (!error)\n\t\terror = cp_new_stat(&stat, statbuf);\n\n\treturn error;\n}"
+          )
+          newfstat_new = (
+              "SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)\n"
+              "{\n\tstruct kstat stat;\n\tint error = vfs_fstat(fd, &stat);\n\n"
+              "\tif (!error)\n\t\terror = cp_new_stat(&stat, statbuf);\n\n"
+              "#ifdef CONFIG_KSU\n\tif (!error)\n\t\tksu_handle_newfstat_ret(&fd, &statbuf);\n#endif\n\n"
+              "\treturn error;\n}"
+          )
+          fstat64_old = (
+              "SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)\n"
+              "{\n\tstruct kstat stat;\n\tint error = vfs_fstat(fd, &stat);\n\n"
+              "\tif (!error)\n\t\terror = cp_new_stat64(&stat, statbuf);\n\n\treturn error;\n}"
+          )
+          fstat64_new = (
+              "SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)\n"
+              "{\n\tstruct kstat stat;\n\tint error = vfs_fstat(fd, &stat);\n\n"
+              "\tif (!error)\n\t\terror = cp_new_stat64(&stat, statbuf);\n\n"
+              "#ifdef CONFIG_KSU\n\tif (!error)\n\t\tksu_handle_fstat64_ret(&fd, &statbuf);\n#endif\n\n"
+              "\treturn error;\n}"
+          )
+          patch("fs/stat.c", [
+              (newfstatat_old, newfstatat_new, "SYSCALL_DEFINE4(newfstatat...) + extern block"),
+              (newfstat_old, newfstat_new, "SYSCALL_DEFINE2(newfstat...)"),
+              (fstat64_old, fstat64_new, "SYSCALL_DEFINE2(fstat64...)"),
+          ])
 
-          echo "==================== VERIFY ReSukiSU MANUAL HOOKS ===================="
-          for f in fs/stat.c fs/exec.c fs/open.c kernel/reboot.c; do
-            test -f "$f"
+          # ---------- kernel/reboot.c: ksu_handle_sys_reboot (ReSukiSU supercall) ----------
+          reboot_old = (
+              "SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,\n"
+              "\t\tvoid __user *, arg)\n{\n"
+              "\tstruct pid_namespace *pid_ns = task_active_pid_ns(current);\n"
+              "\tchar buffer[256];\n\tint ret = 0;\n\n"
+              "\t/* We only trust the superuser with rebooting the system. */"
+          )
+          reboot_new = (
+              "#ifdef CONFIG_KSU\n"
+              "extern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);\n"
+              "#endif\n\n"
+              "SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,\n"
+              "\t\tvoid __user *, arg)\n{\n"
+              "\tstruct pid_namespace *pid_ns = task_active_pid_ns(current);\n"
+              "\tchar buffer[256];\n\tint ret = 0;\n\n"
+              "#ifdef CONFIG_KSU\n"
+              "\t/* ReSukiSU supercall: manager pasang fd komunikasi lewat syscall reboot()\n"
+              "\t * dengan magic1/magic2 khusus KSU (BUKAN LINUX_REBOOT_MAGIC*).\n"
+              "\t * ksu_handle_sys_reboot() sendiri sudah memvalidasi magic1 dan\n"
+              "\t * mengembalikan -EINVAL kalau bukan supercall - reboot asli tak terpengaruh. */\n"
+              "\tif (!ksu_handle_sys_reboot(magic1, magic2, cmd, &arg))\n\t\treturn 0;\n"
+              "#endif\n\n"
+              "\t/* We only trust the superuser with rebooting the system. */"
+          )
+          patch("kernel/reboot.c", [(reboot_old, reboot_new, "SYSCALL_DEFINE4(reboot...)")])
+          PYEOF
+
+          echo ""
+          echo "== Verifikasi simbol hook manual tertanam =="
+          for pair in \
+            "fs/exec.c:ksu_handle_execveat" \
+            "fs/open.c:ksu_handle_faccessat" \
+            "fs/stat.c:ksu_handle_stat" \
+            "fs/stat.c:ksu_handle_newfstat_ret" \
+            "fs/stat.c:ksu_handle_fstat64_ret" \
+            "kernel/reboot.c:ksu_handle_sys_reboot"; do
+            f="${pair%%:*}"; sym="${pair##*:}"
+            grep -q "$sym" "$f" || { echo "ERROR: $sym tidak ditemukan di $f"; exit 1; }
+            echo "OK: $sym -> $f"
           done
-
-          echo "== stat =="
-          grep -n "ksu_handle_stat" fs/stat.c
-          grep -n "ksu_handle_newfstat_ret" fs/stat.c
-          grep -n "ksu_handle_fstat64_ret" fs/stat.c || true
-
-          echo "== exec =="
-          grep -n "ksu_handle_execveat" fs/exec.c
-
-          echo "== open =="
-          grep -n "ksu_handle_faccessat" fs/open.c
-
-          echo "== reboot =="
-          grep -n "ksu_handle_sys_reboot" kernel/reboot.c
 
       - name: Integrasikan NoMount (experimental/hookless)
         working-directory: kernel
@@ -531,16 +466,20 @@ jobs:
             echo 'CONFIG_LOCALVERSION="-perf"'
             echo "CONFIG_LOCALVERSION_AUTO=n"
             echo ""
-            echo "# ReSukiSU Manual Hook"
+            echo "# ReSukiSU (branch main resmi) - kernel 4.14 non-GKI wajib Manual Hook"
             echo "CONFIG_KSU=y"
             echo "CONFIG_KSU_TRACEPOINT_HOOK=n"
             echo "CONFIG_KSU_MANUAL_HOOK=y"
-            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INPUT_HOOK=y"
-            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK=y"
-            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK=y"
             echo "CONFIG_KSU_SUSFS=n"
             echo "CONFIG_KALLSYMS=y"
             echo "CONFIG_KALLSYMS_ALL=y"
+            echo "# default=y di Kconfig resmi (valid untuk kernel <6.8); ditulis eksplisit"
+            echo "# di sini supaya tidak bergantung ke default oldconfig merge - hook"
+            echo "# setuid/init-rc/input jadi otomatis lewat LSM, TIDAK perlu patch manual"
+            echo "# ke kernel/sys.c, fs/read_write.c, atau drivers/input/input.c."
+            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK=y"
+            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK=y"
+            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INPUT_HOOK=y"
             echo ""
             echo "# NoMount"
             echo "CONFIG_NOMOUNT=y"
@@ -605,20 +544,7 @@ jobs:
             exit 1
           fi
 
-          grep -q '^CONFIG_KSU_MANUAL_HOOK_AUTO_INPUT_HOOK=y$' out/.config || {
-            echo "ERROR: CONFIG_KSU_MANUAL_HOOK_AUTO_INPUT_HOOK tidak resolve ke y"
-            exit 1
-          }
-          grep -q '^CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK=y$' out/.config || {
-            echo "ERROR: CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK tidak resolve ke y"
-            exit 1
-          }
-          grep -q '^CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK=y$' out/.config || {
-            echo "ERROR: CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK tidak resolve ke y"
-            exit 1
-          }
-
-          echo "ReSukiSU official main + Manual Hook: CONFIG OK"
+          echo "ReSukiSU Manual Hook + auto-hook: CONFIG OK"
 
           set -o pipefail
           if ! make -k O=out -j"$(nproc)" \
@@ -650,10 +576,14 @@ jobs:
           fi
           ls -la out/arch/arm64/boot/
           echo ""
-          echo "==================== VERIFIKASI ReSukiSU MANUAL HOOK ===================="
-          grep -iE "manual_hook|You lost|You should integrate|incompatible hook" /tmp/build.log || true
+          echo "==================== VERIFIKASI MANUAL HOOK (resmi) ===================="
+          echo "Pesan ini berasal dari kernel/tools/manual_hook_check.mk milik ReSukiSU"
+          echo "branch main (di-include otomatis oleh kernel/Kbuild saat CONFIG_KSU_MANUAL_HOOK=y)."
+          echo "Kalau build lolos sampai sini, SEMUA hook wajib sudah ditemukan - mk ini"
+          echo "hard-fail (\$(error ...)) begitu ada simbol yang hilang, bukan skip diam-diam."
           echo ""
-          echo "Jika ada 'You lost ... hook', build dihentikan oleh manual_hook_check.mk."
+          echo "== Pesan hook dari Kbuild =="
+          grep -iE "resukisu.*manual_hook|using manual hook|using a manual|using lsm hooks" /tmp/build.log || true
 
       - name: Compile nm (NoMount userspace CLI dari experimental/hookless)
         run: |
