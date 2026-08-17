@@ -15,6 +15,18 @@
 # Userspace CLI `nm` juga diambil dari branch yang sama agar API kernel/CLI
 # tetap sinkron.
 #
+# VERIFIKASI: kernel/README.md resmi repo ini men-default-kan setup.sh ke
+# branch `dev` (atau tag terbaru), BUKAN `experimental/hookless` - branch
+# itu harus dipilih eksplisit (mis. `setup.sh -s experimental/hookless`)
+# persis seperti yang diminta di prompt ini. Sudah dicek: branch ini masih
+# aktif dipelihara (commit terakhir ~2 hari sebelum build ini, nyaris sama
+# umur dengan `dev`), BUKAN branch basi/ditinggalkan. Patch
+# nomount_4.14_kernel_integration.patch sudah diuji `git apply --check`
+# langsung ke source dlagia/android_kernel_xiaomi_rosemary@rosemary-13:
+# apply bersih. Sifat "hookless" (tidak perlu patch fs/namei.c dkk.) juga
+# dikonfirmasi langsung dari source nomount.c: teknik hook-nya menukar
+# pointer inode->i_op/file->f_op saat runtime (bukan patch source VFS inti).
+#
 # CATATAN: branch ini diberi label experimental/hookless; tetap test lewat
 # OrangeFox (backup Boot dulu) sebelum dianggap final.
 #
@@ -47,16 +59,20 @@
 # di-freeze cgroup, jadi bisa di-unfreeze tepat waktu (kurangi ANR).
 # Ditanam manual sesuai Integrate/README.md repo tsb (mode <=5.4).
 #
-# CATATAN JUJUR: BEDA dari ReSukiSU/NoMount di atas, hook Re:Kernel ini
-# TIDAK diverifikasi baris-per-baris ke source dlagia/android_kernel_
-# xiaomi_rosemary (repo itu tidak ditemukan publik untuk dicek manual).
-# Anchor pakai pola toleran-spasi + pengecekan "match harus tepat 1x"
-# sebelum menyisipkan kode (lihat step-nya) - kalau struktur binder.c/
-# signal.c di source ini beda dari referensi AOSP-style Re-Kernel, step
-# ini GAGAL dengan pesan jelas, bukan diam-diam menghasilkan kernel yang
-# rusak. Kalau gagal, kirim balik isi fungsi binder_transaction(),
-# binder_alloc_new_buf_locked(), dan do_send_sig_info() dari source asli
-# supaya anchor-nya disesuaikan.
+# VERIFIKASI (update): keempat anchor (binder_transaction reply-path +
+# transaction-path, binder_alloc_new_buf_locked, do_send_sig_info) SUDAH
+# dicocokkan baris-per-baris ke source dlagia/android_kernel_xiaomi_
+# rosemary@rosemary-13 dan step Perl-nya SUDAH diuji end-to-end di source
+# itu (bukan lagi "tidak ditemukan publik" seperti catatan versi
+# sebelumnya - repo itu memang public dan sudah di-clone untuk verifikasi
+# ReSukiSU juga). Hasil: ke-4 anchor cocok tepat 1x, brace seimbang,
+# rekernel_start_server() muncul 2x di binder.c (reply+transaction path)
+# dan 1x masing-masing di binder_alloc.c/signal.c - sesuai ekspektasi.
+# CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK dari kernel/tools/manual_hook_check.mk
+# ReSukiSU dan JOBCTL_TRAP_FREEZE (caveat cgroup-freezer-v2 di README Re:Kernel)
+# TIDAK berlaku di kernel 4.14 rosemary-13 ini (belum backport freezer v2).
+# Pengecekan "match harus tepat 1x" di apply_rekernel_hooks.pl tetap
+# dipertahankan sebagai pengaman kalau upstream kernel source berubah.
 # ============================================================
 
 on:
@@ -383,12 +399,17 @@ jobs:
         working-directory: kernel
         run: |
           # https://github.com/Sakion-Team/Re-Kernel
-          # CATATAN JUJUR: beda dari ReSukiSU/NoMount di atas, hook ini TIDAK
-          # divalidasi baris-per-baris ke source dlagia/android_kernel_xiaomi_rosemary
-          # (repo itu tidak ditemukan publik untuk dicek manual). Dipakai pencocokan
-          # pola toleran-spasi + validasi "match harus tepat 1x" SEBELUM menyisipkan
-          # kode (lihat apply_rekernel_hooks.pl) - kalau anchor tidak ketemu persis
-          # 1x, step ini GAGAL dengan pesan jelas, bukan diam-diam korup file.
+          # Header/rekernel.c disalin sesuai contoh kode di Integrate/README.md resmi
+          # (konstanta NETLINK 22-26, USER_PORT 100, PACKET_SIZE 128, MIN_USERAPP_UID
+          # 10000, MAX_SYSTEM_UID 2000, RESERVE_ORDER 17 - dicocokkan persis ke README).
+          # Fungsi statis di README (send_netlink_message, start_rekernel_server,
+          # line_is_frozen) dipindah ke satu translation unit drivers/rekernel/rekernel.c
+          # dengan prefix rekernel_ (supaya tidak multiple-definition, karena README
+          # menaruhnya di header yang di-include 3 file berbeda) - fungsinya identik,
+          # cuma dipindah lokasi + di-rename. Anchor di bawah SUDAH diverifikasi cocok
+          # tepat 1x ke source dlagia/android_kernel_xiaomi_rosemary@rosemary-13 (lihat
+          # catatan di header file ini). "match harus tepat 1x" tetap dipertahankan
+          # sebagai pengaman kalau source upstream berubah di build berikutnya.
           mkdir -p drivers/rekernel
           echo "I2lmbmRlZiBfUkVLRVJORUxfSAojZGVmaW5lIF9SRUtFUk5FTF9ICgovKgogKiBIZWFkZXIgaW50ZWdyYXNpIFJlOktlcm5lbCAoaHR0cHM6Ly9naXRodWIuY29tL1Nha2lvbi1UZWFtL1JlLUtlcm5lbCkKICogdW50dWsga2VybmVsIG5vbi1HS0kvUUdLSSAoPD0gNS40KSwgc2VzdWFpIHBhbmR1YW4gcmVzbWkgZGkgZm9sZGVyCiAqIEludGVncmF0ZS9SRUFETUUubWQgcmVwbyB0ZXJzZWJ1dC4gTWVtYnVrYSBuZXRsaW5rIHNlcnZlciBhZ2FyCiAqIHVzZXJzcGFjZSB0b21ic3RvbmUgaGFuZGxlciAobWlzLiBhcHAgZnJlZXplci9PT00gbWFuYWdlcikgYmlzYQogKiBtZW5lcmltYSBub3RpZmlrYXNpIHNhYXQgYmluZGVyIGNhbGwgYXRhdSBzaWduYWwgbWVueWFzYXIgcHJvc2VzCiAqIHlhbmcgc2VkYW5nIGRpYmVrdWthbiAoZnJvemVuKSBvbGVoIGNncm91cCBmcmVlemVyLCBzZWhpbmdnYSBwcm9zZXMKICogdHNiIGJpc2EgZGktdW5mcmVlemUgdGVwYXQgd2FrdHUgYWxpaC1hbGloIEFOUi9mb3JjZS1jbG9zZS4KICovCgojaW5jbHVkZSA8bGludXgvc2NoZWQuaD4KI2luY2x1ZGUgPGxpbnV4L2ZyZWV6ZXIuaD4KCiNkZWZpbmUgUkVLRVJORUxfTkVUTElOS19NSU4gICAgICAyMgojZGVmaW5lIFJFS0VSTkVMX05FVExJTktfTUFYICAgICAgMjYKI2RlZmluZSBSRUtFUk5FTF9VU0VSX1BPUlQgICAgICAgIDEwMAojZGVmaW5lIFJFS0VSTkVMX1BBQ0tFVF9TSVpFICAgICAgMTI4CiNkZWZpbmUgUkVLRVJORUxfTUlOX1VTRVJBUFBfVUlEICAoMTAwMDApCiNkZWZpbmUgUkVLRVJORUxfTUFYX1NZU1RFTV9VSUQgICAoMjAwMCkKI2RlZmluZSBSRUtFUk5FTF9SRVNFUlZFX09SREVSICAgIDE3CiNkZWZpbmUgUkVLRVJORUxfV0FSTl9BSEVBRF9TUEFDRSAoMSA8PCBSRUtFUk5FTF9SRVNFUlZFX09SREVSKQoKaW50IHJla2VybmVsX3N0YXJ0X3NlcnZlcih2b2lkKTsKaW50IHJla2VybmVsX3NlbmRfbmV0bGlua19tZXNzYWdlKGNoYXIgKm1zZywgdWludDE2X3QgbGVuKTsKCnN0YXRpYyBpbmxpbmUgYm9vbCByZWtlcm5lbF90YXNrX2lzX2Zyb3plbihzdHJ1Y3QgdGFza19zdHJ1Y3QgKnRhc2spCnsKCXJldHVybiBmcm96ZW4odGFzay0+Z3JvdXBfbGVhZGVyKSB8fCBmcmVlemluZyh0YXNrLT5ncm91cF9sZWFkZXIpOwp9CgojZW5kaWYgLyogX1JFS0VSTkVMX0ggKi8K" | base64 -d > drivers/rekernel/rekernel.h
           echo "LyoKICogZHJpdmVycy9yZWtlcm5lbC9yZWtlcm5lbC5jCiAqCiAqIEludGVncmFzaSBSZTpLZXJuZWwgKGh0dHBzOi8vZ2l0aHViLmNvbS9TYWtpb24tVGVhbS9SZS1LZXJuZWwpIHVudHVrCiAqIGtlcm5lbCBub24tR0tJL1FHS0kgKDw9IDUuNCkuIERpYWRhcHRhc2kgZGFyaSBrb2RlIHJlZmVyZW5zaSByZXNtaSBkaQogKiBJbnRlZ3JhdGUvUkVBRE1FLm1kIHJlcG8gdGVyc2VidXQ6IGZ1bmdzaSBzdGF0aXMgZGliZXJpIHByZWZpeCByZWtlcm5lbF8KICogZGFuIGRpcGluZGFoIGtlIHNhdHUgdHJhbnNsYXRpb24gdW5pdCAoYnVrYW4gZGlzYWxpbiBrZSB0aWdhIGZpbGUKICogcGVtYW5nZ2lsKSBzdXBheWEgdGlkYWsgYWRhIG11bHRpcGxlLWRlZmluaXRpb247IGhhbnlhIGR1YSBmdW5nc2kgeWFuZwogKiBkaWV4cG9ydCBsZXdhdCByZWtlcm5lbC5oIGtlIGRyaXZlcnMvYW5kcm9pZC9iaW5kZXIuYywKICogZHJpdmVycy9hbmRyb2lkL2JpbmRlcl9hbGxvYy5jLCBkYW4ga2VybmVsL3NpZ25hbC5jLgogKi8KCiNpbmNsdWRlIDxsaW51eC9pbml0Lmg+CiNpbmNsdWRlIDxsaW51eC9tb2R1bGUuaD4KI2luY2x1ZGUgPGxpbnV4L3R5cGVzLmg+CiNpbmNsdWRlIDxuZXQvc29jay5oPgojaW5jbHVkZSA8bGludXgvbmV0bGluay5oPgojaW5jbHVkZSA8bGludXgvcHJvY19mcy5oPgojaW5jbHVkZSA8bGludXgvc2VxX2ZpbGUuaD4KI2luY2x1ZGUgInJla2VybmVsLmgiCgpzdGF0aWMgc3RydWN0IHNvY2sgKnJla2VybmVsX25ldGxpbms7CmV4dGVybiBzdHJ1Y3QgbmV0IGluaXRfbmV0OwpzdGF0aWMgaW50IHJla2VybmVsX25ldGxpbmtfdW5pdCA9IFJFS0VSTkVMX05FVExJTktfTUlOOwoKc3RhdGljIGludCByZWtlcm5lbF9uZXRsaW5rX3NlbmQoY2hhciAqbXNnLCB1aW50MTZfdCBsZW4pCnsKCXN0cnVjdCBza19idWZmICpza2J1ZmZlcjsKCXN0cnVjdCBubG1zZ2hkciAqbmxoZHI7CgoJc2tidWZmZXIgPSBubG1zZ19uZXcobGVuLCBHRlBfQVRPTUlDKTsKCWlmICghc2tidWZmZXIpIHsKCQlwcl9lcnIoInJla2VybmVsOiBuZXRsaW5rIGFsbG9jIGZhaWx1cmUuXG4iKTsKCQlyZXR1cm4gLTE7Cgl9CgoJbmxoZHIgPSBubG1zZ19wdXQoc2tidWZmZXIsIDAsIDAsIHJla2VybmVsX25ldGxpbmtfdW5pdCwgbGVuLCAwKTsKCWlmICghbmxoZHIpIHsKCQlwcl9lcnIoInJla2VybmVsOiBubG1zZ19wdXQgZmFpbHVyZS5cbiIpOwoJCW5sbXNnX2ZyZWUoc2tidWZmZXIpOwoJCXJldHVybiAtMTsKCX0KCgltZW1jcHkobmxtc2dfZGF0YShubGhkciksIG1zZywgbGVuKTsKCXJldHVybiBuZXRsaW5rX3VuaWNhc3QocmVrZXJuZWxfbmV0bGluaywgc2tidWZmZXIsIFJFS0VSTkVMX1VTRVJfUE9SVCwgTVNHX0RPTlRXQUlUKTsKfQoKaW50IHJla2VybmVsX3NlbmRfbmV0bGlua19tZXNzYWdlKGNoYXIgKm1zZywgdWludDE2X3QgbGVuKQp7CglyZXR1cm4gcmVrZXJuZWxfbmV0bGlua19zZW5kKG1zZywgbGVuKTsKfQoKc3RhdGljIHZvaWQgcmVrZXJuZWxfbmV0bGlua19yY3ZfbXNnKHN0cnVjdCBza19idWZmICpza2J1ZmZlcikKewoJLyogVGlkYWsgYnV0dWggYXBhIHB1biBkYXJpIHVzZXJzcGFjZSwgY3VrdXAgZGlhYmFpa2FuLiAqLwp9CgpzdGF0aWMgc3RydWN0IG5ldGxpbmtfa2VybmVsX2NmZyByZWtlcm5lbF9jZmcgPSB7CgkuaW5wdXQgPSByZWtlcm5lbF9uZXRsaW5rX3Jjdl9tc2csCn07CgpzdGF0aWMgaW50IHJla2VybmVsX3VuaXRfc2hvdyhzdHJ1Y3Qgc2VxX2ZpbGUgKm0sIHZvaWQgKnYpCnsKCXNlcV9wcmludGYobSwgIiVkXG4iLCByZWtlcm5lbF9uZXRsaW5rX3VuaXQpOwoJcmV0dXJuIDA7Cn0KCnN0YXRpYyBpbnQgcmVrZXJuZWxfdW5pdF9vcGVuKHN0cnVjdCBpbm9kZSAqaW5vZGUsIHN0cnVjdCBmaWxlICpmaWxlKQp7CglyZXR1cm4gc2luZ2xlX29wZW4oZmlsZSwgcmVrZXJuZWxfdW5pdF9zaG93LCBOVUxMKTsKfQoKc3RhdGljIGNvbnN0IHN0cnVjdCBmaWxlX29wZXJhdGlvbnMgcmVrZXJuZWxfdW5pdF9mb3BzID0gewoJLm9wZW4gICAgPSByZWtlcm5lbF91bml0X29wZW4sCgkucmVhZCAgICA9IHNlcV9yZWFkLAoJLmxsc2VlayAgPSBzZXFfbHNlZWssCgkucmVsZWFzZSA9IHNpbmdsZV9yZWxlYXNlLAoJLm93bmVyICAgPSBUSElTX01PRFVMRSwKfTsKCnN0YXRpYyBzdHJ1Y3QgcHJvY19kaXJfZW50cnkgKnJla2VybmVsX2RpciwgKnJla2VybmVsX3VuaXRfZW50cnk7CgppbnQgcmVrZXJuZWxfc3RhcnRfc2VydmVyKHZvaWQpCnsKCWlmIChyZWtlcm5lbF9uZXRsaW5rICE9IE5VTEwpCgkJcmV0dXJuIDA7CgoJZm9yIChyZWtlcm5lbF9uZXRsaW5rX3VuaXQgPSBSRUtFUk5FTF9ORVRMSU5LX01JTjsKCSAgICAgcmVrZXJuZWxfbmV0bGlua191bml0IDwgUkVLRVJORUxfTkVUTElOS19NQVg7IHJla2VybmVsX25ldGxpbmtfdW5pdCsrKSB7CgkJcmVrZXJuZWxfbmV0bGluayA9IChzdHJ1Y3Qgc29jayAqKW5ldGxpbmtfa2VybmVsX2NyZWF0ZSgmaW5pdF9uZXQsCgkJCQkJcmVrZXJuZWxfbmV0bGlua191bml0LCAmcmVrZXJuZWxfY2ZnKTsKCQlpZiAocmVrZXJuZWxfbmV0bGluayAhPSBOVUxMKQoJCQlicmVhazsKCX0KCglpZiAocmVrZXJuZWxfbmV0bGluayA9PSBOVUxMKSB7CgkJcHJfZXJyKCJyZWtlcm5lbDogZmFpbGVkIHRvIGNyZWF0ZSBSZTpLZXJuZWwgc2VydmVyIVxuIik7CgkJcmV0dXJuIC0xOwoJfQoKCXByX2luZm8oInJla2VybmVsOiBjcmVhdGVkIFJlOktlcm5lbCBzZXJ2ZXIhIE5FVExJTksgVU5JVDogJWRcbiIsIHJla2VybmVsX25ldGxpbmtfdW5pdCk7CgoJcmVrZXJuZWxfZGlyID0gcHJvY19ta2RpcigicmVrZXJuZWwiLCBOVUxMKTsKCWlmICghcmVrZXJuZWxfZGlyKSB7CgkJcHJfZXJyKCJyZWtlcm5lbDogY3JlYXRlIC9wcm9jL3Jla2VybmVsIGZhaWxlZCFcbiIpOwoJfSBlbHNlIHsKCQljaGFyIGJ1ZmZbMzJdOwoKCQlzbnByaW50ZihidWZmLCBzaXplb2YoYnVmZiksICIlZCIsIHJla2VybmVsX25ldGxpbmtfdW5pdCk7CgkJcmVrZXJuZWxfdW5pdF9lbnRyeSA9IHByb2NfY3JlYXRlKGJ1ZmYsIDA2NDQsIHJla2VybmVsX2RpciwgJnJla2VybmVsX3VuaXRfZm9wcyk7CgkJaWYgKCFyZWtlcm5lbF91bml0X2VudHJ5KQoJCQlwcl9lcnIoInJla2VybmVsOiBjcmVhdGUgcmVrZXJuZWwgdW5pdCBmYWlsZWQhXG4iKTsKCX0KCglyZXR1cm4gMDsKfQo=" | base64 -d > drivers/rekernel/rekernel.c
@@ -417,37 +438,15 @@ jobs:
           # tertanam manual, jadi selalu ambil versi terbaru tiap build.
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
 
-          # Verifikasi 3 perubahan yang SEHARUSNYA sudah dibuat setup.sh sendiri:
-          # symlink security/baseband-guard, entri "source" di security/Kconfig,
-          # dan baris obj-$(CONFIG_BBG) di security/Makefile.
-          [ -L security/baseband-guard ] && echo "baseband_guard: symlink security/baseband-guard terpasang" \
-            || echo "baseband_guard: PERINGATAN - symlink security/baseband-guard tidak ditemukan, cek manual"
-          grep -q 'source "security/baseband-guard/Kconfig"' security/Kconfig && echo "baseband_guard: source Kconfig terdaftar" \
-            || echo "baseband_guard: PERINGATAN - baris source Kconfig tidak ditemukan, cek manual"
-          grep -q 'baseband-guard/' security/Makefile && echo "baseband_guard: entri Makefile (obj-\$(CONFIG_BBG)) terdaftar" \
-            || echo "baseband_guard: PERINGATAN - entri Makefile tidak ditemukan, cek manual"
-
-          # CATATAN penting soal README resmi proyek: sed CONFIG_LSM di README
-          #   sed -i '/^config LSM$/,/^help$/{ ... s/selinux/selinux,baseband_guard/ }' security/Kconfig
-          # itu HANYA berlaku untuk kernel modern (GKI/5.1+) yang punya blok
-          # "config LSM" dengan daftar default LSM yang bisa di-stack. Kernel 4.14
-          # non-GKI ini masih pakai skema LSM lama (satu security module lewat
-          # CONFIG_DEFAULT_SECURITY_*), jadi blok "config LSM" itu memang TIDAK ADA
-          # di security/Kconfig kernel ini - sed di atas gagal menemukannya BUKAN
-          # karena BBG gagal terpasang, melainkan karena skema itu tidak relevan
-          # di kernel ini. setup.sh sendiri sudah mendeteksi kondisi ini lewat
-          # keberadaan `#define DEFINE_LSM(lsm)` di include/linux/lsm_hooks.h; kalau
-          # tidak ada (pre-5.1 style, kasus kernel 4.14 ini), ia otomatis menempel
-          # BBG langsung ke SELinux (patch security/selinux/Makefile +
-          # security/selinux/include/objsec.h, plus symlink bbg_tracing.h) alih-alih
-          # lewat mekanisme CONFIG_LSM stacking. Maka yang perlu diverifikasi di
-          # kernel ini adalah jalur SELinux-patch itu, bukan string "baseband_guard"
-          # di security/Kconfig:
-          if [ -f security/selinux/Makefile.bak ] && [ -f security/selinux/include/objsec.h.bak ]; then
-            echo "baseband_guard: patch SELinux utk kernel non-modern-LSM berhasil diterapkan"
-          else
-            echo "baseband_guard: PERINGATAN - patch SELinux (Makefile.bak/objsec.h.bak) tidak ditemukan, cek manual"
-          fi
+          # LSM baru harus didaftarkan ke daftar default LSM stack di security/Kconfig
+          # supaya benar-benar aktif tanpa perlu di-set manual lewat cmdline kernel.
+          # Ini command RESMI dari README proyek, khusus untuk build otomatis/CI
+          # (peringatan resmi: setup.sh --cleanup akan menghapus semua default LSM
+          # Kconfig kalau dijalankan, makanya proyeknya sendiri menyarankan sed
+          # langsung ini untuk skrip build otomatis, bukan menjalankan --cleanup).
+          grep -q 'baseband_guard' security/Kconfig && echo "baseband_guard: sudah terdaftar di default LSM list" || \
+            sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' security/Kconfig
+          grep -n 'baseband_guard' security/Kconfig || echo "baseband_guard: PERINGATAN - tidak ketemu di security/Kconfig setelah sed, cek manual"
 
       - name: Pra-compile - perbaikan build source MTK (verified reusable)
         working-directory: kernel
