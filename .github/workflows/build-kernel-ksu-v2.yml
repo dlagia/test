@@ -5,32 +5,46 @@
 # di atas basis yang sama persis.
 #
 # NoMount: framework redirect path level VFS kernel (bukan mount --bind),
-# jadi /proc/self/mountinfo tetap stock. Workflow ini mengambil IMPLEMENTASI
-# resmi branch `dev` milik maxsteeel/nomount
-# (https://github.com/maxsteeel/nomount/tree/dev).
+# jadi /proc/self/mountinfo tetap stock. Workflow ini SEKARANG memakai branch
+# `dev` milik maxsteeel/nomount (BUKAN LAGI experimental/hookless - dihapus
+# total atas permintaan langsung, ganti ke `dev`).
 #
-# Branch `dev` (default resmi setup.sh) menyediakan integrasi kernel 4.14
-# minimal: fs/Kconfig + fs/Makefile, lalu source fs/nomount.c + fs/nomount.h
-# ditanam sebagai nomount.o. Tidak lagi memakai patch manual ke fs/namei.c,
-# fs/dcache.c, fs/readdir.c, fs/stat.c, fs/proc/task_mmu.c, atau fs/statfs.c.
-# Userspace CLI `nm` juga diambil dari branch yang sama agar API kernel/CLI
-# tetap sinkron.
+# VERIFIKASI: branch `dev` adalah DEFAULT RESMI kernel/README.md repo ini
+# sendiri - perintah setup.sh resminya persis:
+#   curl .../refs/heads/dev/kernel/setup.sh | bash -
+# (tanpa argumen branch = pakai dev secara implisit). Jadi branch ini bahkan
+# lebih "sesuai aturan git" dibanding experimental/hookless kemarin, yang
+# harus dipilih eksplisit lewat argumen -s.
 #
-# VERIFIKASI: kernel/README.md resmi men-default-kan setup.sh ke branch
-# `dev`. Patch nomount_4.14_kernel_integration.patch sudah diuji
-# `git apply --check` ke source dlagia/android_kernel_xiaomi_rosemary@
-# rosemary-13: apply bersih. Teknik hook menukar pointer inode->i_op /
-# file->f_op saat runtime (bukan patch source VFS inti).
+# Sudah dibandingkan byte-per-byte terhadap experimental/hookless: file
+# kernel/patches/nomount_4.14_kernel_integration.patch, seluruh isi module/,
+# userspace/src/nm.c, userspace/src/nm.h, dan kernel/setup.sh IDENTIK persis
+# di kedua branch (tidak ada perbedaan protokol keyring/netlink seperti
+# dugaan versi workflow sebelumnya - klaim itu ternyata tidak akurat, sudah
+# dicek ulang dan dikoreksi di sini). SATU-SATUNYA perbedaan nyata ada di
+# kernel/src/nomount.c dan nomount.h: dev meng-upgrade locking pembaca dari
+# rwsem (down_read/up_read) ke SRCU (srcu_read_lock/synchronize_srcu) -
+# perbaikan konkurensi murni, bukan perubahan API atau protokol komunikasi.
+# Sifat "hookless" (tukar pointer inode->i_op/file->f_op saat runtime, tanpa
+# sentuh fs/namei.c/fs/dcache.c/dst.) tetap identik di branch dev, sudah
+# dikonfirmasi ulang langsung dari source nomount.c branch ini.
 #
-# CATATAN (perubahan): perakitan module.zip flashable NoMount SUDAH
-# DIHAPUS TOTAL dari workflow ini atas permintaan langsung. Step "Compile nm"
-# sekarang hanya mengompilasi CLI `nm` dan `ko-loader-arm64` sebagai artefak
-# lepas (bukan dibungkus jadi module.zip KernelSU/Magisk). NoMount tetap
-# masuk ke kernel image itu sendiri lewat CONFIG_NOMOUNT=y - hanya paket
-# flashable terpisahnya yang tidak lagi dirakit di sini.
+# Patch nomount_4.14_kernel_integration.patch (branch dev) sudah diuji
+# `git apply --check` langsung ke source dlagia/android_kernel_xiaomi_
+# rosemary@rosemary-13: apply bersih (sama seperti sebelumnya, karena
+# file patch-nya byte-identik).
+#
+# CATATAN (permintaan eksplisit): perakitan module.zip flashable NoMount
+# (ko-loader, module-build, dst.) SUDAH DIHAPUS TOTAL dari workflow ini -
+# tidak ada lagi residu step, variabel env (MOD_ZIP), atau artifact terkait
+# modul flashable. Workflow ini sekarang hanya menghasilkan: kernel image
+# (dengan CONFIG_NOMOUNT=y built-in) dan biner CLI `nm` mentah. Kalau perlu
+# modul flashable untuk KernelSU Manager, rakit terpisah di luar workflow ini.
 #
 # CATATAN: tetap test lewat OrangeFox (backup Boot dulu) sebelum dianggap
-# final.
+# final - upgrade locking rwsem->SRCU di branch dev belum pernah diuji boot
+# sungguhan di device fisik lewat workflow ini (baru diverifikasi di level
+# source/compile, belum di level runtime kernel yang benar-benar menyala).
 #
 # WAJIB: test lewat OrangeFox (backup Boot dulu!) sebelum dianggap final,
 # SAMA seperti Fase 1. Kernel ini basis sama dengan yang sudah terbukti
@@ -336,30 +350,43 @@ jobs:
             echo "OK: $sym -> $f"
           done
 
-      - name: Integrasikan NoMount (dev)
+      - name: Integrasikan NoMount (branch dev, resmi)
         working-directory: kernel
         run: |
-          # NoMount branch: maxsteeel/nomount dev
-          # https://github.com/maxsteeel/nomount/tree/dev
+          # NoMount branch: maxsteeel/nomount `dev` (branch resmi/default repo ini,
+          # dikonfirmasi dari kernel/README.md: perintah setup.sh resmi tanpa
+          # argumen branch memang mengarah ke refs/heads/dev).
           # Ikuti struktur resmi branch ini untuk kernel 4.14:
           #   fs/nomount -> ../NoMount/kernel/src
           #   fs/Kconfig -> source "fs/nomount/Kconfig"
           #   fs/Makefile -> obj-$(CONFIG_NOMOUNT) += nomount/
           # Tidak menyalin nomount.c/nomount.h langsung ke fs/.
           # Tidak menyuntik hook manual ke fs/namei.c, fs/dcache.c,
-          # fs/readdir.c, fs/stat.c, fs/proc/task_mmu.c, atau fs/statfs.c.
+          # fs/readdir.c, fs/stat.c, fs/proc/task_mmu.c, atau fs/statfs.c -
+          # sifat "hookless" (tukar pointer inode->i_op/file->f_op saat
+          # runtime) tetap sama di branch dev; SATU-SATUNYA beda dari branch
+          # experimental/hookless yang dipakai sebelumnya adalah locking
+          # pembaca di nomount.c di-upgrade dari rwsem ke SRCU (lebih
+          # scalable untuk pembacaan konkuren) - bukan perubahan struktur
+          # integrasi kernel, jadi langkah-langkah di bawah ini TIDAK berubah.
           #
           # PENTING: clone NoMount di sini adalah SATU-SATUNYA clone dipakai
           # untuk SELURUH integrasi NoMount di workflow ini (kernel driver DAN
           # kompilasi nm) - lihat step "Compile nm" di bawah, yang juga memakai
-          # folder NoMount/ ini, TIDAK clone ulang. Ini sengaja untuk menjamin
-          # commit driver kernel dan commit userspace/CLI SELALU sama persis.
+          # folder NoMount/ ini, TIDAK clone ulang. Ini menjamin commit driver
+          # kernel dan commit userspace CLI SELALU sama persis.
 
           rm -rf NoMount
           git clone --depth=1 -b dev \
             https://github.com/maxsteeel/nomount.git NoMount
 
-          echo "NoMount commit dipakai (kernel + nm): $(git -C NoMount rev-parse --short HEAD)"
+          echo "NoMount commit dipakai (kernel + modul + nm): $(git -C NoMount rev-parse --short HEAD)"
+          cd NoMount
+          test "$(git branch --show-current)" = "dev" || {
+            echo "ERROR: NoMount bukan branch dev"
+            exit 1
+          }
+          cd ..
 
           # Pastikan source branch yang dipakai benar-benar memiliki
           # layout kernel/src yang diharapkan oleh patch 4.14.
@@ -375,7 +402,7 @@ jobs:
           # Terapkan patch integrasi resmi 4.14 dari branch dev.
           git apply --verbose NoMount/kernel/patches/nomount_4.14_kernel_integration.patch
 
-          echo "==================== NoMount (dev) ===================="
+          echo "==================== NoMount (branch dev) ===================="
           echo "NoMount source: $(readlink -f fs/nomount)"
           echo ""
           echo "== fs/Kconfig =="
@@ -391,6 +418,14 @@ jobs:
           grep -n '^config NOMOUNT' fs/nomount/Kconfig
           grep -n 'obj-$(CONFIG_NOMOUNT).*nomount.o' fs/nomount/Makefile
 
+          # Konfirmasi upgrade SRCU branch dev benar-benar terbawa (bukan sisa
+          # cache/clone lama yang salah checkout).
+          grep -q 'nomount_srcu' fs/nomount/nomount.c || {
+            echo "ERROR: fs/nomount/nomount.c tidak mengandung nomount_srcu - kemungkinan bukan branch dev yang benar"
+            exit 1
+          }
+          echo "OK: nomount.c mengandung nomount_srcu (locking SRCU khas branch dev)"
+
           # Pastikan hook NoMount lama TIDAK ikut masuk ke source kernel.
           if grep -R -nE 'nomount_hooks.patch|nomount_handle_(getname|permission|dpath|iterate_dir|getattr)|nomount_spoof_(mmap_metadata|statfs)' \
               fs/namei.c fs/dcache.c fs/readdir.c fs/stat.c fs/proc/task_mmu.c fs/statfs.c 2>/dev/null; then
@@ -398,7 +433,7 @@ jobs:
             exit 1
           fi
 
-          echo "NoMount dev: integration OK"
+          echo "NoMount branch dev: integration OK"
 
       - name: Integrasikan Re:Kernel (Sakion-Team) - notifikasi freeze binder/signal
         working-directory: kernel
@@ -649,22 +684,28 @@ jobs:
           echo "== Pesan hook dari Kbuild =="
           grep -iE "resukisu.*manual_hook|using manual hook|using a manual|using lsm hooks" /tmp/build.log || true
 
-      - name: Compile nm CLI (commit sama dgn kernel)
+      - name: Compile nm (NoMount userspace CLI, commit sama dgn kernel)
         run: |
-          # PENTING: nm dan ko-loader dikompilasi di sini memakai clone
-          # kernel/NoMount YANG SAMA PERSIS (commit sama) dengan step
-          # "Integrasikan NoMount" di atas - TIDAK clone ulang - supaya
-          # kernel driver dan CLI userspace dijamin satu commit (branch: dev).
-          # Kedua binari ini diunggah sebagai artefak lepas; TIDAK dirakit
-          # jadi module.zip flashable.
+          # Compile nm dari clone kernel/NoMount YANG SAMA PERSIS (commit sama,
+          # tidak clone ulang) dengan yang dipakai step "Integrasikan NoMount" di
+          # atas - supaya CLI ini selalu sinkron dengan driver kernel yang barusan
+          # dikompilasi.
+          #
+          # CATATAN: perakitan module.zip flashable (ko-loader, module-build, dst.)
+          # SUDAH DIHAPUS TOTAL dari workflow ini atas permintaan langsung - tidak
+          # ada lagi step ini yang menghasilkan modul flashable. Kalau butuh modul
+          # untuk KernelSU Manager, pasang CONFIG_NOMOUNT=y langsung di kernel
+          # (sudah aktif di defconfig lewat step "Aktifkan KSU di defconfig") dan
+          # gunakan biner nm hasil step ini secara manual, atau rakit modul lewat
+          # jalur resmi repo NoMount sendiri di luar workflow ini.
           NM_SRC="kernel/NoMount/userspace/src"
           test -d "$NM_SRC" || { echo "ERROR: $NM_SRC tidak ada - step Integrasikan NoMount gagal?"; exit 1; }
 
           NOMOUNT_COMMIT=$(git -C kernel/NoMount rev-parse --short HEAD)
           echo "NoMount commit dipakai (HARUS SAMA dgn step Integrasikan NoMount di atas): $NOMOUNT_COMMIT"
 
-          # 1) Compile nm (freestanding, syscall mentah - tanpa libc, sesuai desain
-          #    nm.h yang pakai inline asm syscall langsung, bukan wrapper glibc).
+          # Compile nm (freestanding, syscall mentah - tanpa libc, sesuai desain
+          # nm.h yang pakai inline asm syscall langsung, bukan wrapper glibc).
           mkdir -p nm-src
           cp "$NM_SRC/nm.c" "$NM_SRC/nm.h" nm-src/
           ( cd nm-src && \
@@ -672,39 +713,6 @@ jobs:
             aarch64-linux-gnu-strip nm )
           file nm-src/nm
           test -s nm-src/nm || { echo "ERROR: nm gagal dikompilasi"; exit 1; }
-
-          # 2) Compile ko-loader-arm64 (BUKAN freestanding - pakai stdio/stdlib biasa,
-          #    jadi -static saja, TANPA -nostdlib). Header .ko di-generate via xxd -i
-          #    dari assets/*.ko bawaan repo ko-loader, sesuai Makefile resminya -
-          #    cuma CC diganti ke gcc-aarch64-linux-gnu karena runner ini tidak
-          #    punya zig (Makefile resmi pakai `zig cc -target aarch64-linux`, hasil
-          #    akhirnya setara: ELF aarch64 statis, sudah diuji sukses di sandbox).
-          rm -rf ko-loader-src
-          git clone --depth=1 https://github.com/maxsteeel/ko-loader.git ko-loader-src
-          ( cd ko-loader-src && \
-            mkdir -p src/include && \
-            cd assets && \
-            for f in *.ko; do \
-              xxd -i "$f" > "../src/include/${f%.ko}.h"; \
-            done && \
-            cd .. && \
-            aarch64-linux-gnu-gcc -s -Os -static -Wl,--gc-sections,-z,norelro \
-              -fno-unwind-tables -fno-ident -fmerge-all-constants \
-              src/ko-loader.c -o ko-loader-arm64 )
-          # PENTING: xxd -i harus dijalankan SETELAH `cd assets` (bukan xxd -i
-          # assets/nama.ko dari luar) - kalau tidak, xxd akan menamai variabel C
-          # dengan prefix "assets_..." (dari path lengkap), padahal ko-loader.c
-          # mengharapkan nama TANPA prefix folder (persis pola resmi di Makefile
-          # repo ini: "cd $(ASSETS_DIR) && xxd -i $(notdir $<)"). Sudah diuji
-          # sungguhan di sandbox: variabel yang dihasilkan persis cocok
-          # (android12_5_10_lkmloader_ko, dst) dan ko-loader.c compile bersih.
-          file ko-loader-src/ko-loader-arm64
-          test -s ko-loader-src/ko-loader-arm64 || { echo "ERROR: ko-loader-arm64 gagal dikompilasi"; exit 1; }
-
-          cp ko-loader-src/ko-loader-arm64 nm-src/ko-loader-arm64
-          echo ""
-          echo ">>> nm dan ko-loader-arm64 tersedia sebagai artefak lepas di nm-src/."
-          echo ">>> Tidak ada module.zip flashable NoMount yang dirakit di workflow ini."
 
       - name: Tentukan file kernel hasil
         id: kimg
@@ -726,30 +734,29 @@ jobs:
             echo "dtbo.img ditemukan: $DTBO"
           fi
 
-           - name: Rakit paket AnyKernel3 (template asli fjrXTR)
+      - name: Rakit paket AnyKernel3 (template asli fjrXTR)
         run: |
           git clone --depth=1 https://github.com/fjrXTR/AnyKernel3.git AnyKernel3
           rm -rf AnyKernel3/.git
- 
+
           echo "IyMjIEFueUtlcm5lbDMgUmFtZGlzayBNb2QgU2NyaXB0CiMjIG9zbTBzaXMgQCB4ZGEtZGV2ZWxvcGVycwoKIyMjIEFueUtlcm5lbCBzZXR1cAojIGJlZ2luIHByb3BlcnRpZXMKcHJvcGVydGllcygpIHsgJwprZXJuZWwuc3RyaW5nPXNwaGluWCBLZXJuZWwgYnkgZmpyWFRSCmRvLmRldmljZWNoZWNrPTEKZG8ubW9kdWxlcz0wCmRvLnN5c3RlbWxlc3M9MQpkby5jbGVhbnVwPTEKZG8uY2xlYW51cG9uYWJvcnQ9MApkZXZpY2UubmFtZTE9ZmxldXIKZGV2aWNlLm5hbWUyPW1pZWwKZGV2aWNlLm5hbWUzPXNlYQpkZXZpY2UubmFtZTQ9b2NlYW4KZGV2aWNlLm5hbWU1PXJvc2VtYXJ5CmRldmljZS5uYW1lNj1zZWNyZXQKZGV2aWNlLm5hbWU3PW1hbHRvc2UKc3VwcG9ydGVkLnZlcnNpb25zPTExLjAtMTQuMApzdXBwb3J0ZWQucGF0Y2hsZXZlbHM9Cic7IH0gIyBlbmQgcHJvcGVydGllcwoKIyMjIEFueUtlcm5lbCBpbnN0YWxsCiMgYmVnaW4gYXR0cmlidXRlcwphdHRyaWJ1dGVzKCkgewpzZXRfcGVybV9yZWN1cnNpdmUgMCAwIDc1NSA2NDQgJHJhbWRpc2svKjsKc2V0X3Blcm1fcmVjdXJzaXZlIDAgMCA3NTAgNzUwICRyYW1kaXNrL2luaXQqICRyYW1kaXNrL3NiaW47Cn0gIyBlbmQgYXR0cmlidXRlcwoKCiMjIGJvb3Qgc2hlbGwgdmFyaWFibGVzCmJsb2NrPS9kZXYvYmxvY2svYnktbmFtZS9ib290Owppc19zbG90X2RldmljZT0xOwpyYW1kaXNrX2NvbXByZXNzaW9uPWF1dG87CnBhdGNoX3ZibWV0YV9mbGFnPWF1dG87CgojIGltcG9ydCBmdW5jdGlvbnMvdmFyaWFibGVzIGFuZCBzZXR1cCBwYXRjaGluZyAtIHNlZSBmb3IgcmVmZXJlbmNlIChETyBOT1QgUkVNT1ZFKQouIHRvb2xzL2FrMy1jb3JlLnNoICYmIGF0dHJpYnV0ZXM7CgojIGJvb3QgaW5zdGFsbApkdW1wX2Jvb3Q7ICMgdXNlIHNwbGl0X2Jvb3QgdG8gc2tpcCByYW1kaXNrIHVucGFjaywgZS5nLiBmb3IgZGV2aWNlcyB3aXRoIGluaXRfYm9vdCByYW1kaXNrCndyaXRlX2Jvb3Q7ICMgdXNlIGZsYXNoX2Jvb3QgdG8gc2tpcCByYW1kaXNrIHJlcGFjaywgZS5nLiBmb3IgZGV2aWNlcyB3aXRoIGluaXRfYm9vdCByYW1kaXNrCiMjIGVuZCBib290IGluc3RhbGwKCgojIyBpbml0X2Jvb3Qgc2hlbGwgdmFyaWFibGVzCiNibG9jaz1pbml0X2Jvb3Q7CiNpc19zbG90X2RldmljZT0xOwojcmFtZGlza19jb21wcmVzc2lvbj1hdXRvOwojcGF0Y2hfdmJtZXRhX2ZsYWc9YXV0bzsKCiMgcmVzZXQgZm9yIGluaXRfYm9vdCBwYXRjaGluZwojcmVzZXRfYWs7CgojIGluaXRfYm9vdCBpbnN0YWxsCiNkdW1wX2Jvb3Q7ICMgdW5wYWNrIHJhbWRpc2sgc2luY2UgaXQgaXMgdGhlIG5ldyBmaXJzdCBzdGFnZSBpbml0IHJhbWRpc2sgd2hlcmUgb3ZlcmxheS5kIG11c3QgZ28KCiN3cml0ZV9ib290OwojIyBlbmQgaW5pdF9ib290IGluc3RhbGwKCgojIyB2ZW5kb3Jfa2VybmVsX2Jvb3Qgc2hlbGwgdmFyaWFibGVzCiNibG9jaz12ZW5kb3Jfa2VybmVsX2Jvb3Q7CiNpc19zbG90X2RldmljZT0xOwojcmFtZGlza19jb21wcmVzc2lvbj1hdXRvOwojcGF0Y2hfdmJtZXRhX2ZsYWc9YXV0bzsKCiMgcmVzZXQgZm9yIHZlbmRvcl9rZXJuZWxfYm9vdCBwYXRjaGluZwojcmVzZXRfYWs7CgojIHZlbmRvcl9rZXJuZWxfYm9vdCBpbnN0YWxsCiNzcGxpdF9ib290OyAjIHNraXAgdW5wYWNrL3JlcGFjayByYW1kaXNrLCBlLmcuIGZvciBkdGIgb24gZGV2aWNlcyB3aXRoIGhkciB2NCBhbmQgdmVuZG9yX2tlcm5lbF9ib290CgojZmxhc2hfYm9vdDsKIyMgZW5kIHZlbmRvcl9rZXJuZWxfYm9vdCBpbnN0YWxsCgoKIyMgdmVuZG9yX2Jvb3Qgc2hlbGwgdmFyaWFibGVzCiNibG9jaz12ZW5kb3JfYm9vdDsKI2lzX3Nsb3RfZGV2aWNlPTE7CiNyYW1kaXNrX2NvbXByZXNzaW9uPWF1dG87CiNwYXRjaF92Ym1ldGFfZmxhZz1hdXRvOwoKIyByZXNldCBmb3IgdmVuZG9yX2Jvb3QgcGF0Y2hpbmcKI3Jlc2V0X2FrOwoKIyB2ZW5kb3JfYm9vdCBpbnN0YWxsCiNkdW1wX2Jvb3Q7ICMgdXNlIHNwbGl0X2Jvb3QgdG8gc2tpcCByYW1kaXNrIHVucGFjaywgZS5nLiBmb3IgZHRiIG9uIGRldmljZXMgd2l0aCBoZHIgdjQgYnV0IG5vIHZlbmRvcl9rZXJuZWxfYm9vdAoKI3dyaXRlX2Jvb3Q7ICMgdXNlIGZsYXNoX2Jvb3QgdG8gc2tpcCByYW1kaXNrIHJlcGFjaywgZS5nLiBmb3IgZHRiIG9uIGRldmljZXMgd2l0aCBoZHIgdjQgYnV0IG5vIHZlbmRvcl9rZXJuZWxfYm9vdAojIyBlbmQgdmVuZG9yX2Jvb3QgaW5zdGFsbAoK" | base64 -d > AnyKernel3/anykernel.sh
           echo "== anykernel.sh =="; cat AnyKernel3/anykernel.sh
- 
+
           cp "${{ steps.kimg.outputs.path }}" "AnyKernel3/${{ steps.kimg.outputs.name }}"
- 
+
           # Nama file dibuat unik per-run supaya tidak bentrok antar build.
           ZIP="rosemary-ksu-nomount-rekernel-bbg-$(date +%Y%m%d-%H%M%S).zip"
- 
+
           ( cd AnyKernel3 && zip -r9 "../$ZIP" . -x '.git*' )
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
           unzip -l "$ZIP" | head -20
- 
-      - name: Upload paket + kernel mentah + dtbo + nm CLI + modul NoMount
+
+      - name: Upload paket + kernel mentah + dtbo + nm CLI
         uses: actions/upload-artifact@v4
         with:
           if-no-files-found: warn
           path: |
             ${{ env.ZIP }}
-            ${{ env.MOD_ZIP }}
             ${{ steps.kimg.outputs.path }}
             ${{ steps.kimg.outputs.dtbo }}
             nm-src/nm
