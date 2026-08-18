@@ -69,7 +69,7 @@
 # MANUAL ke fs/exec.c, fs/open.c, fs/stat.c, kernel/reboot.c - setiap anchor
 # sudah diverifikasi baris-per-baris terhadap source dlagia/android_kernel_
 # xiaomi_rosemary@rosemary-13 sebelum ditanam di sini (lihat step di bawah).
-# Patch lain (NoMount/Re:Kernel/CVE/Baseband) tetap dipisahkan dari ReSukiSU.
+# Patch lain (NoMount/Re:Kernel/Baseband) tetap dipisahkan dari ReSukiSU.
 #
 # Re:Kernel (github.com/Sakion-Team/Re-Kernel): membuka netlink server
 # supaya tombstone/freezer di userspace tahu kapan binder call atau
@@ -91,6 +91,13 @@
 # TIDAK berlaku di kernel 4.14 rosemary-13 ini (belum backport freezer v2).
 # Pengecekan "match harus tepat 1x" di apply_rekernel_hooks.pl tetap
 # dipertahankan sebagai pengaman kalau upstream kernel source berubah.
+#
+# CATATAN (permintaan eksplisit): penambalan CVE-2026-43499 (GhostLock,
+# rtmutex/futex UAF -> local root exploit) yang sebelumnya ada di workflow
+# ini SUDAH DIHAPUS TOTAL atas permintaan langsung - baik step-nya, patch
+# base64-nya, maupun seluruh referensi ke CVE ini di komentar. Kernel hasil
+# build ini TIDAK lagi menyertakan backport fix untuk bug rt_mutex/futex
+# remove_waiter() tsb.
 # ============================================================
 
 on:
@@ -127,7 +134,7 @@ jobs:
           # lain dibangun - supaya konsisten di seluruh proses compile & versi
           # LINUX_VERSION_CODE yang dipakai kode sumber (masih di rentang 4.14.x
           # yang sama, jadi tidak mempengaruhi cabang kondisional versi manapun
-          # di patch ReSukiSU/NoMount/Re-Kernel/CVE).
+          # di patch ReSukiSU/NoMount/Re-Kernel).
           grep -n '^SUBLEVEL = ' Makefile
           sed -i 's/^SUBLEVEL = .*/SUBLEVEL = 186/' Makefile
           grep -n '^SUBLEVEL = ' Makefile
@@ -410,18 +417,6 @@ jobs:
           fi
 
           echo "NoMount experimental/hookless: integration OK"
-
-      - name: Tambal CVE-2026-43499 (GhostLock, rtmutex/futex UAF -> local root exploit)
-        working-directory: kernel
-        run: |
-          # Bug nyata 15 tahun di kernel Linux (rt_mutex/futex remove_waiter()),
-          # dipakai UNTUK dapat root tanpa privilese - berbahaya buat SEMUA app
-          # yg jalan di HP ini, bukan cuma kita. Backport diverifikasi manual dari
-          # commit upstream 3bfdc63936dd, disesuaikan ke struktur kernel 4.14 kita
-          # (source modern pakai rt_mutex_base/scoped_guard yg belum ada di 4.14).
-          echo "LS0tIGEva2VybmVsL2xvY2tpbmcvcnRtdXRleC5jCTIwMjYtMDgtMDMgMDA6NDc6MTguOTMwODkwODk0ICswMDAwCisrKyBiL2tlcm5lbC9sb2NraW5nL3J0bXV0ZXguYwkyMDI2LTA4LTAzIDAwOjQ3OjE5LjAyOTE3NDEzNiArMDAwMApAQCAtMTA3MCwxNCArMTA3MCwyMCBAQAogewogCWJvb2wgaXNfdG9wX3dhaXRlciA9ICh3YWl0ZXIgPT0gcnRfbXV0ZXhfdG9wX3dhaXRlcihsb2NrKSk7CiAJc3RydWN0IHRhc2tfc3RydWN0ICpvd25lciA9IHJ0X211dGV4X293bmVyKGxvY2spOworCS8qIENWRS0yMDI2LTQzNDk5IChHaG9zdExvY2spIGZpeDogdXNlIHdhaXRlci0+dGFzaywgbm90IGN1cnJlbnQgLQorCSAqIHdoZW4gY2FsbGVkIGZyb20gcnRfbXV0ZXhfc3RhcnRfcHJveHlfbG9jaygpIChmdXRleF9yZXF1ZXVlKCkKKwkgKiBwcm94eS1sb2NrIHJvbGxiYWNrIHBhdGgpIHdhaXRlci0+dGFzayAhPSBjdXJyZW50LiBPcGVyYXRpbmcgb24KKwkgKiBjdXJyZW50IGluIHRoYXQgcGF0aCBkZXF1ZXVlcyB1bmRlciB0aGUgd3JvbmcgdGFzaydzIHBpX2xvY2sgYW5kCisJICogbGVhdmVzIHRoZSByZWFsIHdhaXRlciB0YXNrJ3MgcGlfYmxvY2tlZF9vbiBkYW5nbGluZyAtPiBVQUYuICovCisJc3RydWN0IHRhc2tfc3RydWN0ICp3YWl0ZXJfdGFzayA9IHdhaXRlci0+dGFzazsKIAlzdHJ1Y3QgcnRfbXV0ZXggKm5leHRfbG9jazsKIAogCWxvY2tkZXBfYXNzZXJ0X2hlbGQoJmxvY2stPndhaXRfbG9jayk7CiAKLQlyYXdfc3Bpbl9sb2NrKCZjdXJyZW50LT5waV9sb2NrKTsKKwlyYXdfc3Bpbl9sb2NrKCZ3YWl0ZXJfdGFzay0+cGlfbG9jayk7CiAJcnRfbXV0ZXhfZGVxdWV1ZShsb2NrLCB3YWl0ZXIpOwotCWN1cnJlbnQtPnBpX2Jsb2NrZWRfb24gPSBOVUxMOwotCXJhd19zcGluX3VubG9jaygmY3VycmVudC0+cGlfbG9jayk7CisJd2FpdGVyX3Rhc2stPnBpX2Jsb2NrZWRfb24gPSBOVUxMOworCXJhd19zcGluX3VubG9jaygmd2FpdGVyX3Rhc2stPnBpX2xvY2spOwogCiAJLyoKIAkgKiBPbmx5IHVwZGF0ZSBwcmlvcml0eSBpZiB0aGUgd2FpdGVyIHdhcyB0aGUgaGlnaGVzdCBwcmlvcml0eQpAQCAtMTExMyw3ICsxMTE5LDcgQEAKIAlyYXdfc3Bpbl91bmxvY2tfaXJxKCZsb2NrLT53YWl0X2xvY2spOwogCiAJcnRfbXV0ZXhfYWRqdXN0X3ByaW9fY2hhaW4ob3duZXIsIFJUX01VVEVYX01JTl9DSEFJTldBTEssIGxvY2ssCi0JCQkJICAgbmV4dF9sb2NrLCBOVUxMLCBjdXJyZW50KTsKKwkJCQkgICBuZXh0X2xvY2ssIE5VTEwsIHdhaXRlcl90YXNrKTsKIAogCXJhd19zcGluX3VubG9ja19pcnEoJmxvY2stPndhaXRfbG9jayk7CiB9Cg==" | base64 -d > /tmp/cve-2026-43499-ghostlock.patch
-          git apply --verbose /tmp/cve-2026-43499-ghostlock.patch
-          grep -c CVE-2026-43499 kernel/locking/rtmutex.c
 
       - name: Integrasikan Re:Kernel (Sakion-Team) - notifikasi freeze binder/signal
         working-directory: kernel
@@ -791,11 +786,7 @@ jobs:
 
           cp "${{ steps.kimg.outputs.path }}" "AnyKernel3/${{ steps.kimg.outputs.name }}"
 
-          # BUG DITEMUKAN & DIPERBAIKI: sebelumnya $ZIP dipakai di baris zip -r9 di
-          # bawah TANPA PERNAH didefinisikan lebih dulu - hasilnya nama file jadi
-          # kosong ("../" doang), lalu step upload artifact di bawah juga ikut
-          # gagal karena ${{ env.ZIP }} kosong. ZIP sekarang didefinisikan eksplisit
-          # di sini SEBELUM dipakai.
+          # Nama file dibuat unik per-run supaya tidak bentrok antar build.
           ZIP="rosemary-ksu-nomount-rekernel-bbg-$(date +%Y%m%d-%H%M%S).zip"
 
           ( cd AnyKernel3 && zip -r9 "../$ZIP" . -x '.git*' )
