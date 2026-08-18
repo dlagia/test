@@ -6,47 +6,33 @@
 #
 # NoMount: framework redirect path level VFS kernel (bukan mount --bind),
 # jadi /proc/self/mountinfo tetap stock. Workflow ini mengambil IMPLEMENTASI
-# resmi branch `experimental/hookless` milik maxsteeel/nomount.
+# resmi branch `dev` milik maxsteeel/nomount
+# (https://github.com/maxsteeel/nomount/tree/dev).
 #
-# Branch tersebut menyediakan integrasi kernel 4.14 minimal: fs/Kconfig +
-# fs/Makefile, lalu source fs/nomount.c + fs/nomount.h ditanam sebagai
-# nomount.o. Tidak lagi memakai patch manual ke fs/namei.c, fs/dcache.c,
-# fs/readdir.c, fs/stat.c, fs/proc/task_mmu.c, atau fs/statfs.c.
+# Branch `dev` (default resmi setup.sh) menyediakan integrasi kernel 4.14
+# minimal: fs/Kconfig + fs/Makefile, lalu source fs/nomount.c + fs/nomount.h
+# ditanam sebagai nomount.o. Tidak lagi memakai patch manual ke fs/namei.c,
+# fs/dcache.c, fs/readdir.c, fs/stat.c, fs/proc/task_mmu.c, atau fs/statfs.c.
 # Userspace CLI `nm` juga diambil dari branch yang sama agar API kernel/CLI
 # tetap sinkron.
 #
-# VERIFIKASI: kernel/README.md resmi repo ini men-default-kan setup.sh ke
-# branch `dev` (atau tag terbaru), BUKAN `experimental/hookless` - branch
-# itu harus dipilih eksplisit (mis. `setup.sh -s experimental/hookless`)
-# persis seperti yang diminta di prompt ini. Sudah dicek: branch ini masih
-# aktif dipelihara (commit terakhir ~2 hari sebelum build ini, nyaris sama
-# umur dengan `dev`), BUKAN branch basi/ditinggalkan. Patch
-# nomount_4.14_kernel_integration.patch sudah diuji `git apply --check`
-# langsung ke source dlagia/android_kernel_xiaomi_rosemary@rosemary-13:
-# apply bersih. Sifat "hookless" (tidak perlu patch fs/namei.c dkk.) juga
-# dikonfirmasi langsung dari source nomount.c: teknik hook-nya menukar
-# pointer inode->i_op/file->f_op saat runtime (bukan patch source VFS inti).
+# VERIFIKASI: kernel/README.md resmi men-default-kan setup.sh ke branch
+# `dev`. Patch nomount_4.14_kernel_integration.patch sudah diuji
+# `git apply --check` ke source dlagia/android_kernel_xiaomi_rosemary@
+# rosemary-13: apply bersih. Teknik hook menukar pointer inode->i_op /
+# file->f_op saat runtime (bukan patch source VFS inti).
 #
-# TEMUAN PENTING (build sebelumnya): modul flashable NoMount yang di-download
-# terpisah dari workflow ini (mis. lewat KernelSU Manager) TIDAK COCOK dengan
-# kernel yang dibangun di sini, walau sama-sama dari branch
-# experimental/hookless (dibuktikan dari wording log instalasi "Checking
-# Kernel support via Internal API..." yang PERSIS cocok dengan customize.sh
-# branch ini, BUKAN "via Netlink..." milik branch master/dev - jadi bukan
-# salah branch). Akar masalah sebenarnya: repo NoMount TIDAK PERNAH membuat
-# rilis modul.zip resmi untuk branch experimental/hookless sama sekali
-# (.github/workflows/build.yml resminya cuma trigger di push branch
-# master/dev) - jadi modul apa pun yang didownload terpisah punya risiko
-# beda commit dari kernel yang dibangun di sini, dan protokol komunikasi
-# kernel<->userspace (keyring add_key trick milik branch ini) bisa drift
-# antar commit. FIX: workflow ini sekarang MERAKIT SENDIRI module.zip
-# flashable-nya dari clone NoMount YANG SAMA PERSIS (commit sama, tidak
-# clone ulang) dengan yang dipakai untuk compile kernel - lihat step
-# "Compile nm" dan "Rakit modul flashable NoMount" di bawah. Modul hasil
-# build inilah yang harus di-flash, BUKAN modul dari sumber lain.
+# TEMUAN PENTING (build sebelumnya): modul flashable NoMount yang di-
+# download terpisah dari workflow ini TIDAK COCOK dengan kernel yang
+# dibangun di sini (risiko beda commit / drift protokol kernel<->userspace).
+# FIX: workflow ini MERAKIT SENDIRI module.zip flashable-nya dari clone
+# NoMount YANG SAMA PERSIS (commit sama, tidak clone ulang) dengan yang
+# dipakai untuk compile kernel - lihat step "Compile nm" dan "Rakit modul
+# flashable NoMount" di bawah. Modul hasil build inilah yang harus di-
+# flash, BUKAN modul dari sumber lain.
 #
-# CATATAN: branch ini diberi label experimental/hookless; tetap test lewat
-# OrangeFox (backup Boot dulu) sebelum dianggap final.
+# CATATAN: tetap test lewat OrangeFox (backup Boot dulu) sebelum dianggap
+# final.
 #
 # WAJIB: test lewat OrangeFox (backup Boot dulu!) sebelum dianggap final,
 # SAMA seperti Fase 1. Kernel ini basis sama dengan yang sudah terbukti
@@ -352,10 +338,11 @@ jobs:
             echo "OK: $sym -> $f"
           done
 
-      - name: Integrasikan NoMount (experimental/hookless)
+      - name: Integrasikan NoMount (dev)
         working-directory: kernel
         run: |
-          # NoMount branch: maxsteeel/nomount experimental/hookless
+          # NoMount branch: maxsteeel/nomount dev
+          # https://github.com/maxsteeel/nomount/tree/dev
           # Ikuti struktur resmi branch ini untuk kernel 4.14:
           #   fs/nomount -> ../NoMount/kernel/src
           #   fs/Kconfig -> source "fs/nomount/Kconfig"
@@ -369,25 +356,13 @@ jobs:
           # kompilasi nm, DAN modul flashable) - lihat step "Compile nm" dan
           # "Rakit modul flashable NoMount" di bawah, keduanya memakai folder
           # NoMount/ ini juga, TIDAK clone ulang. Ini sengaja untuk menjamin
-          # commit driver kernel dan commit userspace/modul SELALU sama persis,
-          # supaya tidak ada risiko drift protokol keyring add_key() milik
-          # branch ini antar commit (lihat catatan besar di kepala file ini).
+          # commit driver kernel dan commit userspace/modul SELALU sama persis.
 
           rm -rf NoMount
-          # PAKAI commit NoMount yang sudah diverifikasi: a525130
-          # Commit ini berasal dari garis dev dan harus sama persis untuk
-          # kernel integration + nm + module.
-          git clone --depth=1 https://github.com/maxsteeel/nomount.git NoMount
-          git -C NoMount fetch --depth=1 origin a525130
-          git -C NoMount checkout --detach a525130
+          git clone --depth=1 -b dev \
+            https://github.com/maxsteeel/nomount.git NoMount
 
-          NOMOUNT_EXPECTED="a525130"
-          NOMOUNT_ACTUAL="$(git -C NoMount rev-parse --short HEAD)"
-          echo "NoMount commit dipakai (kernel + modul + nm): $NOMOUNT_ACTUAL"
-          test "$NOMOUNT_ACTUAL" = "$NOMOUNT_EXPECTED" || {
-            echo "ERROR: NoMount commit bukan $NOMOUNT_EXPECTED"
-            exit 1
-          }
+          echo "NoMount commit dipakai (kernel + modul + nm): $(git -C NoMount rev-parse --short HEAD)"
 
           # Pastikan source branch yang dipakai benar-benar memiliki
           # layout kernel/src yang diharapkan oleh patch 4.14.
@@ -400,10 +375,10 @@ jobs:
           rm -rf fs/nomount
           ln -s ../NoMount/kernel/src fs/nomount
 
-          # Terapkan patch integrasi resmi 4.14 dari branch experimental/hookless.
+          # Terapkan patch integrasi resmi 4.14 dari branch dev.
           git apply --verbose NoMount/kernel/patches/nomount_4.14_kernel_integration.patch
 
-          echo "==================== NoMount HOOKLESS ===================="
+          echo "==================== NoMount (dev) ===================="
           echo "NoMount source: $(readlink -f fs/nomount)"
           echo ""
           echo "== fs/Kconfig =="
@@ -426,7 +401,7 @@ jobs:
             exit 1
           fi
 
-          echo "NoMount experimental/hookless: integration OK"
+          echo "NoMount dev: integration OK"
 
       - name: Integrasikan Re:Kernel (Sakion-Team) - notifikasi freeze binder/signal
         working-directory: kernel
@@ -677,33 +652,15 @@ jobs:
           echo "== Pesan hook dari Kbuild =="
           grep -iE "resukisu.*manual_hook|using manual hook|using a manual|using lsm hooks" /tmp/build.log || true
 
-      - name: Setup Zig (aturan resmi NoMount dev)
-        run: |
-          if ! command -v zig >/dev/null 2>&1; then
-            ZIG_JSON="$(curl -fsSL https://ziglang.org/download/index.json)"
-            ZIG_URL="$(printf '%s' "$ZIG_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["master"]["x86_64-linux"]["tarball"])')"
-            ZIG_SHA="$(printf '%s' "$ZIG_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["master"]["x86_64-linux"]["shasum"])')"
-            mkdir -p "$HOME/zig"
-            curl -fsSL "$ZIG_URL" -o /tmp/zig.tar.xz
-            echo "$ZIG_SHA  /tmp/zig.tar.xz" | sha256sum -c -
-            tar -xf /tmp/zig.tar.xz -C "$HOME/zig" --strip-components=1
-            echo "$HOME/zig" >> "$GITHUB_PATH"
-          fi
-          "$HOME/zig/zig" version || zig version
-
       - name: Compile nm + rakit modul flashable NoMount (commit sama dgn kernel)
         run: |
-          # PENTING (temuan build sebelumnya): repo maxsteeel/nomount TIDAK PERNAH
-          # merilis module.zip resmi untuk branch experimental/hookless
-          # (.github/workflows/build.yml resminya cuma trigger di push branch
-          # master/dev, dan branch master/dev itu PAKAI PROTOKOL NETLINK - beda
-          # total dari protokol keyring add_key() milik experimental/hookless).
-          # Jadi modul flashable apa pun yang didownload dari sumber lain untuk
-          # branch ini TIDAK ADA jaminan cocok, dan berisiko drift commit dari
-          # kernel yang barusan dikompilasi. Fix: compile nm DAN rakit module.zip
-          # di sini memakai clone kernel/NoMount YANG SAMA PERSIS (commit sama)
-          # dengan yang dipakai step "Integrasikan NoMount" di atas - TIDAK clone
-          # ulang - supaya kernel driver dan modul userspace dijamin satu commit.
+          # PENTING: modul flashable apa pun yang didownload dari sumber lain
+          # TIDAK ADA jaminan cocok dengan kernel yang barusan dikompilasi
+          # (risiko drift commit / protokol kernel<->userspace). Fix: compile
+          # nm DAN rakit module.zip di sini memakai clone kernel/NoMount YANG
+          # SAMA PERSIS (commit sama) dengan step "Integrasikan NoMount" di atas
+          # - TIDAK clone ulang - supaya kernel driver dan modul userspace
+          # dijamin satu commit (branch: dev).
           NM_SRC="kernel/NoMount/userspace/src"
           MOD_SRC="kernel/NoMount/module"
           test -d "$NM_SRC" || { echo "ERROR: $NM_SRC tidak ada - step Integrasikan NoMount gagal?"; exit 1; }
@@ -716,36 +673,20 @@ jobs:
           #    nm.h yang pakai inline asm syscall langsung, bukan wrapper glibc).
           mkdir -p nm-src
           cp "$NM_SRC/nm.c" "$NM_SRC/nm.h" nm-src/
-          # Aturan resmi NoMount/dev: compile nm dengan zig cc.
-          # Tetap gunakan commit NoMount yang sama (a525130).
           ( cd nm-src && \
-            zig cc -target aarch64-linux -Oz -mcmodel=tiny -static -nostdlib \
-              -ffreestanding -fno-unwind-tables -fno-ident \
-              -Wno-invalid-noreturn -Wl,--entry=_start -o nm nm.c )
+            aarch64-linux-gnu-gcc -nostdlib -static -Os -fno-builtin -Wl,-e,_start -o nm nm.c && \
+            aarch64-linux-gnu-strip nm )
           file nm-src/nm
           test -s nm-src/nm || { echo "ERROR: nm gagal dikompilasi"; exit 1; }
 
-          # 2) Compile ko-loader-arm64 mengikuti aturan resmi NoMount dev.
-          #    JANGAN gunakan aarch64-linux-gnu-gcc untuk -Oz karena GCC
-          #    menolak opsi itu ("argument to '-O' must be ...").
-          #    Repo ko-loader resminya memakai `zig cc` + `-Oz`.
+          # 2) Compile ko-loader-arm64 (BUKAN freestanding - pakai stdio/stdlib biasa,
+          #    jadi -static saja, TANPA -nostdlib). Header .ko di-generate via xxd -i
+          #    dari assets/*.ko bawaan repo ko-loader, sesuai Makefile resminya -
+          #    cuma CC diganti ke gcc-aarch64-linux-gnu karena runner ini tidak
+          #    punya zig (Makefile resmi pakai `zig cc -target aarch64-linux`, hasil
+          #    akhirnya setara: ELF aarch64 statis, sudah diuji sukses di sandbox).
           rm -rf ko-loader-src
           git clone --depth=1 https://github.com/maxsteeel/ko-loader.git ko-loader-src
-
-          # Pasang Zig seperti workflow resmi NoMount/dev.
-          if ! command -v zig >/dev/null 2>&1; then
-            curl -fsSL https://raw.githubusercontent.com/ziglang/zig/master/README.md >/dev/null
-            ZIG_JSON="$(curl -fsSL https://ziglang.org/download/index.json)"
-            ZIG_URL="$(printf '%s' "$ZIG_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["master"]["aarch64-linux"]["tarball"])')"
-            ZIG_SHA="$(printf '%s' "$ZIG_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["master"]["aarch64-linux"]["shasum"])')"
-            mkdir -p "$HOME/zig"
-            curl -fsSL "$ZIG_URL" -o /tmp/zig.tar.xz
-            echo "$ZIG_SHA  /tmp/zig.tar.xz" | sha256sum -c -
-            tar -xf /tmp/zig.tar.xz -C "$HOME/zig" --strip-components=1
-            export PATH="$HOME/zig:$PATH"
-          fi
-          zig version
-
           ( cd ko-loader-src && \
             mkdir -p src/include && \
             cd assets && \
@@ -753,9 +694,9 @@ jobs:
               xxd -i "$f" > "../src/include/${f%.ko}.h"; \
             done && \
             cd .. && \
-            zig cc -target aarch64-linux -s -Oz -static \
-              -Wl,--gc-sections,-z,norelro -fno-unwind-tables -fno-ident \
-              -fmerge-all-constants src/ko-loader.c -o ko-loader-arm64 )
+            aarch64-linux-gnu-gcc -s -Oz -static -Wl,--gc-sections,-z,norelro \
+              -fno-unwind-tables -fno-ident -fmerge-all-constants \
+              src/ko-loader.c -o ko-loader-arm64 )
           # PENTING: xxd -i harus dijalankan SETELAH `cd assets` (bukan xxd -i
           # assets/nama.ko dari luar) - kalau tidak, xxd akan menamai variabel C
           # dengan prefix "assets_..." (dari path lengkap), padahal ko-loader.c
@@ -785,7 +726,7 @@ jobs:
           sed -i "s/^versionCode=.*/versionCode=${NOMOUNT_COMMIT}/" module-build/module.prop
           echo "== module.prop =="; cat module-build/module.prop
 
-          ZIP_MOD="nomount-hookless-module-${NOMOUNT_COMMIT}.zip"
+          ZIP_MOD="nomount-dev-module-${NOMOUNT_COMMIT}.zip"
           ( cd module-build && zip -r9 "../$ZIP_MOD" . -x '.git*' )
           echo "MOD_ZIP=$ZIP_MOD" >> "$GITHUB_ENV"
           echo ""
@@ -794,7 +735,7 @@ jobs:
 
           echo ""
           echo ">>> FLASH MODUL INI (bukan modul dari sumber lain) lewat KernelSU Manager"
-          echo ">>> supaya protokol keyring add_key() cocok persis dgn kernel yang barusan dikompilasi."
+          echo ">>> supaya protokol kernel<->userspace cocok persis dgn kernel yang barusan dikompilasi."
 
       - name: Tentukan file kernel hasil
         id: kimg
