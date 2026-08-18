@@ -22,14 +22,12 @@
 # rosemary-13: apply bersih. Teknik hook menukar pointer inode->i_op /
 # file->f_op saat runtime (bukan patch source VFS inti).
 #
-# TEMUAN PENTING (build sebelumnya): modul flashable NoMount yang di-
-# download terpisah dari workflow ini TIDAK COCOK dengan kernel yang
-# dibangun di sini (risiko beda commit / drift protokol kernel<->userspace).
-# FIX: workflow ini MERAKIT SENDIRI module.zip flashable-nya dari clone
-# NoMount YANG SAMA PERSIS (commit sama, tidak clone ulang) dengan yang
-# dipakai untuk compile kernel - lihat step "Compile nm" dan "Rakit modul
-# flashable NoMount" di bawah. Modul hasil build inilah yang harus di-
-# flash, BUKAN modul dari sumber lain.
+# CATATAN (perubahan): perakitan module.zip flashable NoMount SUDAH
+# DIHAPUS TOTAL dari workflow ini atas permintaan langsung. Step "Compile nm"
+# sekarang hanya mengompilasi CLI `nm` dan `ko-loader-arm64` sebagai artefak
+# lepas (bukan dibungkus jadi module.zip KernelSU/Magisk). NoMount tetap
+# masuk ke kernel image itu sendiri lewat CONFIG_NOMOUNT=y - hanya paket
+# flashable terpisahnya yang tidak lagi dirakit di sini.
 #
 # CATATAN: tetap test lewat OrangeFox (backup Boot dulu) sebelum dianggap
 # final.
@@ -352,17 +350,16 @@ jobs:
           # fs/readdir.c, fs/stat.c, fs/proc/task_mmu.c, atau fs/statfs.c.
           #
           # PENTING: clone NoMount di sini adalah SATU-SATUNYA clone dipakai
-          # untuk SELURUH integrasi NoMount di workflow ini (kernel driver,
-          # kompilasi nm, DAN modul flashable) - lihat step "Compile nm" dan
-          # "Rakit modul flashable NoMount" di bawah, keduanya memakai folder
-          # NoMount/ ini juga, TIDAK clone ulang. Ini sengaja untuk menjamin
-          # commit driver kernel dan commit userspace/modul SELALU sama persis.
+          # untuk SELURUH integrasi NoMount di workflow ini (kernel driver DAN
+          # kompilasi nm) - lihat step "Compile nm" di bawah, yang juga memakai
+          # folder NoMount/ ini, TIDAK clone ulang. Ini sengaja untuk menjamin
+          # commit driver kernel dan commit userspace/CLI SELALU sama persis.
 
           rm -rf NoMount
           git clone --depth=1 -b dev \
             https://github.com/maxsteeel/nomount.git NoMount
 
-          echo "NoMount commit dipakai (kernel + modul + nm): $(git -C NoMount rev-parse --short HEAD)"
+          echo "NoMount commit dipakai (kernel + nm): $(git -C NoMount rev-parse --short HEAD)"
 
           # Pastikan source branch yang dipakai benar-benar memiliki
           # layout kernel/src yang diharapkan oleh patch 4.14.
@@ -652,19 +649,16 @@ jobs:
           echo "== Pesan hook dari Kbuild =="
           grep -iE "resukisu.*manual_hook|using manual hook|using a manual|using lsm hooks" /tmp/build.log || true
 
-      - name: Compile nm + rakit modul flashable NoMount (commit sama dgn kernel)
+      - name: Compile nm CLI (commit sama dgn kernel)
         run: |
-          # PENTING: modul flashable apa pun yang didownload dari sumber lain
-          # TIDAK ADA jaminan cocok dengan kernel yang barusan dikompilasi
-          # (risiko drift commit / protokol kernel<->userspace). Fix: compile
-          # nm DAN rakit module.zip di sini memakai clone kernel/NoMount YANG
-          # SAMA PERSIS (commit sama) dengan step "Integrasikan NoMount" di atas
-          # - TIDAK clone ulang - supaya kernel driver dan modul userspace
-          # dijamin satu commit (branch: dev).
+          # PENTING: nm dan ko-loader dikompilasi di sini memakai clone
+          # kernel/NoMount YANG SAMA PERSIS (commit sama) dengan step
+          # "Integrasikan NoMount" di atas - TIDAK clone ulang - supaya
+          # kernel driver dan CLI userspace dijamin satu commit (branch: dev).
+          # Kedua binari ini diunggah sebagai artefak lepas; TIDAK dirakit
+          # jadi module.zip flashable.
           NM_SRC="kernel/NoMount/userspace/src"
-          MOD_SRC="kernel/NoMount/module"
           test -d "$NM_SRC" || { echo "ERROR: $NM_SRC tidak ada - step Integrasikan NoMount gagal?"; exit 1; }
-          test -d "$MOD_SRC" || { echo "ERROR: $MOD_SRC tidak ada - struktur repo NoMount berubah?"; exit 1; }
 
           NOMOUNT_COMMIT=$(git -C kernel/NoMount rev-parse --short HEAD)
           echo "NoMount commit dipakai (HARUS SAMA dgn step Integrasikan NoMount di atas): $NOMOUNT_COMMIT"
@@ -707,35 +701,10 @@ jobs:
           file ko-loader-src/ko-loader-arm64
           test -s ko-loader-src/ko-loader-arm64 || { echo "ERROR: ko-loader-arm64 gagal dikompilasi"; exit 1; }
 
-          # 3) Rakit folder module/ jadi module.zip flashable. Format KernelSU/
-          #    Magisk modern tidak butuh META-INF/update-binary (ksud yang
-          #    menangani ekstraksi) - cukup module.prop + customize.sh + file
-          #    lain di root zip, sesuai cara resmi build.yml sendiri meng-upload
-          #    folder module/ apa adanya.
-          rm -rf module-build
-          cp -r "$MOD_SRC" module-build
-          mkdir -p module-build/bin
-          cp nm-src/nm module-build/bin/nm-arm64
-          cp ko-loader-src/ko-loader-arm64 module-build/bin/ko-loader-arm64
-          chmod 0755 module-build/bin/nm-arm64 module-build/bin/ko-loader-arm64
-
-          # versionCode diisi commit NoMount (bukan angka run CI) supaya modul ini
-          # bisa dilacak persis dibangun dari commit mana - beda dari cara resmi
-          # (yg pakai github.com/run_number) karena workflow ini bukan CI resmi
-          # NoMount, tapi tetap harus traceable.
-          sed -i "s/^versionCode=.*/versionCode=${NOMOUNT_COMMIT}/" module-build/module.prop
-          echo "== module.prop =="; cat module-build/module.prop
-
-          ZIP_MOD="nomount-dev-module-${NOMOUNT_COMMIT}.zip"
-          ( cd module-build && zip -r9 "../$ZIP_MOD" . -x '.git*' )
-          echo "MOD_ZIP=$ZIP_MOD" >> "$GITHUB_ENV"
+          cp ko-loader-src/ko-loader-arm64 nm-src/ko-loader-arm64
           echo ""
-          echo "== isi module.zip =="
-          unzip -l "$ZIP_MOD"
-
-          echo ""
-          echo ">>> FLASH MODUL INI (bukan modul dari sumber lain) lewat KernelSU Manager"
-          echo ">>> supaya protokol kernel<->userspace cocok persis dgn kernel yang barusan dikompilasi."
+          echo ">>> nm dan ko-loader-arm64 tersedia sebagai artefak lepas di nm-src/."
+          echo ">>> Tidak ada module.zip flashable NoMount yang dirakit di workflow ini."
 
       - name: Tentukan file kernel hasil
         id: kimg
@@ -774,14 +743,14 @@ jobs:
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
           unzip -l "$ZIP" | head -20
 
-      - name: Upload paket + kernel mentah + dtbo + nm CLI + modul NoMount
+      - name: Upload paket + kernel mentah + dtbo + nm CLI
         uses: actions/upload-artifact@v4
         with:
           if-no-files-found: warn
           path: |
             ${{ env.ZIP }}
-            ${{ env.MOD_ZIP }}
             ${{ steps.kimg.outputs.path }}
             ${{ steps.kimg.outputs.dtbo }}
             nm-src/nm
+            nm-src/ko-loader-arm64
             kernel/out/.config
