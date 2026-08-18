@@ -726,31 +726,31 @@ jobs:
             echo "dtbo.img ditemukan: $DTBO"
           fi
 
-      - name: Rakit paket AnyKernel3 (template asli fjrXTR)
+           - name: Rakit paket AnyKernel3 (template asli fjrXTR)
         run: |
           git clone --depth=1 https://github.com/fjrXTR/AnyKernel3.git AnyKernel3
           rm -rf AnyKernel3/.git
-
+ 
           echo "IyMjIEFueUtlcm5lbDMgUmFtZGlzayBNb2QgU2NyaXB0CiMjIG9zbTBzaXMgQCB4ZGEtZGV2ZWxvcGVycwoKIyMjIEFueUtlcm5lbCBzZXR1cAojIGJlZ2luIHByb3BlcnRpZXMKcHJvcGVydGllcygpIHsgJwprZXJuZWwuc3RyaW5nPXNwaGluWCBLZXJuZWwgYnkgZmpyWFRSCmRvLmRldmljZWNoZWNrPTEKZG8ubW9kdWxlcz0wCmRvLnN5c3RlbWxlc3M9MQpkby5jbGVhbnVwPTEKZG8uY2xlYW51cG9uYWJvcnQ9MApkZXZpY2UubmFtZTE9ZmxldXIKZGV2aWNlLm5hbWUyPW1pZWwKZGV2aWNlLm5hbWUzPXNlYQpkZXZpY2UubmFtZTQ9b2NlYW4KZGV2aWNlLm5hbWU1PXJvc2VtYXJ5CmRldmljZS5uYW1lNj1zZWNyZXQKZGV2aWNlLm5hbWU3PW1hbHRvc2UKc3VwcG9ydGVkLnZlcnNpb25zPTExLjAtMTQuMApzdXBwb3J0ZWQucGF0Y2hsZXZlbHM9Cic7IH0gIyBlbmQgcHJvcGVydGllcwoKIyMjIEFueUtlcm5lbCBpbnN0YWxsCiMgYmVnaW4gYXR0cmlidXRlcwphdHRyaWJ1dGVzKCkgewpzZXRfcGVybV9yZWN1cnNpdmUgMCAwIDc1NSA2NDQgJHJhbWRpc2svKjsKc2V0X3Blcm1fcmVjdXJzaXZlIDAgMCA3NTAgNzUwICRyYW1kaXNrL2luaXQqICRyYW1kaXNrL3NiaW47Cn0gIyBlbmQgYXR0cmlidXRlcwoKCiMjIGJvb3Qgc2hlbGwgdmFyaWFibGVzCmJsb2NrPS9kZXYvYmxvY2svYnktbmFtZS9ib290Owppc19zbG90X2RldmljZT0xOwpyYW1kaXNrX2NvbXByZXNzaW9uPWF1dG87CnBhdGNoX3ZibWV0YV9mbGFnPWF1dG87CgojIGltcG9ydCBmdW5jdGlvbnMvdmFyaWFibGVzIGFuZCBzZXR1cCBwYXRjaGluZyAtIHNlZSBmb3IgcmVmZXJlbmNlIChETyBOT1QgUkVNT1ZFKQouIHRvb2xzL2FrMy1jb3JlLnNoICYmIGF0dHJpYnV0ZXM7CgojIGJvb3QgaW5zdGFsbApkdW1wX2Jvb3Q7ICMgdXNlIHNwbGl0X2Jvb3QgdG8gc2tpcCByYW1kaXNrIHVucGFjaywgZS5nLiBmb3IgZGV2aWNlcyB3aXRoIGluaXRfYm9vdCByYW1kaXNrCndyaXRlX2Jvb3Q7ICMgdXNlIGZsYXNoX2Jvb3QgdG8gc2tpcCByYW1kaXNrIHJlcGFjaywgZS5nLiBmb3IgZGV2aWNlcyB3aXRoIGluaXRfYm9vdCByYW1kaXNrCiMjIGVuZCBib290IGluc3RhbGwKCgojIyBpbml0X2Jvb3Qgc2hlbGwgdmFyaWFibGVzCiNibG9jaz1pbml0X2Jvb3Q7CiNpc19zbG90X2RldmljZT0xOwojcmFtZGlza19jb21wcmVzc2lvbj1hdXRvOwojcGF0Y2hfdmJtZXRhX2ZsYWc9YXV0bzsKCiMgcmVzZXQgZm9yIGluaXRfYm9vdCBwYXRjaGluZwojcmVzZXRfYWs7CgojIGluaXRfYm9vdCBpbnN0YWxsCiNkdW1wX2Jvb3Q7ICMgdW5wYWNrIHJhbWRpc2sgc2luY2UgaXQgaXMgdGhlIG5ldyBmaXJzdCBzdGFnZSBpbml0IHJhbWRpc2sgd2hlcmUgb3ZlcmxheS5kIG11c3QgZ28KCiN3cml0ZV9ib290OwojIyBlbmQgaW5pdF9ib290IGluc3RhbGwKCgojIyB2ZW5kb3Jfa2VybmVsX2Jvb3Qgc2hlbGwgdmFyaWFibGVzCiNibG9jaz12ZW5kb3Jfa2VybmVsX2Jvb3Q7CiNpc19zbG90X2RldmljZT0xOwojcmFtZGlza19jb21wcmVzc2lvbj1hdXRvOwojcGF0Y2hfdmJtZXRhX2ZsYWc9YXV0bzsKCiMgcmVzZXQgZm9yIHZlbmRvcl9rZXJuZWxfYm9vdCBwYXRjaGluZwojcmVzZXRfYWs7CgojIHZlbmRvcl9rZXJuZWxfYm9vdCBpbnN0YWxsCiNzcGxpdF9ib290OyAjIHNraXAgdW5wYWNrL3JlcGFjayByYW1kaXNrLCBlLmcuIGZvciBkdGIgb24gZGV2aWNlcyB3aXRoIGhkciB2NCBhbmQgdmVuZG9yX2tlcm5lbF9ib290CgojZmxhc2hfYm9vdDsKIyMgZW5kIHZlbmRvcl9rZXJuZWxfYm9vdCBpbnN0YWxsCgoKIyMgdmVuZG9yX2Jvb3Qgc2hlbGwgdmFyaWFibGVzCiNibG9jaz12ZW5kb3JfYm9vdDsKI2lzX3Nsb3RfZGV2aWNlPTE7CiNyYW1kaXNrX2NvbXByZXNzaW9uPWF1dG87CiNwYXRjaF92Ym1ldGFfZmxhZz1hdXRvOwoKIyByZXNldCBmb3IgdmVuZG9yX2Jvb3QgcGF0Y2hpbmcKI3Jlc2V0X2FrOwoKIyB2ZW5kb3JfYm9vdCBpbnN0YWxsCiNkdW1wX2Jvb3Q7ICMgdXNlIHNwbGl0X2Jvb3QgdG8gc2tpcCByYW1kaXNrIHVucGFjaywgZS5nLiBmb3IgZHRiIG9uIGRldmljZXMgd2l0aCBoZHIgdjQgYnV0IG5vIHZlbmRvcl9rZXJuZWxfYm9vdAoKI3dyaXRlX2Jvb3Q7ICMgdXNlIGZsYXNoX2Jvb3QgdG8gc2tpcCByYW1kaXNrIHJlcGFjaywgZS5nLiBmb3IgZHRiIG9uIGRldmljZXMgd2l0aCBoZHIgdjQgYnV0IG5vIHZlbmRvcl9rZXJuZWxfYm9vdAojIyBlbmQgdmVuZG9yX2Jvb3QgaW5zdGFsbAoK" | base64 -d > AnyKernel3/anykernel.sh
           echo "== anykernel.sh =="; cat AnyKernel3/anykernel.sh
-
+ 
           cp "${{ steps.kimg.outputs.path }}" "AnyKernel3/${{ steps.kimg.outputs.name }}"
-
+ 
           # Nama file dibuat unik per-run supaya tidak bentrok antar build.
           ZIP="rosemary-ksu-nomount-rekernel-bbg-$(date +%Y%m%d-%H%M%S).zip"
-
+ 
           ( cd AnyKernel3 && zip -r9 "../$ZIP" . -x '.git*' )
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
           unzip -l "$ZIP" | head -20
-
-      - name: Upload paket + kernel mentah + dtbo + nm CLI
+ 
+      - name: Upload paket + kernel mentah + dtbo + nm CLI + modul NoMount
         uses: actions/upload-artifact@v4
         with:
           if-no-files-found: warn
           path: |
             ${{ env.ZIP }}
+            ${{ env.MOD_ZIP }}
             ${{ steps.kimg.outputs.path }}
             ${{ steps.kimg.outputs.dtbo }}
             nm-src/nm
-            nm-src/ko-loader-arm64
             kernel/out/.config
