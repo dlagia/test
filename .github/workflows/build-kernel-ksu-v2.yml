@@ -694,7 +694,7 @@ jobs:
               xxd -i "$f" > "../src/include/${f%.ko}.h"; \
             done && \
             cd .. && \
-            aarch64-linux-gnu-gcc -s -Oz -static -Wl,--gc-sections,-z,norelro \
+            aarch64-linux-gnu-gcc -s -Os -static -Wl,--gc-sections,-z,norelro \
               -fno-unwind-tables -fno-ident -fmerge-all-constants \
               src/ko-loader.c -o ko-loader-arm64 )
           # PENTING: xxd -i harus dijalankan SETELAH `cd assets` (bukan xxd -i
