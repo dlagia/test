@@ -374,10 +374,20 @@ jobs:
           # branch ini antar commit (lihat catatan besar di kepala file ini).
 
           rm -rf NoMount
-          git clone --depth=1 -b experimental/hookless \
-            https://github.com/maxsteeel/nomount.git NoMount
+          # PAKAI commit NoMount yang sudah diverifikasi: a525130
+          # Commit ini berasal dari garis dev dan harus sama persis untuk
+          # kernel integration + nm + module.
+          git clone --depth=1 https://github.com/maxsteeel/nomount.git NoMount
+          git -C NoMount fetch --depth=1 origin a525130
+          git -C NoMount checkout --detach a525130
 
-          echo "NoMount commit dipakai (kernel + modul + nm): $(git -C NoMount rev-parse --short HEAD)"
+          NOMOUNT_EXPECTED="a525130"
+          NOMOUNT_ACTUAL="$(git -C NoMount rev-parse --short HEAD)"
+          echo "NoMount commit dipakai (kernel + modul + nm): $NOMOUNT_ACTUAL"
+          test "$NOMOUNT_ACTUAL" = "$NOMOUNT_EXPECTED" || {
+            echo "ERROR: NoMount commit bukan $NOMOUNT_EXPECTED"
+            exit 1
+          }
 
           # Pastikan source branch yang dipakai benar-benar memiliki
           # layout kernel/src yang diharapkan oleh patch 4.14.
@@ -667,6 +677,20 @@ jobs:
           echo "== Pesan hook dari Kbuild =="
           grep -iE "resukisu.*manual_hook|using manual hook|using a manual|using lsm hooks" /tmp/build.log || true
 
+      - name: Setup Zig (aturan resmi NoMount dev)
+        run: |
+          if ! command -v zig >/dev/null 2>&1; then
+            ZIG_JSON="$(curl -fsSL https://ziglang.org/download/index.json)"
+            ZIG_URL="$(printf '%s' "$ZIG_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["master"]["x86_64-linux"]["tarball"])')"
+            ZIG_SHA="$(printf '%s' "$ZIG_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["master"]["x86_64-linux"]["shasum"])')"
+            mkdir -p "$HOME/zig"
+            curl -fsSL "$ZIG_URL" -o /tmp/zig.tar.xz
+            echo "$ZIG_SHA  /tmp/zig.tar.xz" | sha256sum -c -
+            tar -xf /tmp/zig.tar.xz -C "$HOME/zig" --strip-components=1
+            echo "$HOME/zig" >> "$GITHUB_PATH"
+          fi
+          "$HOME/zig/zig" version || zig version
+
       - name: Compile nm + rakit modul flashable NoMount (commit sama dgn kernel)
         run: |
           # PENTING (temuan build sebelumnya): repo maxsteeel/nomount TIDAK PERNAH
@@ -692,20 +716,36 @@ jobs:
           #    nm.h yang pakai inline asm syscall langsung, bukan wrapper glibc).
           mkdir -p nm-src
           cp "$NM_SRC/nm.c" "$NM_SRC/nm.h" nm-src/
+          # Aturan resmi NoMount/dev: compile nm dengan zig cc.
+          # Tetap gunakan commit NoMount yang sama (a525130).
           ( cd nm-src && \
-            aarch64-linux-gnu-gcc -nostdlib -static -Os -fno-builtin -Wl,-e,_start -o nm nm.c && \
-            aarch64-linux-gnu-strip nm )
+            zig cc -target aarch64-linux -Oz -mcmodel=tiny -static -nostdlib \
+              -ffreestanding -fno-unwind-tables -fno-ident \
+              -Wno-invalid-noreturn -Wl,--entry=_start -o nm nm.c )
           file nm-src/nm
           test -s nm-src/nm || { echo "ERROR: nm gagal dikompilasi"; exit 1; }
 
-          # 2) Compile ko-loader-arm64 (BUKAN freestanding - pakai stdio/stdlib biasa,
-          #    jadi -static saja, TANPA -nostdlib). Header .ko di-generate via xxd -i
-          #    dari assets/*.ko bawaan repo ko-loader, sesuai Makefile resminya -
-          #    cuma CC diganti ke gcc-aarch64-linux-gnu karena runner ini tidak
-          #    punya zig (Makefile resmi pakai `zig cc -target aarch64-linux`, hasil
-          #    akhirnya setara: ELF aarch64 statis, sudah diuji sukses di sandbox).
+          # 2) Compile ko-loader-arm64 mengikuti aturan resmi NoMount dev.
+          #    JANGAN gunakan aarch64-linux-gnu-gcc untuk -Oz karena GCC
+          #    menolak opsi itu ("argument to '-O' must be ...").
+          #    Repo ko-loader resminya memakai `zig cc` + `-Oz`.
           rm -rf ko-loader-src
           git clone --depth=1 https://github.com/maxsteeel/ko-loader.git ko-loader-src
+
+          # Pasang Zig seperti workflow resmi NoMount/dev.
+          if ! command -v zig >/dev/null 2>&1; then
+            curl -fsSL https://raw.githubusercontent.com/ziglang/zig/master/README.md >/dev/null
+            ZIG_JSON="$(curl -fsSL https://ziglang.org/download/index.json)"
+            ZIG_URL="$(printf '%s' "$ZIG_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["master"]["aarch64-linux"]["tarball"])')"
+            ZIG_SHA="$(printf '%s' "$ZIG_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["master"]["aarch64-linux"]["shasum"])')"
+            mkdir -p "$HOME/zig"
+            curl -fsSL "$ZIG_URL" -o /tmp/zig.tar.xz
+            echo "$ZIG_SHA  /tmp/zig.tar.xz" | sha256sum -c -
+            tar -xf /tmp/zig.tar.xz -C "$HOME/zig" --strip-components=1
+            export PATH="$HOME/zig:$PATH"
+          fi
+          zig version
+
           ( cd ko-loader-src && \
             mkdir -p src/include && \
             cd assets && \
@@ -713,9 +753,9 @@ jobs:
               xxd -i "$f" > "../src/include/${f%.ko}.h"; \
             done && \
             cd .. && \
-            aarch64-linux-gnu-gcc -s -Oz -static -Wl,--gc-sections,-z,norelro \
-              -fno-unwind-tables -fno-ident -fmerge-all-constants \
-              src/ko-loader.c -o ko-loader-arm64 )
+            zig cc -target aarch64-linux -s -Oz -static \
+              -Wl,--gc-sections,-z,norelro -fno-unwind-tables -fno-ident \
+              -fmerge-all-constants src/ko-loader.c -o ko-loader-arm64 )
           # PENTING: xxd -i harus dijalankan SETELAH `cd assets` (bukan xxd -i
           # assets/nama.ko dari luar) - kalau tidak, xxd akan menamai variabel C
           # dengan prefix "assets_..." (dari path lengkap), padahal ko-loader.c
