@@ -27,6 +27,24 @@
 # dikonfirmasi langsung dari source nomount.c: teknik hook-nya menukar
 # pointer inode->i_op/file->f_op saat runtime (bukan patch source VFS inti).
 #
+# TEMUAN PENTING (build sebelumnya): modul flashable NoMount yang di-download
+# terpisah dari workflow ini (mis. lewat KernelSU Manager) TIDAK COCOK dengan
+# kernel yang dibangun di sini, walau sama-sama dari branch
+# experimental/hookless (dibuktikan dari wording log instalasi "Checking
+# Kernel support via Internal API..." yang PERSIS cocok dengan customize.sh
+# branch ini, BUKAN "via Netlink..." milik branch master/dev - jadi bukan
+# salah branch). Akar masalah sebenarnya: repo NoMount TIDAK PERNAH membuat
+# rilis modul.zip resmi untuk branch experimental/hookless sama sekali
+# (.github/workflows/build.yml resminya cuma trigger di push branch
+# master/dev) - jadi modul apa pun yang didownload terpisah punya risiko
+# beda commit dari kernel yang dibangun di sini, dan protokol komunikasi
+# kernel<->userspace (keyring add_key trick milik branch ini) bisa drift
+# antar commit. FIX: workflow ini sekarang MERAKIT SENDIRI module.zip
+# flashable-nya dari clone NoMount YANG SAMA PERSIS (commit sama, tidak
+# clone ulang) dengan yang dipakai untuk compile kernel - lihat step
+# "Compile nm" dan "Rakit modul flashable NoMount" di bawah. Modul hasil
+# build inilah yang harus di-flash, BUKAN modul dari sumber lain.
+#
 # CATATAN: branch ini diberi label experimental/hookless; tetap test lewat
 # OrangeFox (backup Boot dulu) sebelum dianggap final.
 #
@@ -91,7 +109,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             bc bison build-essential ccache cpio curl flex git kmod \
-            libelf-dev libssl-dev zip zlib1g-dev \
+            libelf-dev libssl-dev zip zlib1g-dev xxd \
             libtinfo5 libncurses5 gcc-aarch64-linux-gnu
 
       - name: Clone source kernel (dlagia/android_kernel_xiaomi_rosemary @ rosemary-13)
@@ -338,10 +356,21 @@ jobs:
           # Tidak menyalin nomount.c/nomount.h langsung ke fs/.
           # Tidak menyuntik hook manual ke fs/namei.c, fs/dcache.c,
           # fs/readdir.c, fs/stat.c, fs/proc/task_mmu.c, atau fs/statfs.c.
+          #
+          # PENTING: clone NoMount di sini adalah SATU-SATUNYA clone dipakai
+          # untuk SELURUH integrasi NoMount di workflow ini (kernel driver,
+          # kompilasi nm, DAN modul flashable) - lihat step "Compile nm" dan
+          # "Rakit modul flashable NoMount" di bawah, keduanya memakai folder
+          # NoMount/ ini juga, TIDAK clone ulang. Ini sengaja untuk menjamin
+          # commit driver kernel dan commit userspace/modul SELALU sama persis,
+          # supaya tidak ada risiko drift protokol keyring add_key() milik
+          # branch ini antar commit (lihat catatan besar di kepala file ini).
 
           rm -rf NoMount
           git clone --depth=1 -b experimental/hookless \
             https://github.com/maxsteeel/nomount.git NoMount
+
+          echo "NoMount commit dipakai (kernel + modul + nm): $(git -C NoMount rev-parse --short HEAD)"
 
           # Pastikan source branch yang dipakai benar-benar memiliki
           # layout kernel/src yang diharapkan oleh patch 4.14.
@@ -359,7 +388,6 @@ jobs:
 
           echo "==================== NoMount HOOKLESS ===================="
           echo "NoMount source: $(readlink -f fs/nomount)"
-          echo "NoMount commit: $(git -C NoMount rev-parse --short HEAD)"
           echo ""
           echo "== fs/Kconfig =="
           grep -nF 'source "fs/nomount/Kconfig"' fs/Kconfig
@@ -391,7 +419,7 @@ jobs:
           # yg jalan di HP ini, bukan cuma kita. Backport diverifikasi manual dari
           # commit upstream 3bfdc63936dd, disesuaikan ke struktur kernel 4.14 kita
           # (source modern pakai rt_mutex_base/scoped_guard yg belum ada di 4.14).
-          echo "LS0tIGEva2VybmVsL2xvY2tpbmcvcnRtdXRleC5jCTIwMjYtMDgtMDMgMDA6NDc6MTguOTMwODkwODk0ICswMDAwCisrKyBiL2tlcm5lbC9sb2NraW5nL3J0bXV0ZXguYwkyMDI2LTA4LTAzIDAwOjQ3OjE5LjAyOTE3NDEzNiArMDAwMApAQCAtMTA3MCwxNCArMTA3MCwyMCBAQAogewogCWJvb2wgaXNfdG9wX3dhaXRlciA9ICh3YWl0ZXIgPT0gcnRfbXV0ZXhfdG9wX3dhaXRlcihsb2NrKSk7CiAJc3RydWN0IHRhc2tfc3RydWN0ICpvd25lciA9IHJ0X211dGV4X293bmVyKGxvY2spOworCS8qIENWRS0yMDI2LTQzNDk5IChHaG9zdExvY2spIGZpeDogdXNlIHdhaXRlci0+dGFzaywgbm90IGN1cnJlbnQgLQorCSAqIHdoZW4gY2FsbGVkIGZyb20gcnRfbXV0ZXhfc3RhcnRfcHJveHlfbG9jaygpIChmdXRleF9yZXF1ZXVlKCkKKwkgKiBwcm94eS1sb2NrIHJvbGxiYWNrIHBhdGgpIHdhaXRlci0+dGFzayAhPSBjdXJyZW50LiBPcGVyYXRpbmcgb24KKwkgKiBjdXJyZW50IGluIHRoYXQgcGF0aCBkZXF1ZXVlcyB1bmRlciB0aGUgd3JvbmcgdGFzaydzIHBpX2xvY2sgYW5kCisJICogbGVhdmVzIHRoZSByZWFsIHdhaXRlciB0YXNrJ3MgcGlfYmxvY2tlZF9vbiBkYW5nbGluZyAtPiBVQUYuICovCisJc3RydWN0IHRhc2tfc3RydWN0ICp3YWl0ZXJfdGFzayA9IHdhaXRlci0+dGFzazsKIAlzdHJ1Y3QgcnRfbXV0ZXggKm5leHRfbG9jazsKIAogCWxvY2tkZXBfYXNzZXJ0X2hlbGQoJmxvY2stPndhaXRfbG9jayk7CiAKLQlyYXdfc3Bpbl9sb2NrKCZjdXJyZW50LT5waV9sb2NrKTsKKwlyYXdfc3Bpbl9sb2NrKCZ3YWl0ZXJfdGFzay0+cGlfbG9jayk7CiAJcnRfbXV0ZXhfZGVxdWV1ZShsb2NrLCB3YWl0ZXIpOwotCWN1cnJlbnQtPnBpX2Jsb2NrZWRfb24gPSBOVUxMOwotCXJhd19zcGluX3VubG9jaygmY3VycmVudC0+cGlfbG9jayk7CisJd2FpdGVyX3Rhc2stPnBpX2Jsb2NrZWRfb24gPSBOVUxMOworCXJhd19zcGluX3VubG9jaygmd2FpdGVyX3Rhc2stPnBpX2xvY2spOwogCiAJLyoKIAkgKiBPbmx5IHVwZGF0ZSBwcmlvcml0eSBpZiB0aGUgd2FpdGVyIHdhcyB0aGUgaGlnaGVzdCBwcmlvcml0eQpAQCAtMTExMyw3ICsxMTE5LDcgQEAKIAlyYXdfc3Bpbl91bmxvY2tfaXJxKCZsb2NrLT53YWl0X2xvY2spOwogCiAJcnRfbXV0ZXhfYWRqdXN0X3ByaW9fY2hhaW4ob3duZXIsIFJUX01VVEVYX01JTl9DSEFJTldBTEssIGxvY2ssCi0JCQkJICAgbmV4dF9sb2NrLCBOVUxMLCBjdXJyZW50KTsKKwkJCQkgICBuZXh0X2xvY2ssIE5VTEwsIHdhaXRlcl90YXNrKTsKIAogCXJhd19zcGluX2xvY2tfaXJxKCZsb2NrLT53YWl0X2xvY2spOwogfQo=" | base64 -d > /tmp/cve-2026-43499-ghostlock.patch
+          echo "LS0tIGEva2VybmVsL2xvY2tpbmcvcnRtdXRleC5jCTIwMjYtMDgtMDMgMDA6NDc6MTguOTMwODkwODk0ICswMDAwCisrKyBiL2tlcm5lbC9sb2NraW5nL3J0bXV0ZXguYwkyMDI2LTA4LTAzIDAwOjQ3OjE5LjAyOTE3NDEzNiArMDAwMApAQCAtMTA3MCwxNCArMTA3MCwyMCBAQAogewogCWJvb2wgaXNfdG9wX3dhaXRlciA9ICh3YWl0ZXIgPT0gcnRfbXV0ZXhfdG9wX3dhaXRlcihsb2NrKSk7CiAJc3RydWN0IHRhc2tfc3RydWN0ICpvd25lciA9IHJ0X211dGV4X293bmVyKGxvY2spOworCS8qIENWRS0yMDI2LTQzNDk5IChHaG9zdExvY2spIGZpeDogdXNlIHdhaXRlci0+dGFzaywgbm90IGN1cnJlbnQgLQorCSAqIHdoZW4gY2FsbGVkIGZyb20gcnRfbXV0ZXhfc3RhcnRfcHJveHlfbG9jaygpIChmdXRleF9yZXF1ZXVlKCkKKwkgKiBwcm94eS1sb2NrIHJvbGxiYWNrIHBhdGgpIHdhaXRlci0+dGFzayAhPSBjdXJyZW50LiBPcGVyYXRpbmcgb24KKwkgKiBjdXJyZW50IGluIHRoYXQgcGF0aCBkZXF1ZXVlcyB1bmRlciB0aGUgd3JvbmcgdGFzaydzIHBpX2xvY2sgYW5kCisJICogbGVhdmVzIHRoZSByZWFsIHdhaXRlciB0YXNrJ3MgcGlfYmxvY2tlZF9vbiBkYW5nbGluZyAtPiBVQUYuICovCisJc3RydWN0IHRhc2tfc3RydWN0ICp3YWl0ZXJfdGFzayA9IHdhaXRlci0+dGFzazsKIAlzdHJ1Y3QgcnRfbXV0ZXggKm5leHRfbG9jazsKIAogCWxvY2tkZXBfYXNzZXJ0X2hlbGQoJmxvY2stPndhaXRfbG9jayk7CiAKLQlyYXdfc3Bpbl9sb2NrKCZjdXJyZW50LT5waV9sb2NrKTsKKwlyYXdfc3Bpbl9sb2NrKCZ3YWl0ZXJfdGFzay0+cGlfbG9jayk7CiAJcnRfbXV0ZXhfZGVxdWV1ZShsb2NrLCB3YWl0ZXIpOwotCWN1cnJlbnQtPnBpX2Jsb2NrZWRfb24gPSBOVUxMOwotCXJhd19zcGluX3VubG9jaygmY3VycmVudC0+cGlfbG9jayk7CisJd2FpdGVyX3Rhc2stPnBpX2Jsb2NrZWRfb24gPSBOVUxMOworCXJhd19zcGluX3VubG9jaygmd2FpdGVyX3Rhc2stPnBpX2xvY2spOwogCiAJLyoKIAkgKiBPbmx5IHVwZGF0ZSBwcmlvcml0eSBpZiB0aGUgd2FpdGVyIHdhcyB0aGUgaGlnaGVzdCBwcmlvcml0eQpAQCAtMTExMyw3ICsxMTE5LDcgQEAKIAlyYXdfc3Bpbl91bmxvY2tfaXJxKCZsb2NrLT53YWl0X2xvY2spOwogCiAJcnRfbXV0ZXhfYWRqdXN0X3ByaW9fY2hhaW4ob3duZXIsIFJUX01VVEVYX01JTl9DSEFJTldBTEssIGxvY2ssCi0JCQkJICAgbmV4dF9sb2NrLCBOVUxMLCBjdXJyZW50KTsKKwkJCQkgICBuZXh0X2xvY2ssIE5VTEwsIHdhaXRlcl90YXNrKTsKIAogCXJhd19zcGluX3VubG9ja19pcnEoJmxvY2stPndhaXRfbG9jayk7CiB9Cg==" | base64 -d > /tmp/cve-2026-43499-ghostlock.patch
           git apply --verbose /tmp/cve-2026-43499-ghostlock.patch
           grep -c CVE-2026-43499 kernel/locking/rtmutex.c
 
@@ -409,7 +437,7 @@ jobs:
           # cuma dipindah lokasi + di-rename. Anchor di bawah SUDAH diverifikasi cocok
           # tepat 1x ke source dlagia/android_kernel_xiaomi_rosemary@rosemary-13 (lihat
           # catatan di header file ini). "match harus tepat 1x" tetap dipertahankan
-          # sebagai pengaman kalau source upstream berubah di build berikutnya.
+          # sebagai pengaman kalau upstream kernel source berubah.
           mkdir -p drivers/rekernel
           echo "I2lmbmRlZiBfUkVLRVJORUxfSAojZGVmaW5lIF9SRUtFUk5FTF9ICgovKgogKiBIZWFkZXIgaW50ZWdyYXNpIFJlOktlcm5lbCAoaHR0cHM6Ly9naXRodWIuY29tL1Nha2lvbi1UZWFtL1JlLUtlcm5lbCkKICogdW50dWsga2VybmVsIG5vbi1HS0kvUUdLSSAoPD0gNS40KSwgc2VzdWFpIHBhbmR1YW4gcmVzbWkgZGkgZm9sZGVyCiAqIEludGVncmF0ZS9SRUFETUUubWQgcmVwbyB0ZXJzZWJ1dC4gTWVtYnVrYSBuZXRsaW5rIHNlcnZlciBhZ2FyCiAqIHVzZXJzcGFjZSB0b21ic3RvbmUgaGFuZGxlciAobWlzLiBhcHAgZnJlZXplci9PT00gbWFuYWdlcikgYmlzYQogKiBtZW5lcmltYSBub3RpZmlrYXNpIHNhYXQgYmluZGVyIGNhbGwgYXRhdSBzaWduYWwgbWVueWFzYXIgcHJvc2VzCiAqIHlhbmcgc2VkYW5nIGRpYmVrdWthbiAoZnJvemVuKSBvbGVoIGNncm91cCBmcmVlemVyLCBzZWhpbmdnYSBwcm9zZXMKICogdHNiIGJpc2EgZGktdW5mcmVlemUgdGVwYXQgd2FrdHUgYWxpaC1hbGloIEFOUi9mb3JjZS1jbG9zZS4KICovCgojaW5jbHVkZSA8bGludXgvc2NoZWQuaD4KI2luY2x1ZGUgPGxpbnV4L2ZyZWV6ZXIuaD4KCiNkZWZpbmUgUkVLRVJORUxfTkVUTElOS19NSU4gICAgICAyMgojZGVmaW5lIFJFS0VSTkVMX05FVExJTktfTUFYICAgICAgMjYKI2RlZmluZSBSRUtFUk5FTF9VU0VSX1BPUlQgICAgICAgIDEwMAojZGVmaW5lIFJFS0VSTkVMX1BBQ0tFVF9TSVpFICAgICAgMTI4CiNkZWZpbmUgUkVLRVJORUxfTUlOX1VTRVJBUFBfVUlEICAoMTAwMDApCiNkZWZpbmUgUkVLRVJORUxfTUFYX1NZU1RFTV9VSUQgICAoMjAwMCkKI2RlZmluZSBSRUtFUk5FTF9SRVNFUlZFX09SREVSICAgIDE3CiNkZWZpbmUgUkVLRVJORUxfV0FSTl9BSEVBRF9TUEFDRSAoMSA8PCBSRUtFUk5FTF9SRVNFUlZFX09SREVSKQoKaW50IHJla2VybmVsX3N0YXJ0X3NlcnZlcih2b2lkKTsKaW50IHJla2VybmVsX3NlbmRfbmV0bGlua19tZXNzYWdlKGNoYXIgKm1zZywgdWludDE2X3QgbGVuKTsKCnN0YXRpYyBpbmxpbmUgYm9vbCByZWtlcm5lbF90YXNrX2lzX2Zyb3plbihzdHJ1Y3QgdGFza19zdHJ1Y3QgKnRhc2spCnsKCXJldHVybiBmcm96ZW4odGFzay0+Z3JvdXBfbGVhZGVyKSB8fCBmcmVlemluZyh0YXNrLT5ncm91cF9sZWFkZXIpOwp9CgojZW5kaWYgLyogX1JFS0VSTkVMX0ggKi8K" | base64 -d > drivers/rekernel/rekernel.h
           echo "LyoKICogZHJpdmVycy9yZWtlcm5lbC9yZWtlcm5lbC5jCiAqCiAqIEludGVncmFzaSBSZTpLZXJuZWwgKGh0dHBzOi8vZ2l0aHViLmNvbS9TYWtpb24tVGVhbS9SZS1LZXJuZWwpIHVudHVrCiAqIGtlcm5lbCBub24tR0tJL1FHS0kgKDw9IDUuNCkuIERpYWRhcHRhc2kgZGFyaSBrb2RlIHJlZmVyZW5zaSByZXNtaSBkaQogKiBJbnRlZ3JhdGUvUkVBRE1FLm1kIHJlcG8gdGVyc2VidXQ6IGZ1bmdzaSBzdGF0aXMgZGliZXJpIHByZWZpeCByZWtlcm5lbF8KICogZGFuIGRpcGluZGFoIGtlIHNhdHUgdHJhbnNsYXRpb24gdW5pdCAoYnVrYW4gZGlzYWxpbiBrZSB0aWdhIGZpbGUKICogcGVtYW5nZ2lsKSBzdXBheWEgdGlkYWsgYWRhIG11bHRpcGxlLWRlZmluaXRpb247IGhhbnlhIGR1YSBmdW5nc2kgeWFuZwogKiBkaWV4cG9ydCBsZXdhdCByZWtlcm5lbC5oIGtlIGRyaXZlcnMvYW5kcm9pZC9iaW5kZXIuYywKICogZHJpdmVycy9hbmRyb2lkL2JpbmRlcl9hbGxvYy5jLCBkYW4ga2VybmVsL3NpZ25hbC5jLgogKi8KCiNpbmNsdWRlIDxsaW51eC9pbml0Lmg+CiNpbmNsdWRlIDxsaW51eC9tb2R1bGUuaD4KI2luY2x1ZGUgPGxpbnV4L3R5cGVzLmg+CiNpbmNsdWRlIDxuZXQvc29jay5oPgojaW5jbHVkZSA8bGludXgvbmV0bGluay5oPgojaW5jbHVkZSA8bGludXgvcHJvY19mcy5oPgojaW5jbHVkZSA8bGludXgvc2VxX2ZpbGUuaD4KI2luY2x1ZGUgInJla2VybmVsLmgiCgpzdGF0aWMgc3RydWN0IHNvY2sgKnJla2VybmVsX25ldGxpbms7CmV4dGVybiBzdHJ1Y3QgbmV0IGluaXRfbmV0OwpzdGF0aWMgaW50IHJla2VybmVsX25ldGxpbmtfdW5pdCA9IFJFS0VSTkVMX05FVExJTktfTUlOOwoKc3RhdGljIGludCByZWtlcm5lbF9uZXRsaW5rX3NlbmQoY2hhciAqbXNnLCB1aW50MTZfdCBsZW4pCnsKCXN0cnVjdCBza19idWZmICpza2J1ZmZlcjsKCXN0cnVjdCBubG1zZ2hkciAqbmxoZHI7CgoJc2tidWZmZXIgPSBubG1zZ19uZXcobGVuLCBHRlBfQVRPTUlDKTsKCWlmICghc2tidWZmZXIpIHsKCQlwcl9lcnIoInJla2VybmVsOiBuZXRsaW5rIGFsbG9jIGZhaWx1cmUuXG4iKTsKCQlyZXR1cm4gLTE7Cgl9CgoJbmxoZHIgPSBubG1zZ19wdXQoc2tidWZmZXIsIDAsIDAsIHJla2VybmVsX25ldGxpbmtfdW5pdCwgbGVuLCAwKTsKCWlmICghbmxoZHIpIHsKCQlwcl9lcnIoInJla2VybmVsOiBubG1zZ19wdXQgZmFpbHVyZS5cbiIpOwoJCW5sbXNnX2ZyZWUoc2tidWZmZXIpOwoJCXJldHVybiAtMTsKCX0KCgltZW1jcHkobmxtc2dfZGF0YShubGhkciksIG1zZywgbGVuKTsKCXJldHVybiBuZXRsaW5rX3VuaWNhc3QocmVrZXJuZWxfbmV0bGluaywgc2tidWZmZXIsIFJFS0VSTkVMX1VTRVJfUE9SVCwgTVNHX0RPTlRXQUlUKTsKfQoKaW50IHJla2VybmVsX3NlbmRfbmV0bGlua19tZXNzYWdlKGNoYXIgKm1zZywgdWludDE2X3QgbGVuKQp7CglyZXR1cm4gcmVrZXJuZWxfbmV0bGlua19zZW5kKG1zZywgbGVuKTsKfQoKc3RhdGljIHZvaWQgcmVrZXJuZWxfbmV0bGlua19yY3ZfbXNnKHN0cnVjdCBza19idWZmICpza2J1ZmZlcikKewoJLyogVGlkYWsgYnV0dWggYXBhIHB1biBkYXJpIHVzZXJzcGFjZSwgY3VrdXAgZGlhYmFpa2FuLiAqLwp9CgpzdGF0aWMgc3RydWN0IG5ldGxpbmtfa2VybmVsX2NmZyByZWtlcm5lbF9jZmcgPSB7CgkuaW5wdXQgPSByZWtlcm5lbF9uZXRsaW5rX3Jjdl9tc2csCn07CgpzdGF0aWMgaW50IHJla2VybmVsX3VuaXRfc2hvdyhzdHJ1Y3Qgc2VxX2ZpbGUgKm0sIHZvaWQgKnYpCnsKCXNlcV9wcmludGYobSwgIiVkXG4iLCByZWtlcm5lbF9uZXRsaW5rX3VuaXQpOwoJcmV0dXJuIDA7Cn0KCnN0YXRpYyBpbnQgcmVrZXJuZWxfdW5pdF9vcGVuKHN0cnVjdCBpbm9kZSAqaW5vZGUsIHN0cnVjdCBmaWxlICpmaWxlKQp7CglyZXR1cm4gc2luZ2xlX29wZW4oZmlsZSwgcmVrZXJuZWxfdW5pdF9zaG93LCBOVUxMKTsKfQoKc3RhdGljIGNvbnN0IHN0cnVjdCBmaWxlX29wZXJhdGlvbnMgcmVrZXJuZWxfdW5pdF9mb3BzID0gewoJLm9wZW4gICAgPSByZWtlcm5lbF91bml0X29wZW4sCgkucmVhZCAgICA9IHNlcV9yZWFkLAoJLmxsc2VlayAgPSBzZXFfbHNlZWssCgkucmVsZWFzZSA9IHNpbmdsZV9yZWxlYXNlLAoJLm93bmVyICAgPSBUSElTX01PRFVMRSwKfTsKCnN0YXRpYyBzdHJ1Y3QgcHJvY19kaXJfZW50cnkgKnJla2VybmVsX2RpciwgKnJla2VybmVsX3VuaXRfZW50cnk7CgppbnQgcmVrZXJuZWxfc3RhcnRfc2VydmVyKHZvaWQpCnsKCWlmIChyZWtlcm5lbF9uZXRsaW5rICE9IE5VTEwpCgkJcmV0dXJuIDA7CgoJZm9yIChyZWtlcm5lbF9uZXRsaW5rX3VuaXQgPSBSRUtFUk5FTF9ORVRMSU5LX01JTjsKCSAgICAgcmVrZXJuZWxfbmV0bGlua191bml0IDwgUkVLRVJORUxfTkVUTElOS19NQVg7IHJla2VybmVsX25ldGxpbmtfdW5pdCsrKSB7CgkJcmVrZXJuZWxfbmV0bGluayA9IChzdHJ1Y3Qgc29jayAqKW5ldGxpbmtfa2VybmVsX2NyZWF0ZSgmaW5pdF9uZXQsCgkJCQkJcmVrZXJuZWxfbmV0bGlua191bml0LCAmcmVrZXJuZWxfY2ZnKTsKCQlpZiAocmVrZXJuZWxfbmV0bGluayAhPSBOVUxMKQoJCQlicmVhazsKCX0KCglpZiAocmVrZXJuZWxfbmV0bGluayA9PSBOVUxMKSB7CgkJcHJfZXJyKCJyZWtlcm5lbDogZmFpbGVkIHRvIGNyZWF0ZSBSZTpLZXJuZWwgc2VydmVyIVxuIik7CgkJcmV0dXJuIC0xOwoJfQoKCXByX2luZm8oInJla2VybmVsOiBjcmVhdGVkIFJlOktlcm5lbCBzZXJ2ZXIhIE5FVExJTksgVU5JVDogJWRcbiIsIHJla2VybmVsX25ldGxpbmtfdW5pdCk7CgoJcmVrZXJuZWxfZGlyID0gcHJvY19ta2RpcigicmVrZXJuZWwiLCBOVUxMKTsKCWlmICghcmVrZXJuZWxfZGlyKSB7CgkJcHJfZXJyKCJyZWtlcm5lbDogY3JlYXRlIC9wcm9jL3Jla2VybmVsIGZhaWxlZCFcbiIpOwoJfSBlbHNlIHsKCQljaGFyIGJ1ZmZbMzJdOwoKCQlzbnByaW50ZihidWZmLCBzaXplb2YoYnVmZiksICIlZCIsIHJla2VybmVsX25ldGxpbmtfdW5pdCk7CgkJcmVrZXJuZWxfdW5pdF9lbnRyeSA9IHByb2NfY3JlYXRlKGJ1ZmYsIDA2NDQsIHJla2VybmVsX2RpciwgJnJla2VybmVsX3VuaXRfZm9wcyk7CgkJaWYgKCFyZWtlcm5lbF91bml0X2VudHJ5KQoJCQlwcl9lcnIoInJla2VybmVsOiBjcmVhdGUgcmVrZXJuZWwgdW5pdCBmYWlsZWQhXG4iKTsKCX0KCglyZXR1cm4gMDsKfQo=" | base64 -d > drivers/rekernel/rekernel.c
@@ -588,6 +616,14 @@ jobs:
           fi
 
           echo ""
+          echo "==================== RESOLVED NoMount CONFIG ===================="
+          grep -E '^CONFIG_NOMOUNT' out/.config || true
+          grep -q '^CONFIG_NOMOUNT=y$' out/.config || {
+            echo "ERROR: CONFIG_NOMOUNT tidak resolve ke y"
+            exit 1
+          }
+
+          echo ""
           echo "==================== RESOLVED Baseband-guard CONFIG ===================="
           grep -E '^CONFIG_BBG' out/.config || true
           grep -q '^CONFIG_BBG=y$' out/.config || {
@@ -636,18 +672,95 @@ jobs:
           echo "== Pesan hook dari Kbuild =="
           grep -iE "resukisu.*manual_hook|using manual hook|using a manual|using lsm hooks" /tmp/build.log || true
 
-      - name: Compile nm (NoMount userspace CLI dari experimental/hookless)
+      - name: Compile nm + rakit modul flashable NoMount (commit sama dgn kernel)
         run: |
-          rm -rf nm-src
-          git clone --depth=1 -b experimental/hookless \
-            https://github.com/maxsteeel/nomount.git /tmp/nomount-userspace
+          # PENTING (temuan build sebelumnya): repo maxsteeel/nomount TIDAK PERNAH
+          # merilis module.zip resmi untuk branch experimental/hookless
+          # (.github/workflows/build.yml resminya cuma trigger di push branch
+          # master/dev, dan branch master/dev itu PAKAI PROTOKOL NETLINK - beda
+          # total dari protokol keyring add_key() milik experimental/hookless).
+          # Jadi modul flashable apa pun yang didownload dari sumber lain untuk
+          # branch ini TIDAK ADA jaminan cocok, dan berisiko drift commit dari
+          # kernel yang barusan dikompilasi. Fix: compile nm DAN rakit module.zip
+          # di sini memakai clone kernel/NoMount YANG SAMA PERSIS (commit sama)
+          # dengan yang dipakai step "Integrasikan NoMount" di atas - TIDAK clone
+          # ulang - supaya kernel driver dan modul userspace dijamin satu commit.
+          NM_SRC="kernel/NoMount/userspace/src"
+          MOD_SRC="kernel/NoMount/module"
+          test -d "$NM_SRC" || { echo "ERROR: $NM_SRC tidak ada - step Integrasikan NoMount gagal?"; exit 1; }
+          test -d "$MOD_SRC" || { echo "ERROR: $MOD_SRC tidak ada - struktur repo NoMount berubah?"; exit 1; }
+
+          NOMOUNT_COMMIT=$(git -C kernel/NoMount rev-parse --short HEAD)
+          echo "NoMount commit dipakai (HARUS SAMA dgn step Integrasikan NoMount di atas): $NOMOUNT_COMMIT"
+
+          # 1) Compile nm (freestanding, syscall mentah - tanpa libc, sesuai desain
+          #    nm.h yang pakai inline asm syscall langsung, bukan wrapper glibc).
           mkdir -p nm-src
-          cp /tmp/nomount-userspace/userspace/src/nm.c nm-src/nm.c
-          cp /tmp/nomount-userspace/userspace/src/nm.h nm-src/nm.h
-          cd nm-src
-          aarch64-linux-gnu-gcc -nostdlib -static -Os -fno-builtin -Wl,-e,_start -o nm nm.c
-          aarch64-linux-gnu-strip nm
-          ls -la nm
+          cp "$NM_SRC/nm.c" "$NM_SRC/nm.h" nm-src/
+          ( cd nm-src && \
+            aarch64-linux-gnu-gcc -nostdlib -static -Os -fno-builtin -Wl,-e,_start -o nm nm.c && \
+            aarch64-linux-gnu-strip nm )
+          file nm-src/nm
+          test -s nm-src/nm || { echo "ERROR: nm gagal dikompilasi"; exit 1; }
+
+          # 2) Compile ko-loader-arm64 (BUKAN freestanding - pakai stdio/stdlib biasa,
+          #    jadi -static saja, TANPA -nostdlib). Header .ko di-generate via xxd -i
+          #    dari assets/*.ko bawaan repo ko-loader, sesuai Makefile resminya -
+          #    cuma CC diganti ke gcc-aarch64-linux-gnu karena runner ini tidak
+          #    punya zig (Makefile resmi pakai `zig cc -target aarch64-linux`, hasil
+          #    akhirnya setara: ELF aarch64 statis, sudah diuji sukses di sandbox).
+          rm -rf ko-loader-src
+          git clone --depth=1 https://github.com/maxsteeel/ko-loader.git ko-loader-src
+          ( cd ko-loader-src && \
+            mkdir -p src/include && \
+            cd assets && \
+            for f in *.ko; do \
+              xxd -i "$f" > "../src/include/${f%.ko}.h"; \
+            done && \
+            cd .. && \
+            aarch64-linux-gnu-gcc -s -Oz -static -Wl,--gc-sections,-z,norelro \
+              -fno-unwind-tables -fno-ident -fmerge-all-constants \
+              src/ko-loader.c -o ko-loader-arm64 )
+          # PENTING: xxd -i harus dijalankan SETELAH `cd assets` (bukan xxd -i
+          # assets/nama.ko dari luar) - kalau tidak, xxd akan menamai variabel C
+          # dengan prefix "assets_..." (dari path lengkap), padahal ko-loader.c
+          # mengharapkan nama TANPA prefix folder (persis pola resmi di Makefile
+          # repo ini: "cd $(ASSETS_DIR) && xxd -i $(notdir $<)"). Sudah diuji
+          # sungguhan di sandbox: variabel yang dihasilkan persis cocok
+          # (android12_5_10_lkmloader_ko, dst) dan ko-loader.c compile bersih.
+          file ko-loader-src/ko-loader-arm64
+          test -s ko-loader-src/ko-loader-arm64 || { echo "ERROR: ko-loader-arm64 gagal dikompilasi"; exit 1; }
+
+          # 3) Rakit folder module/ jadi module.zip flashable. Format KernelSU/
+          #    Magisk modern tidak butuh META-INF/update-binary (ksud yang
+          #    menangani ekstraksi) - cukup module.prop + customize.sh + file
+          #    lain di root zip, sesuai cara resmi build.yml sendiri meng-upload
+          #    folder module/ apa adanya.
+          rm -rf module-build
+          cp -r "$MOD_SRC" module-build
+          mkdir -p module-build/bin
+          cp nm-src/nm module-build/bin/nm-arm64
+          cp ko-loader-src/ko-loader-arm64 module-build/bin/ko-loader-arm64
+          chmod 0755 module-build/bin/nm-arm64 module-build/bin/ko-loader-arm64
+
+          # versionCode diisi commit NoMount (bukan angka run CI) supaya modul ini
+          # bisa dilacak persis dibangun dari commit mana - beda dari cara resmi
+          # (yg pakai github.com/run_number) karena workflow ini bukan CI resmi
+          # NoMount, tapi tetap harus traceable.
+          sed -i "s/^versionCode=.*/versionCode=${NOMOUNT_COMMIT}/" module-build/module.prop
+          echo "== module.prop =="; cat module-build/module.prop
+
+          ZIP_MOD="nomount-hookless-module-${NOMOUNT_COMMIT}.zip"
+          ( cd module-build && zip -r9 "../$ZIP_MOD" . -x '.git*' )
+          echo "MOD_ZIP=$ZIP_MOD" >> "$GITHUB_ENV"
+          echo ""
+          echo "== isi module.zip =="
+          unzip -l "$ZIP_MOD"
+
+          echo ""
+          echo ">>> FLASH MODUL INI (bukan modul dari sumber lain) lewat KernelSU Manager"
+          echo ">>> supaya protokol keyring add_key() cocok persis dgn kernel yang barusan dikompilasi."
+
       - name: Tentukan file kernel hasil
         id: kimg
         run: |
@@ -689,12 +802,13 @@ jobs:
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
           unzip -l "$ZIP" | head -20
 
-      - name: Upload paket + kernel mentah + dtbo + nm CLI
+      - name: Upload paket + kernel mentah + dtbo + nm CLI + modul NoMount
         uses: actions/upload-artifact@v4
         with:
           if-no-files-found: warn
           path: |
             ${{ env.ZIP }}
+            ${{ env.MOD_ZIP }}
             ${{ steps.kimg.outputs.path }}
             ${{ steps.kimg.outputs.dtbo }}
             nm-src/nm
