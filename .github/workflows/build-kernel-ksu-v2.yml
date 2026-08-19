@@ -350,6 +350,51 @@ jobs:
             echo "OK: $sym -> $f"
           done
 
+
+      - name: Commit ReSukiSU + bersihkan dirty
+        working-directory: kernel
+        run: |
+          echo "==================== Cek status KernelSU sebelum commit ===================="
+          cd KernelSU
+          git status --porcelain || true
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          # Commit semua perubahan di dalam KernelSU (kalau ada)
+          git add -A
+          if ! git diff --quiet || ! git diff --staged --quiet; then
+            git commit -m "Apply custom integration (remove dirty)"
+            echo "Commit berhasil dilakukan di KernelSU"
+          else
+            echo "KernelSU sudah clean, tidak ada yang perlu di-commit"
+          fi
+
+          # Verifikasi final
+          echo ""
+          echo "==================== Status setelah commit ===================="
+          git status
+          git diff-index --quiet HEAD && echo ">>> KernelSU CLEAN (tidak ada dirty)" || echo ">>> MASIH DIRTY!"
+
+          cd ..
+
+          # Bersihkan juga -dirty di setlocalversion kernel utama
+          # (supaya uname -r tidak mengandung -dirty)
+          if [ -f scripts/setlocalversion ]; then
+            sed -i 's/-dirty//g' scripts/setlocalversion
+            echo "scripts/setlocalversion sudah dibersihkan dari -dirty"
+          fi
+
+          # Cadangan: bersihkan di semua setlocalversion yang mungkin ada
+          find . -name setlocalversion -exec sed -i 's/-dirty//g' {} + 2>/dev/null || true
+
+          # Paksa hilangkan pengecekan dirty di Kbuild ReSukiSU (cadangan)
+          if [ -f KernelSU/kernel/Kbuild ]; then
+            sed -i 's/KSU_COMMIT_SHA  := \$(KSU_COMMIT_SHA)-dirty/KSU_COMMIT_SHA  := \$(KSU_COMMIT_SHA)/' KernelSU/kernel/Kbuild || true
+            # Alternatif lebih agresif (hapus blok pengecekan):
+            # sed -i '/diff-index --quiet HEAD/,+2d' KernelSU/kernel/Kbuild || true
+            echo "Pengecekan -dirty di KernelSU/kernel/Kbuild sudah dinetralisir"
+          fi
+
       - name: Integrasikan NoMount (branch dev, resmi)
         working-directory: kernel
         run: |
