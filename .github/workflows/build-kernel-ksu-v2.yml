@@ -185,8 +185,8 @@ jobs:
 
           # Konfirmasi opsi hook yang akan dipakai (CONFIG_KSU_TAMPER_SYSCALL_TABLE)
           # benar-benar ada di Kconfig driver ini, sebelum lanjut ke defconfig.
-          grep -q '^config KSU_TAMPER_SYSCALL_TABLE$' kernel/Kconfig || {
-            echo "ERROR: KSU_TAMPER_SYSCALL_TABLE tidak ditemukan di kernel/Kconfig - versi driver berubah?"
+          grep -q '^config KSU_TAMPER_SYSCALL_TABLE$' drivers/kernelsu/Kconfig || {
+            echo "ERROR: KSU_TAMPER_SYSCALL_TABLE tidak ditemukan di drivers/kernelsu/Kconfig - versi driver berubah?"
             exit 1
           }
 
