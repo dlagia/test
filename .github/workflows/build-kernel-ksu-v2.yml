@@ -103,7 +103,11 @@
 # ReSukiSU TIDAK dipatch lagi karena bukan bagian dari lima anchor resmi
 # KernelSU-Next - dihapus total, tidak ada residu extern/pemanggilan
 # fungsi yang menunjuk ke simbol yang sudah tidak ada.
-# Patch lain (NoMount/Re:Kernel/Baseband) tetap dipisahkan dari KernelSU-Next.
+# Patch lain (NoMount/Re:Kernel) tetap dipisahkan dari KernelSU-Next.
+# CATATAN: Baseband-guard SUDAH DIHAPUS TOTAL dari workflow ini atas
+# permintaan langsung - tidak ada lagi step setup.sh-nya, sed ke
+# security/Kconfig, CONFIG_BBG di defconfig, maupun verifikasi CONFIG_BBG
+# di step compile. Tidak ada residu apa pun terkait Baseband-guard.
 #
 # Re:Kernel (github.com/Sakion-Team/Re-Kernel): membuka netlink server
 # supaya tombstone/freezer di userspace tahu kapan binder call atau
@@ -567,48 +571,6 @@ jobs:
 
           grep -c 'rekernel_start_server' drivers/android/binder.c drivers/android/binder_alloc.c kernel/signal.c
 
-      - name: Integrasikan Baseband-guard (LSM anti-tulis baseband/boot chain)
-        working-directory: kernel
-        run: |
-          # https://github.com/vc-teahouse/Baseband-guard
-          # LSM ringan yang memblokir tulisan tak sah ke partisi/device node kritis
-          # (baseband, boot chain) di level kernel. Dipasang via setup.sh resmi milik
-          # proyek ini sendiri (pola sama seperti setup.sh KernelSU-Next) - bukan patch
-          # tertanam manual, jadi selalu ambil versi terbaru tiap build.
-          #
-          # VERIFIKASI (sudah diuji end-to-end di source dlagia/android_kernel_
-          # xiaomi_rosemary@rosemary-13): kernel 4.14 ini TIDAK punya
-          # `#define DEFINE_LSM(lsm)` di include/linux/lsm_hooks.h (gaya LSM lama,
-          # pra-5.1). setup.sh MENDETEKSI ini secara otomatis dan menerapkan patch
-          # SELinux legacy (sepatch.txt ditempel ke security/selinux/Makefile,
-          # field `bbg_cred` disisipkan ke struct task_security_struct lewat sed
-          # di objsec.h, symlink bbg_tracing.h) - sudah dikonfirmasi hasilnya persis
-          # sesuai yang diprediksi dari baca source resmi, BUKAN diasumsikan.
-          # Tanpa patch ini, kode di tracing/tracing.c (bbg_cred()) tidak akan
-          # kompil karena field itu tidak ada di objsec.h asli - jadi langkah
-          # setup.sh ini WAJIB untuk kernel non-GKI seperti rosemary, bukan opsional.
-          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
-
-          # LSM baru harus didaftarkan ke daftar default LSM stack di security/Kconfig
-          # supaya benar-benar aktif tanpa perlu di-set manual lewat cmdline kernel.
-          # Ini command RESMI dari README proyek (Quick Start #2), khusus untuk build
-          # otomatis/CI - dikutip kata-per-kata dari docs/README-en.md (peringatan
-          # resmi: setup.sh --cleanup akan menghapus semua default LSM Kconfig kalau
-          # dijalankan, makanya README-nya sendiri menyarankan sed langsung ini untuk
-          # skrip build otomatis, bukan menjalankan --cleanup).
-          grep -q 'baseband_guard' security/Kconfig && echo "baseband_guard: sudah terdaftar di default LSM list" || \
-            sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' security/Kconfig
-          # CATATAN: kernel 4.14 rosemary-13 ini TIDAK punya blok `config LSM` sama
-          # sekali di security/Kconfig (mekanisme stacking itu baru ada di kernel
-          # modern yg support DEFINE_LSM). Baseband-guard's Makefile SENDIRI sudah
-          # tahu ini (lihat pesan "seems this Kernel doesn't need to check config"
-          # di compile log nanti) dan bbg_init() mendaftar sendiri lewat
-          # security_initcall() tanpa perlu string CONFIG_LSM apa pun. Jadi pesan
-          # di bawah ini SELALU muncul untuk kernel jenis ini - itu bukan tanda
-          # ada yang salah, cuma konfirmasi kalau langkah sed di atas memang
-          # tidak berlaku (no-op) untuk kernel non-GKI seperti ini.
-          grep -n 'baseband_guard' security/Kconfig || echo "baseband_guard: tidak ada blok config LSM di kernel ini - WAJAR untuk non-GKI, hook tetap aktif otomatis lewat security_initcall()"
-
       - name: Pra-compile - perbaikan build source MTK (verified reusable)
         working-directory: kernel
         run: |
@@ -666,9 +628,6 @@ jobs:
             echo ""
             echo "# Re:Kernel"
             echo "CONFIG_REKERNEL=y"
-            echo ""
-            echo "# Baseband-guard"
-            echo "CONFIG_BBG=y"
             echo ""
           } >> "$DEF"
           tail -25 "$DEF"
@@ -737,14 +696,6 @@ jobs:
           grep -E '^CONFIG_NOMOUNT' out/.config || true
           grep -q '^CONFIG_NOMOUNT=y$' out/.config || {
             echo "ERROR: CONFIG_NOMOUNT tidak resolve ke y"
-            exit 1
-          }
-
-          echo ""
-          echo "==================== RESOLVED Baseband-guard CONFIG ===================="
-          grep -E '^CONFIG_BBG' out/.config || true
-          grep -q '^CONFIG_BBG=y$' out/.config || {
-            echo "ERROR: CONFIG_BBG tidak resolve ke y (cek CONFIG_SECURITY=y - CONFIG_BBG depends on itu)"
             exit 1
           }
 
@@ -854,7 +805,7 @@ jobs:
           cp "${{ steps.kimg.outputs.path }}" "AnyKernel3/${{ steps.kimg.outputs.name }}"
 
           # Nama file dibuat unik per-run supaya tidak bentrok antar build.
-          ZIP="rosemary-ksu-nomount-rekernel-bbg-$(date +%Y%m%d-%H%M%S).zip"
+          ZIP="rosemary-ksu-nomount-rekernel-$(date +%Y%m%d-%H%M%S).zip"
 
           ( cd AnyKernel3 && zip -r9 "../$ZIP" . -x '.git*' )
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
