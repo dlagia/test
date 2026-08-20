@@ -50,24 +50,60 @@
 # SAMA seperti Fase 1. Kernel ini basis sama dengan yang sudah terbukti
 # boot, tapi NoMount menyentuh VFS inti - tetap test dulu.
 #
-# ReSukiSU diintegrasikan lewat setup.sh RESMI (https://github.com/ReSukiSU/ReSukiSU,
-# tanpa argumen branch = checkout "main", sesuai README repo - branch "auto-hook"
-# yang dipakai sebelumnya SUDAH DIHAPUS dari workflow ini). Untuk kernel 4.14
-# (non-GKI, < 5.10) dipakai CONFIG_KSU_MANUAL_HOOK=y, karena Tracepoint Syscall
-# Redirect hanya didukung GKI2 5.10+.
+# ==== GANTI RESUKISU -> KERNELSU-NEXT (permintaan eksplisit) ====
+# SELURUH integrasi ReSukiSU (github.com/ReSukiSU/ReSukiSU) SUDAH DIHAPUS
+# TOTAL dari workflow ini - step setup.sh-nya, patch hook manual milik
+# ReSukiSU (fs/stat.c newfstat_ret/fstat64_ret, kernel/reboot.c supercall
+# ala ReSukiSU), step "Commit ReSukiSU + bersihkan dirty" (KernelSU-Next
+# TIDAK punya mekanisme versi "-dirty" di kernel/Kbuild-nya, jadi step itu
+# tidak relevan lagi - lihat verifikasi di bawah), dan seluruh CONFIG_KSU_*
+# yang spesifik ke ReSukiSU (CONFIG_KSU_TRACEPOINT_HOOK, CONFIG_KSU_SUSFS,
+# CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK/AUTO_INITRC_HOOK/AUTO_INPUT_HOOK -
+# opsi-opsi ini TIDAK ADA di Kconfig resmi KernelSU-Next, jadi hard error
+# kalau dibiarkan tertanam sebagai residu).
 #
-# Source resmi branch main TIDAK punya auto_hook_detect.mk/auto_hook.c (itu
-# spesifik branch auto-hook yang sudah tidak dipakai). kernel/Kbuild resmi
-# meng-include kernel/tools/manual_hook_check.mk yang HARD-FAIL saat compile
-# kalau simbol hook tidak ditemukan persis di source - tidak ada fallback
-# otomatis. Tiga hook (setuid/init-rc/input) tetap otomatis lewat LSM karena
-# CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK/AUTO_INITRC_HOOK/AUTO_INPUT_HOOK
-# default=y di Kconfig resmi (kernel 4.14 < 6.8, jadi valid dipakai). Sisanya
-# (execveat, faccessat, stat, newfstat_ret, fstat64_ret, sys_reboot) DIPATCH
-# MANUAL ke fs/exec.c, fs/open.c, fs/stat.c, kernel/reboot.c - setiap anchor
-# sudah diverifikasi baris-per-baris terhadap source dlagia/android_kernel_
-# xiaomi_rosemary@rosemary-13 sebelum ditanam di sini (lihat step di bawah).
-# Patch lain (NoMount/Re:Kernel/Baseband) tetap dipisahkan dari ReSukiSU.
+# KernelSU-Next diintegrasikan lewat setup.sh RESMI
+# (https://github.com/KernelSU-Next/KernelSU-Next), argumen "legacy" ->
+# clone jadi KernelSU-Next/, checkout branch "legacy" - branch yang
+# DIREKOMENDASIKAN RESMI oleh halaman "Integrate for non-GKI devices"
+# (https://kernelsu-next.github.io/webpage/pages/how-to-integrate-for-non-gki.html)
+# untuk device non-GKI seperti rosemary (kernel 4.14).
+#
+# Kconfig resmi kernel/Kconfig milik KernelSU-Next (bukan ReSukiSU) hanya
+# mengenal: CONFIG_KSU, CONFIG_KSU_MANUAL_HOOK, CONFIG_KSU_KPROBES_HOOK
+# (bukan "KSU_TRACEPOINT_HOOK", dan TIDAK ADA "KSU_SUSFS" built-in di repo
+# ini). CONFIG_KSU_KPROBES_HOOK depends on KRETPROBES+KPROBES+
+# HAVE_SYSCALL_TRACEPOINTS dan menurut dokumentasi resminya "should not be
+# used on kernel below 5.10" - persis sama alasannya dengan Tracepoint di
+# ReSukiSU dulu. Karena itu kernel 4.14 rosemary ini tetap dipakukan ke
+# CONFIG_KSU_MANUAL_HOOK=y (CONFIG_KSU_KPROBES_HOOK otomatis jadi n karena
+# "depends on !KSU_MANUAL_HOOK" di Kconfig resmi).
+#
+# TIDAK ADA lagi opsi auto-hook LSM (setuid/init-rc/input) di KernelSU-Next
+# seperti dulu di ReSukiSU - source resmi KernelSU-Next TIDAK PUNYA
+# kernel/tools/manual_hook_check.mk terpisah; pengecekan hook di
+# kernel/Kbuild resminya HANYA memverifikasi satu simbol
+# (ksu_handle_sys_reboot di kernel/reboot.c) untuk menentukan mode Manual
+# Hook aktif - build TIDAK hard-fail kalau 4 anchor lain (exec.c/open.c/
+# read_write.c/stat.c) lupa dipasang, makanya step verifikasi manual di
+# bawah (grep 5 simbol, harus OK semua) TETAP dipertahankan sebagai
+# pengaman workflow ini sendiri.
+#
+# Lima anchor resmi (do_execve + compat_do_execve di fs/exec.c,
+# SYSCALL_DEFINE3(faccessat...) di fs/open.c, SYSCALL_DEFINE3(read...) di
+# fs/read_write.c, SYSCALL_DEFINE4(newfstatat...) di fs/stat.c,
+# SYSCALL_DEFINE4(reboot...) di kernel/reboot.c) sudah dicocokkan
+# baris-per-baris terhadap source dlagia/android_kernel_xiaomi_rosemary@
+# rosemary-13 (bukan tebakan/template generik) mengikuti patch referensi
+# resmi di halaman "Integrate for non-GKI devices" sebelum ditanam di
+# sini (lihat step di bawah). fs/read_write.c (hook sys_read, dipakai
+# KernelSU-Next untuk deteksi eksekusi "su" lewat sucompat) adalah anchor
+# BARU yang TIDAK ADA di integrasi ReSukiSU sebelumnya. Sebaliknya, hook
+# fs/stat.c newfstat_ret/fstat64_ret dan kernel/reboot.c supercall ala
+# ReSukiSU TIDAK dipatch lagi karena bukan bagian dari lima anchor resmi
+# KernelSU-Next - dihapus total, tidak ada residu extern/pemanggilan
+# fungsi yang menunjuk ke simbol yang sudah tidak ada.
+# Patch lain (NoMount/Re:Kernel/Baseband) tetap dipisahkan dari KernelSU-Next.
 #
 # Re:Kernel (github.com/Sakion-Team/Re-Kernel): membuka netlink server
 # supaya tombstone/freezer di userspace tahu kapan binder call atau
@@ -81,11 +117,10 @@
 # rosemary@rosemary-13 dan step Perl-nya SUDAH diuji end-to-end di source
 # itu (bukan lagi "tidak ditemukan publik" seperti catatan versi
 # sebelumnya - repo itu memang public dan sudah di-clone untuk verifikasi
-# ReSukiSU juga). Hasil: ke-4 anchor cocok tepat 1x, brace seimbang,
+# KernelSU-Next juga). Hasil: ke-4 anchor cocok tepat 1x, brace seimbang,
 # rekernel_start_server() muncul 2x di binder.c (reply+transaction path)
 # dan 1x masing-masing di binder_alloc.c/signal.c - sesuai ekspektasi.
-# CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK dari kernel/tools/manual_hook_check.mk
-# ReSukiSU dan JOBCTL_TRAP_FREEZE (caveat cgroup-freezer-v2 di README Re:Kernel)
+# JOBCTL_TRAP_FREEZE (caveat cgroup-freezer-v2 di README Re:Kernel)
 # TIDAK berlaku di kernel 4.14 rosemary-13 ini (belum backport freezer v2).
 # Pengecekan "match harus tepat 1x" di apply_rekernel_hooks.pl tetap
 # dipertahankan sebagai pengaman kalau upstream kernel source berubah.
@@ -132,31 +167,33 @@ jobs:
           # lain dibangun - supaya konsisten di seluruh proses compile & versi
           # LINUX_VERSION_CODE yang dipakai kode sumber (masih di rentang 4.14.x
           # yang sama, jadi tidak mempengaruhi cabang kondisional versi manapun
-          # di patch ReSukiSU/NoMount/Re-Kernel).
+          # di patch KernelSU-Next/NoMount/Re-Kernel).
           grep -n '^SUBLEVEL = ' Makefile
           sed -i 's/^SUBLEVEL = .*/SUBLEVEL = 186/' Makefile
           grep -n '^SUBLEVEL = ' Makefile
 
-      - name: Integrasikan ReSukiSU (setup.sh resmi, branch main)
+      - name: Integrasikan KernelSU-Next (setup.sh resmi, branch legacy)
         working-directory: kernel
         run: |
-          # Aturan resmi repo (https://github.com/ReSukiSU/ReSukiSU): setup.sh
-          # TANPA argumen -> clone jadi KernelSU/, checkout branch "main".
-          # (Argumen ke setup.sh adalah commit/tag opsional, BUKAN nama fitur
-          # seperti "auto-hook" - branch itu sudah tidak dipakai di workflow ini.)
-          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
+          # Aturan resmi repo (https://github.com/KernelSU-Next/KernelSU-Next):
+          # setup.sh dengan argumen "legacy" -> clone jadi KernelSU-Next/,
+          # checkout branch "legacy" - branch yang DIREKOMENDASIKAN RESMI oleh
+          # halaman "Integrate for non-GKI devices" untuk device non-GKI
+          # seperti rosemary (kernel 4.14), baik untuk jalur kprobe maupun
+          # manual hook.
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
 
-          test -d KernelSU || {
-            echo "ERROR: direktori KernelSU tidak ditemukan"
+          test -d KernelSU-Next || {
+            echo "ERROR: direktori KernelSU-Next tidak ditemukan"
             exit 1
           }
 
-          echo "== ReSukiSU branch =="
-          cd KernelSU
+          echo "== KernelSU-Next branch =="
+          cd KernelSU-Next
           git branch --show-current
           git rev-parse --short HEAD
-          test "$(git branch --show-current)" = "main" || {
-            echo "ERROR: ReSukiSU bukan branch main (setup.sh resmi tanpa argumen harus checkout main)"
+          test "$(git branch --show-current)" = "legacy" || {
+            echo "ERROR: KernelSU-Next bukan branch legacy (setup.sh -s legacy harus checkout legacy)"
             exit 1
           }
           cd ..
@@ -174,22 +211,21 @@ jobs:
             exit 1
           }
 
-          echo "ReSukiSU main (resmi): OK"
-          ls -ld KernelSU drivers/kernelsu
+          echo "KernelSU-Next branch legacy (resmi): OK"
+          ls -ld KernelSU-Next drivers/kernelsu
 
-      - name: Pasang hook manual ReSukiSU (kernel 4.14, non-GKI)
+      - name: Pasang hook manual KernelSU-Next (kernel 4.14, non-GKI)
         working-directory: kernel
         run: |
-          # kernel/tools/manual_hook_check.mk (bagian dari branch main resmi) akan
-          # HARD-FAIL saat compile kalau simbol berikut tidak ditemukan persis di
-          # source - tidak ada fallback otomatis di branch resmi ini. Anchor di
-          # bawah sudah dicocokkan baris-per-baris ke source dlagia/android_kernel_
+          # Lima anchor di bawah persis mengikuti patch referensi RESMI dari
+          # halaman "Integrate for non-GKI devices" milik KernelSU-Next
+          # (https://kernelsu-next.github.io/webpage/pages/how-to-integrate-for-non-gki.html#manually-modify-the-kernel-source),
+          # dan sudah dicocokkan baris-per-baris ke source dlagia/android_kernel_
           # xiaomi_rosemary@rosemary-13 (bukan tebakan/template generik) sebelum
-          # ditanam. Tiga hook lain (setuid/init-rc/input) SENGAJA tidak dipatch di
-          # sini karena CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK/AUTO_INITRC_HOOK/
-          # AUTO_INPUT_HOOK sudah default=y di Kconfig resmi (valid untuk kernel
-          # 4.14, karena opsi itu cuma dilarang di kernel >= 6.8) - keduanya
-          # ditangani otomatis lewat LSM oleh ReSukiSU sendiri.
+          # ditanam. TIDAK ADA lagi opsi auto-hook LSM (setuid/init-rc/input) di
+          # KernelSU-Next seperti dulu di ReSukiSU - kelima anchor ini (exec.c x2,
+          # open.c, read_write.c, stat.c, reboot.c) WAJIB semuanya dipatch manual,
+          # tidak ada yang otomatis lewat Kconfig.
           python3 - << 'PYEOF'
           import sys
 
@@ -206,36 +242,66 @@ jobs:
                   f.write(s)
               print(f"{path}: OK")
 
-          # ---------- fs/exec.c: ksu_handle_execveat ----------
-          exec_decl_old = (
-              "static int do_execveat_common(int fd, struct filename *filename,\n"
-              "\t\t\t      struct user_arg_ptr argv,\n"
-              "\t\t\t      struct user_arg_ptr envp,\n"
-              "\t\t\t      int flags)\n{\n\tchar *pathbuf = NULL;"
+          # ---------- fs/exec.c: ksu_handle_execveat (do_execve + compat_do_execve) ----------
+          do_execve_old = (
+              "int do_execve(struct filename *filename,\n"
+              "\tconst char __user *const __user *__argv,\n"
+              "\tconst char __user *const __user *__envp)\n{\n"
+              "\tstruct user_arg_ptr argv = { .ptr.native = __argv };\n"
+              "\tstruct user_arg_ptr envp = { .ptr.native = __envp };\n"
+              "\treturn do_execveat_common(AT_FDCWD, filename, argv, envp, 0);\n}"
           )
-          exec_decl_new = (
+          do_execve_new = (
               "#ifdef CONFIG_KSU\n"
-              "extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,\n"
-              "\t\t\t\tvoid *envp, int *flags);\n"
+              "__attribute__((hot))\n"
+              "extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr,\n"
+              "\t\t\t\tvoid *argv, void *envp, int *flags);\n"
               "#endif\n\n"
-          ) + exec_decl_old
-          exec_body_old = (
-              "\tint retval;\n\n\tif (IS_ERR(filename))\n\t\treturn PTR_ERR(filename);"
+              "int do_execve(struct filename *filename,\n"
+              "\tconst char __user *const __user *__argv,\n"
+              "\tconst char __user *const __user *__envp)\n{\n"
+              "\tstruct user_arg_ptr argv = { .ptr.native = __argv };\n"
+              "\tstruct user_arg_ptr envp = { .ptr.native = __envp };\n"
+              "#ifdef CONFIG_KSU\n"
+              "\tksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, 0);\n"
+              "#endif\n"
+              "\treturn do_execveat_common(AT_FDCWD, filename, argv, envp, 0);\n}"
           )
-          exec_body_new = (
-              "\tint retval;\n\n"
-              "#ifdef CONFIG_KSU\n"
-              "\tksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);\n"
-              "#endif\n\n"
-              "\tif (IS_ERR(filename))\n\t\treturn PTR_ERR(filename);"
+          compat_execve_old = (
+              "static int compat_do_execve(struct filename *filename,\n"
+              "\tconst compat_uptr_t __user *__argv,\n"
+              "\tconst compat_uptr_t __user *__envp)\n{\n"
+              "\tstruct user_arg_ptr argv = {\n"
+              "\t\t.is_compat = true,\n\t\t.ptr.compat = __argv,\n\t};\n"
+              "\tstruct user_arg_ptr envp = {\n"
+              "\t\t.is_compat = true,\n\t\t.ptr.compat = __envp,\n\t};\n"
+              "\treturn do_execveat_common(AT_FDCWD, filename, argv, envp, 0);\n}"
+          )
+          compat_execve_new = (
+              "static int compat_do_execve(struct filename *filename,\n"
+              "\tconst compat_uptr_t __user *__argv,\n"
+              "\tconst compat_uptr_t __user *__envp)\n{\n"
+              "\tstruct user_arg_ptr argv = {\n"
+              "\t\t.is_compat = true,\n\t\t.ptr.compat = __argv,\n\t};\n"
+              "\tstruct user_arg_ptr envp = {\n"
+              "\t\t.is_compat = true,\n\t\t.ptr.compat = __envp,\n\t};\n"
+              "#ifdef CONFIG_KSU // 32-bit ksud and 32-on-64 support\n"
+              "\tksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, 0);\n"
+              "#endif\n"
+              "\treturn do_execveat_common(AT_FDCWD, filename, argv, envp, 0);\n}"
           )
           patch("fs/exec.c", [
-              (exec_decl_old, exec_decl_new, "do_execveat_common signature"),
-              (exec_body_old, exec_body_new, "do_execveat_common body"),
+              (do_execve_old, do_execve_new, "do_execve (+extern ksu_handle_execveat)"),
+              (compat_execve_old, compat_execve_new, "compat_do_execve"),
           ])
 
           # ---------- fs/open.c: ksu_handle_faccessat ----------
           open_old = (
+              "/*\n"
+              " * access() needs to use the real uid/gid, not the effective uid/gid.\n"
+              " * We do this by temporarily clearing all FS-related capabilities and\n"
+              " * switching the fsuid/fsgid around to the real ones.\n"
+              " */\n"
               "SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)\n"
               "{\n\tconst struct cred *old_cred;\n\tstruct cred *override_cred;\n"
               "\tstruct path path;\n\tstruct inode *inode;\n\tstruct vfsmount *mnt;\n"
@@ -245,70 +311,75 @@ jobs:
           )
           open_new = (
               "#ifdef CONFIG_KSU\n"
-              "extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode,\n"
-              "\t\t\t\t int *flags);\n#endif\n\n"
+              "__attribute__((hot))\n"
+              "extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user,\n"
+              "\t\t\t\tint *mode, int *flags);\n"
+              "#endif\n\n"
+              "/*\n"
+              " * access() needs to use the real uid/gid, not the effective uid/gid.\n"
+              " * We do this by temporarily clearing all FS-related capabilities and\n"
+              " * switching the fsuid/fsgid around to the real ones.\n"
+              " */\n"
               "SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)\n"
               "{\n\tconst struct cred *old_cred;\n\tstruct cred *override_cred;\n"
               "\tstruct path path;\n\tstruct inode *inode;\n\tstruct vfsmount *mnt;\n"
               "\tint res;\n\tunsigned int lookup_flags = LOOKUP_FOLLOW;\n\n"
-              "#ifdef CONFIG_KSU\n\tksu_handle_faccessat(&dfd, &filename, &mode, NULL);\n#endif\n\n"
+              "#ifdef CONFIG_KSU\n"
+              "\tksu_handle_faccessat(&dfd, &filename, &mode, NULL);\n"
+              "#endif\n\n"
               "\tif (mode & ~S_IRWXO)\t/* where's F_OK, X_OK, W_OK, R_OK? */\n"
               "\t\treturn -EINVAL;"
           )
           patch("fs/open.c", [(open_old, open_new, "SYSCALL_DEFINE3(faccessat...)")])
 
-          # ---------- fs/stat.c: ksu_handle_stat + newfstat_ret + fstat64_ret ----------
-          stat_extern = (
+          # ---------- fs/read_write.c: ksu_handle_sys_read (sucompat) ----------
+          read_old = (
+              "SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf, size_t, count)\n"
+              "{\n\tstruct fd f = fdget_pos(fd);\n\tssize_t ret = -EBADF;\n\n"
+              "\tif (f.file) {"
+          )
+          read_new = (
               "#ifdef CONFIG_KSU\n"
-              "extern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);\n"
-              "extern void ksu_handle_newfstat_ret(unsigned int *fd, struct stat __user **statbuf_ptr);\n"
-              "#if defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_COMPAT_STAT64)\n"
-              "extern void ksu_handle_fstat64_ret(unsigned long *fd, struct stat64 __user **statbuf_ptr);\n"
-              "#endif\n#endif\n\n"
+              "extern bool ksu_vfs_read_hook __read_mostly;\n"
+              "extern __attribute__((cold)) int ksu_handle_sys_read(unsigned int fd,\n"
+              "\t\t\t\tchar __user **buf_ptr, size_t *count_ptr);\n"
+              "#endif\n\n"
+              "SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf, size_t, count)\n"
+              "{\n\tstruct fd f = fdget_pos(fd);\n\tssize_t ret = -EBADF;\n\n"
+              "#ifdef CONFIG_KSU\n"
+              "\tif (unlikely(ksu_vfs_read_hook))\n"
+              "\t\tksu_handle_sys_read(fd, &buf, &count);\n"
+              "#endif\n"
+              "\tif (f.file) {"
           )
-          newfstatat_old = (
+          patch("fs/read_write.c", [(read_old, read_new, "SYSCALL_DEFINE3(read...)")])
+
+          # ---------- fs/stat.c: ksu_handle_stat ----------
+          stat_old = (
+              "#if !defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_SYS_NEWFSTATAT)\n"
               "SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,\n"
-              "\t\tstruct stat __user *, statbuf, int, flag)\n{\n\tstruct kstat stat;\n"
-              "\tint error;\n\n\terror = vfs_fstatat(dfd, filename, &stat, flag);"
-          )
-          newfstatat_new = stat_extern + (
-              "SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,\n"
-              "\t\tstruct stat __user *, statbuf, int, flag)\n{\n\tstruct kstat stat;\n"
-              "\tint error;\n\n"
-              "#ifdef CONFIG_KSU\n\tksu_handle_stat(&dfd, &filename, &flag);\n#endif\n\n"
+              "\t\tstruct stat __user *, statbuf, int, flag)\n"
+              "{\n\tstruct kstat stat;\n\tint error;\n\n"
               "\terror = vfs_fstatat(dfd, filename, &stat, flag);"
           )
-          newfstat_old = (
-              "SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)\n"
-              "{\n\tstruct kstat stat;\n\tint error = vfs_fstat(fd, &stat);\n\n"
-              "\tif (!error)\n\t\terror = cp_new_stat(&stat, statbuf);\n\n\treturn error;\n}"
+          stat_new = (
+              "#ifdef CONFIG_KSU\n"
+              "__attribute__((hot))\n"
+              "extern int ksu_handle_stat(int *dfd, const char __user **filename_user,\n"
+              "\t\t\t\tint *flags);\n"
+              "#endif\n\n"
+              "#if !defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_SYS_NEWFSTATAT)\n"
+              "SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,\n"
+              "\t\tstruct stat __user *, statbuf, int, flag)\n"
+              "{\n\tstruct kstat stat;\n\tint error;\n\n"
+              "#ifdef CONFIG_KSU\n"
+              "\tksu_handle_stat(&dfd, &filename, &flag);\n"
+              "#endif\n"
+              "\terror = vfs_fstatat(dfd, filename, &stat, flag);"
           )
-          newfstat_new = (
-              "SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)\n"
-              "{\n\tstruct kstat stat;\n\tint error = vfs_fstat(fd, &stat);\n\n"
-              "\tif (!error)\n\t\terror = cp_new_stat(&stat, statbuf);\n\n"
-              "#ifdef CONFIG_KSU\n\tif (!error)\n\t\tksu_handle_newfstat_ret(&fd, &statbuf);\n#endif\n\n"
-              "\treturn error;\n}"
-          )
-          fstat64_old = (
-              "SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)\n"
-              "{\n\tstruct kstat stat;\n\tint error = vfs_fstat(fd, &stat);\n\n"
-              "\tif (!error)\n\t\terror = cp_new_stat64(&stat, statbuf);\n\n\treturn error;\n}"
-          )
-          fstat64_new = (
-              "SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)\n"
-              "{\n\tstruct kstat stat;\n\tint error = vfs_fstat(fd, &stat);\n\n"
-              "\tif (!error)\n\t\terror = cp_new_stat64(&stat, statbuf);\n\n"
-              "#ifdef CONFIG_KSU\n\tif (!error)\n\t\tksu_handle_fstat64_ret(&fd, &statbuf);\n#endif\n\n"
-              "\treturn error;\n}"
-          )
-          patch("fs/stat.c", [
-              (newfstatat_old, newfstatat_new, "SYSCALL_DEFINE4(newfstatat...) + extern block"),
-              (newfstat_old, newfstat_new, "SYSCALL_DEFINE2(newfstat...)"),
-              (fstat64_old, fstat64_new, "SYSCALL_DEFINE2(fstat64...)"),
-          ])
+          patch("fs/stat.c", [(stat_old, stat_new, "SYSCALL_DEFINE4(newfstatat...) + extern block")])
 
-          # ---------- kernel/reboot.c: ksu_handle_sys_reboot (ReSukiSU supercall) ----------
+          # ---------- kernel/reboot.c: ksu_handle_sys_reboot ----------
           reboot_old = (
               "SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,\n"
               "\t\tvoid __user *, arg)\n{\n"
@@ -325,11 +396,7 @@ jobs:
               "\tstruct pid_namespace *pid_ns = task_active_pid_ns(current);\n"
               "\tchar buffer[256];\n\tint ret = 0;\n\n"
               "#ifdef CONFIG_KSU\n"
-              "\t/* ReSukiSU supercall: manager pasang fd komunikasi lewat syscall reboot()\n"
-              "\t * dengan magic1/magic2 khusus KSU (BUKAN LINUX_REBOOT_MAGIC*).\n"
-              "\t * ksu_handle_sys_reboot() sendiri sudah memvalidasi magic1 dan\n"
-              "\t * mengembalikan -EINVAL kalau bukan supercall - reboot asli tak terpengaruh. */\n"
-              "\tif (!ksu_handle_sys_reboot(magic1, magic2, cmd, &arg))\n\t\treturn 0;\n"
+              "\tksu_handle_sys_reboot(magic1, magic2, cmd, &arg);\n"
               "#endif\n\n"
               "\t/* We only trust the superuser with rebooting the system. */"
           )
@@ -337,63 +404,50 @@ jobs:
           PYEOF
 
           echo ""
-          echo "== Verifikasi simbol hook manual tertanam =="
+          echo "== Verifikasi simbol hook manual tertanam (5 anchor resmi KernelSU-Next) =="
           for pair in \
             "fs/exec.c:ksu_handle_execveat" \
             "fs/open.c:ksu_handle_faccessat" \
+            "fs/read_write.c:ksu_handle_sys_read" \
             "fs/stat.c:ksu_handle_stat" \
-            "fs/stat.c:ksu_handle_newfstat_ret" \
-            "fs/stat.c:ksu_handle_fstat64_ret" \
             "kernel/reboot.c:ksu_handle_sys_reboot"; do
             f="${pair%%:*}"; sym="${pair##*:}"
             grep -q "$sym" "$f" || { echo "ERROR: $sym tidak ditemukan di $f"; exit 1; }
             echo "OK: $sym -> $f"
           done
 
+          echo ""
+          echo "== Pastikan residu ReSukiSU sudah bersih (tidak boleh ada lagi) =="
+          for pair in \
+            "fs/stat.c:ksu_handle_newfstat_ret" \
+            "fs/stat.c:ksu_handle_fstat64_ret"; do
+            f="${pair%%:*}"; sym="${pair##*:}"
+            if grep -q "$sym" "$f"; then
+              echo "ERROR: residu ReSukiSU '$sym' masih ada di $f"
+              exit 1
+            fi
+          done
+          echo "OK: tidak ada residu hook ReSukiSU"
 
-      - name: Commit ReSukiSU + bersihkan dirty
+
+      - name: Bersihkan -dirty di versi kernel
         working-directory: kernel
         run: |
-          echo "==================== Cek status KernelSU sebelum commit ===================="
-          cd KernelSU
-          git status --porcelain || true
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-
-          # Commit semua perubahan di dalam KernelSU (kalau ada)
-          git add -A
-          if ! git diff --quiet || ! git diff --staged --quiet; then
-            git commit -m "Apply custom integration (remove dirty)"
-            echo "Commit berhasil dilakukan di KernelSU"
-          else
-            echo "KernelSU sudah clean, tidak ada yang perlu di-commit"
-          fi
-
-          # Verifikasi final
-          echo ""
-          echo "==================== Status setelah commit ===================="
-          git status
-          git diff-index --quiet HEAD && echo ">>> KernelSU CLEAN (tidak ada dirty)" || echo ">>> MASIH DIRTY!"
-
-          cd ..
-
-          # Bersihkan juga -dirty di setlocalversion kernel utama
-          # (supaya uname -r tidak mengandung -dirty)
+          # CATATAN: kernel/Kbuild resmi KernelSU-Next TIDAK memakai mekanisme
+          # versi "-dirty" sama sekali (KSU_GIT_VERSION dihitung dari
+          # `git rev-list --count HEAD`, bukan dari status dirty working tree),
+          # jadi step "Commit ReSukiSU + bersihkan dirty" dan trik netralisasi
+          # KSU_COMMIT_SHA-dirty di Kbuild yang dulu ada untuk ReSukiSU SUDAH
+          # DIHAPUS TOTAL di sini - tidak relevan lagi dan akan jadi residu
+          # kalau dipertahankan (KernelSU-Next/kernel/Kbuild tidak punya baris
+          # yang dicari sed itu). Yang masih relevan hanya -dirty di suffix
+          # uname -r kernel utama (scripts/setlocalversion), supaya tetap
+          # persis "4.14.186-perf" seperti stock.
           if [ -f scripts/setlocalversion ]; then
             sed -i 's/-dirty//g' scripts/setlocalversion
             echo "scripts/setlocalversion sudah dibersihkan dari -dirty"
           fi
-
-          # Cadangan: bersihkan di semua setlocalversion yang mungkin ada
           find . -name setlocalversion -exec sed -i 's/-dirty//g' {} + 2>/dev/null || true
-
-          # Paksa hilangkan pengecekan dirty di Kbuild ReSukiSU (cadangan)
-          if [ -f KernelSU/kernel/Kbuild ]; then
-            sed -i 's/KSU_COMMIT_SHA  := \$(KSU_COMMIT_SHA)-dirty/KSU_COMMIT_SHA  := \$(KSU_COMMIT_SHA)/' KernelSU/kernel/Kbuild || true
-            # Alternatif lebih agresif (hapus blok pengecekan):
-            # sed -i '/diff-index --quiet HEAD/,+2d' KernelSU/kernel/Kbuild || true
-            echo "Pengecekan -dirty di KernelSU/kernel/Kbuild sudah dinetralisir"
-          fi
 
       - name: Integrasikan NoMount (branch dev, resmi)
         working-directory: kernel
@@ -519,7 +573,7 @@ jobs:
           # https://github.com/vc-teahouse/Baseband-guard
           # LSM ringan yang memblokir tulisan tak sah ke partisi/device node kritis
           # (baseband, boot chain) di level kernel. Dipasang via setup.sh resmi milik
-          # proyek ini sendiri (pola sama seperti setup.sh ReSukiSU) - bukan patch
+          # proyek ini sendiri (pola sama seperti setup.sh KernelSU-Next) - bukan patch
           # tertanam manual, jadi selalu ambil versi terbaru tiap build.
           #
           # VERIFIKASI (sudah diuji end-to-end di source dlagia/android_kernel_
@@ -594,20 +648,18 @@ jobs:
             echo 'CONFIG_LOCALVERSION="-perf"'
             echo "CONFIG_LOCALVERSION_AUTO=n"
             echo ""
-            echo "# ReSukiSU (branch main resmi) - kernel 4.14 non-GKI wajib Manual Hook"
+            echo "# KernelSU-Next (branch legacy resmi) - kernel 4.14 non-GKI wajib Manual Hook."
+            echo "# Kconfig resmi KernelSU-Next hanya mengenal CONFIG_KSU, CONFIG_KSU_MANUAL_HOOK,"
+            echo "# CONFIG_KSU_KPROBES_HOOK - TIDAK ADA CONFIG_KSU_TRACEPOINT_HOOK atau"
+            echo "# CONFIG_KSU_SUSFS di repo ini (itu opsi ReSukiSU/fork lain, residu kalau"
+            echo "# tetap ditulis di sini karena akan diabaikan diam-diam oleh Kconfig, jadi"
+            echo "# sengaja tidak ditulis lagi). CONFIG_KSU_KPROBES_HOOK depends on"
+            echo "# !KSU_MANUAL_HOOK, jadi otomatis jadi n begitu CONFIG_KSU_MANUAL_HOOK=y -"
+            echo "# tidak perlu ditulis eksplisit."
             echo "CONFIG_KSU=y"
-            echo "CONFIG_KSU_TRACEPOINT_HOOK=n"
             echo "CONFIG_KSU_MANUAL_HOOK=y"
-            echo "CONFIG_KSU_SUSFS=n"
             echo "CONFIG_KALLSYMS=y"
             echo "CONFIG_KALLSYMS_ALL=y"
-            echo "# default=y di Kconfig resmi (valid untuk kernel <6.8); ditulis eksplisit"
-            echo "# di sini supaya tidak bergantung ke default oldconfig merge - hook"
-            echo "# setuid/init-rc/input jadi otomatis lewat LSM, TIDAK perlu patch manual"
-            echo "# ke kernel/sys.c, fs/read_write.c, atau drivers/input/input.c."
-            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK=y"
-            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK=y"
-            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INPUT_HOOK=y"
             echo ""
             echo "# NoMount"
             echo "CONFIG_NOMOUNT=y"
@@ -642,7 +694,7 @@ jobs:
           make O=out rosemary_defconfig
 
           echo ""
-          echo "==================== RESOLVED ReSukiSU CONFIG ===================="
+          echo "==================== RESOLVED KernelSU-Next CONFIG ===================="
           grep -E '^(CONFIG_KSU|CONFIG_KALLSYMS)' out/.config || true
 
           grep -q '^CONFIG_KSU=y$' out/.config || {
@@ -662,15 +714,23 @@ jobs:
             exit 1
           }
 
-          if grep -q '^CONFIG_KSU_TRACEPOINT_HOOK=y$' out/.config; then
-            echo "ERROR: CONFIG_KSU_TRACEPOINT_HOOK=y aktif; kernel 4.14 harus memakai Manual Hook"
+          if grep -q '^CONFIG_KSU_KPROBES_HOOK=y$' out/.config; then
+            echo "ERROR: CONFIG_KSU_KPROBES_HOOK=y aktif; kernel 4.14 non-GKI harus memakai Manual Hook"
             exit 1
           fi
 
-          if grep -q '^CONFIG_KSU_SUSFS=y$' out/.config; then
-            echo "ERROR: CONFIG_KSU_SUSFS=y aktif; build ini ditujukan untuk Manual Hook tanpa SUSFS"
-            exit 1
-          fi
+          # Residu ReSukiSU: opsi-opsi ini TIDAK ADA di Kconfig resmi KernelSU-Next.
+          # Kalau muncul di .config berarti ada Kconfig lain yang menyelundupkan
+          # residu ReSukiSU (mis. defconfig lama belum bersih) - hard-fail.
+          for stale in CONFIG_KSU_TRACEPOINT_HOOK CONFIG_KSU_SUSFS \
+                       CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK \
+                       CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK \
+                       CONFIG_KSU_MANUAL_HOOK_AUTO_INPUT_HOOK; do
+            if grep -q "^${stale}=" out/.config; then
+              echo "ERROR: residu opsi ReSukiSU '$stale' masih muncul di .config"
+              exit 1
+            fi
+          done
 
           echo ""
           echo "==================== RESOLVED NoMount CONFIG ===================="
@@ -688,7 +748,7 @@ jobs:
             exit 1
           }
 
-          echo "ReSukiSU Manual Hook + auto-hook: CONFIG OK"
+          echo "KernelSU-Next Manual Hook: CONFIG OK"
 
           set -o pipefail
           if ! make -k O=out -j"$(nproc)" \
@@ -721,13 +781,17 @@ jobs:
           ls -la out/arch/arm64/boot/
           echo ""
           echo "==================== VERIFIKASI MANUAL HOOK (resmi) ===================="
-          echo "Pesan ini berasal dari kernel/tools/manual_hook_check.mk milik ReSukiSU"
-          echo "branch main (di-include otomatis oleh kernel/Kbuild saat CONFIG_KSU_MANUAL_HOOK=y)."
-          echo "Kalau build lolos sampai sini, SEMUA hook wajib sudah ditemukan - mk ini"
-          echo "hard-fail (\$(error ...)) begitu ada simbol yang hilang, bukan skip diam-diam."
+          echo "Pesan ini berasal dari kernel/Kbuild resmi KernelSU-Next sendiri (BUKAN file"
+          echo "manual_hook_check.mk terpisah seperti dulu di ReSukiSU - KernelSU-Next tidak"
+          echo "punya file itu). Kbuild resmi HANYA memverifikasi satu simbol"
+          echo "(ksu_handle_sys_reboot di kernel/reboot.c) untuk memutuskan mode Manual Hook"
+          echo "aktif; kalau simbol itu tidak ada, \$(error ...) hard-fail build ini sendiri."
+          echo "Empat anchor lain (exec.c/open.c/read_write.c/stat.c) TIDAK diverifikasi oleh"
+          echo "Kbuild resmi - itulah kenapa step 'Pasang hook manual KernelSU-Next' di atas"
+          echo "tetap menjalankan verifikasi grep 5 simbol secara terpisah sebagai pengaman."
           echo ""
           echo "== Pesan hook dari Kbuild =="
-          grep -iE "resukisu.*manual_hook|using manual hook|using a manual|using lsm hooks" /tmp/build.log || true
+          grep -iE "kernelsu-next: hook mode|no hooks were defined" /tmp/build.log || true
 
       - name: Compile nm (NoMount userspace CLI, commit sama dgn kernel)
         run: |
