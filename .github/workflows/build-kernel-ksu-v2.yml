@@ -9,30 +9,26 @@
 # `dev` milik maxsteeel/nomount (BUKAN LAGI experimental/hookless - dihapus
 # total atas permintaan langsung, ganti ke `dev`).
 #
-# VERIFIKASI: branch `dev` adalah DEFAULT RESMI kernel/README.md repo ini
-# sendiri - perintah setup.sh resminya persis:
-#   curl .../refs/heads/dev/kernel/setup.sh | bash -
-# (tanpa argumen branch = pakai dev secara implisit). Jadi branch ini bahkan
-# lebih "sesuai aturan git" dibanding experimental/hookless kemarin, yang
-# harus dipilih eksplisit lewat argumen -s.
+# KOREKSI (20 Agu 2026, dicek ulang langsung ke kernel/setup.sh terbaru):
+# klaim versi sebelumnya bahwa "tanpa argumen branch = pakai dev secara
+# implisit" TERNYATA TIDAK AKURAT. setup.sh resmi, kalau dijalankan tanpa
+# argumen, sebenarnya checkout ke TAG rilis terbaru (git describe --abbrev=0
+# --tags), BUKAN bertahan di branch dev. Makanya argumen "dev" HARUS
+# eksplisit lewat `bash -s dev` (lihat pembaruan di bawah) - bukan opsional.
 #
-# Sudah dibandingkan byte-per-byte terhadap experimental/hookless: file
-# kernel/patches/nomount_4.14_kernel_integration.patch, seluruh isi module/,
-# userspace/src/nm.c, userspace/src/nm.h, dan kernel/setup.sh IDENTIK persis
-# di kedua branch (tidak ada perbedaan protokol keyring/netlink seperti
-# dugaan versi workflow sebelumnya - klaim itu ternyata tidak akurat, sudah
-# dicek ulang dan dikoreksi di sini). SATU-SATUNYA perbedaan nyata ada di
-# kernel/src/nomount.c dan nomount.h: dev meng-upgrade locking pembaca dari
-# rwsem (down_read/up_read) ke SRCU (srcu_read_lock/synchronize_srcu) -
-# perbaikan konkurensi murni, bukan perubahan API atau protokol komunikasi.
-# Sifat "hookless" (tukar pointer inode->i_op/file->f_op saat runtime, tanpa
-# sentuh fs/namei.c/fs/dcache.c/dst.) tetap identik di branch dev, sudah
-# dikonfirmasi ulang langsung dari source nomount.c branch ini.
-#
-# Patch nomount_4.14_kernel_integration.patch (branch dev) sudah diuji
-# `git apply --check` langsung ke source dlagia/android_kernel_xiaomi_
-# rosemary@rosemary-13: apply bersih (sama seperti sebelumnya, karena
-# file patch-nya byte-identik).
+# PEMBARUAN BESAR (21 Agu 2026, konfirmasi resmi upstream via kernel/README.md
+# branch dev + action.yml reference maxsteeel/GKI_KernelSU_SUSFS): integrasi
+# NoMount branch `dev` di workflow ini SEKARANG WAJIB lewat setup.sh resmi
+# (`curl .../refs/heads/dev/kernel/setup.sh | bash -s dev`), BUKAN lagi lewat
+# `git apply` ke file patch statis. Patch manual
+# (kernel/patches/nomount_4.14_kernel_integration.patch) yang dipakai versi
+# file sebelumnya SUDAH DIUMUMKAN DEPRECATED oleh proyek NoMount sendiri di
+# branch dev dan akan segera dihapus dari repo - jadi bukan lagi opsi yang
+# aman untuk diandalkan jangka panjang. Lihat step "Integrasikan NoMount" di
+# bawah untuk implementasi barunya. Perbedaan locking rwsem->SRCU di
+# kernel/src/nomount.c pada branch dev (dibanding experimental/hookless lama)
+# tetap seperti dicatat sebelumnya - itu bukan yang berubah di sini, yang
+# berubah murni CARA integrasinya (skrip resmi, bukan patch statis).
 #
 # CATATAN (permintaan eksplisit): perakitan module.zip flashable NoMount
 # (ko-loader, module-build, dst.) SUDAH DIHAPUS TOTAL dari workflow ini -
@@ -105,6 +101,14 @@ on:
 
 jobs:
   build:
+    # PERINGATAN (temuan 20 Agu 2026): GitHub mengumumkan image ubuntu-22.04
+    # mulai deprecation 17 Sep 2026 (brownout berkala mulai tanggal itu) dan
+    # baru benar-benar hilang total 17 Apr 2027. Belum wajib diganti sekarang,
+    # tapi build bisa mulai gagal acak saat jendela brownout mendekati/lewat
+    # tanggal itu. Belum saya ganti otomatis ke ubuntu-24.04 di sini karena
+    # step "Pasang dependency build" di bawah menarik libtinfo5/libncurses5
+    # (paket legacy) yang ketersediaannya di repo Ubuntu 24.04 belum saya
+    # verifikasi - coba dulu di branch terpisah sebelum ganti runs-on ini.
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -395,67 +399,59 @@ jobs:
             echo "Pengecekan -dirty di KernelSU/kernel/Kbuild sudah dinetralisir"
           fi
 
-      - name: Integrasikan NoMount (branch dev, resmi)
+      - name: Integrasikan NoMount (setup.sh resmi, branch dev - WAJIB skrip mulai sekarang)
         working-directory: kernel
         run: |
-          # NoMount branch: maxsteeel/nomount `dev` (branch resmi/default repo ini,
-          # dikonfirmasi dari kernel/README.md: perintah setup.sh resmi tanpa
-          # argumen branch memang mengarah ke refs/heads/dev).
-          # Ikuti struktur resmi branch ini untuk kernel 4.14:
-          #   fs/nomount -> ../NoMount/kernel/src
-          #   fs/Kconfig -> source "fs/nomount/Kconfig"
-          #   fs/Makefile -> obj-$(CONFIG_NOMOUNT) += nomount/
-          # Tidak menyalin nomount.c/nomount.h langsung ke fs/.
-          # Tidak menyuntik hook manual ke fs/namei.c, fs/dcache.c,
-          # fs/readdir.c, fs/stat.c, fs/proc/task_mmu.c, atau fs/statfs.c -
-          # sifat "hookless" (tukar pointer inode->i_op/file->f_op saat
-          # runtime) tetap sama di branch dev; SATU-SATUNYA beda dari branch
-          # experimental/hookless yang dipakai sebelumnya adalah locking
-          # pembaca di nomount.c di-upgrade dari rwsem ke SRCU (lebih
-          # scalable untuk pembacaan konkuren) - bukan perubahan struktur
-          # integrasi kernel, jadi langkah-langkah di bawah ini TIDAK berubah.
+          # PEMBARUAN PENTING (21 Agu 2026, permintaan + konfirmasi resmi upstream):
+          # Di branch `dev`, patch manual (kernel/patches/nomount_4.14_kernel_
+          # integration.patch - dipakai step ini di versi file sebelumnya) SUDAH
+          # DEPRECATED oleh proyek NoMount sendiri dan akan segera dihapus.
+          # Mulai versi file ini, integrasi WAJIB lewat setup.sh resmi dengan
+          # argumen "dev" EKSPLISIT (bukan tanpa argumen - lihat catatan di
+          # header file ini kenapa "tanpa argumen" tidak aman/deterministik):
           #
-          # PENTING: clone NoMount di sini adalah SATU-SATUNYA clone dipakai
-          # untuk SELURUH integrasi NoMount di workflow ini (kernel driver DAN
-          # kompilasi nm) - lihat step "Compile nm" di bawah, yang juga memakai
-          # folder NoMount/ ini, TIDAK clone ulang. Ini menjamin commit driver
-          # kernel dan commit userspace CLI SELALU sama persis.
+          #   curl .../refs/heads/dev/kernel/setup.sh | bash -s dev
+          #
+          # Referensi resmi: kernel/README.md milik maxsteeel/nomount@dev, dan
+          # action.yml reference dari maxsteeel/GKI_KernelSU_SUSFS
+          # (.github/actions/nomount/action.yml) - keduanya HANYA memanggil
+          # skrip ini lalu set CONFIG_NOMOUNT=y, TANPA patch apa pun.
+          #
+          # setup.sh sendiri yang menangani: clone -> kernel/NoMount, checkout
+          # branch "dev" (eksplisit lewat argumen "$1"="dev", bukan lewat
+          # deteksi branch lokal), symlink fs/nomount -> kernel/NoMount/kernel/
+          # src, dan entry di fs/Makefile + fs/Kconfig. Patch legacy di dalam
+          # setup.sh HANYA berjalan kalau branch hasil checkout = "master" -
+          # untuk "dev" blok itu otomatis dilewati, jadi TIDAK ADA git apply
+          # ke patch apa pun di sini lagi.
+          #
+          # Folder kernel/NoMount hasil clone skrip ini dipakai lagi apa adanya
+          # oleh step "Compile nm" di bawah (tanpa clone ulang), supaya commit
+          # driver kernel dan commit userspace CLI selalu sama persis.
 
-          rm -rf NoMount
-          git clone --depth=1 -b dev \
-            https://github.com/maxsteeel/nomount.git NoMount
+          rm -rf NoMount fs/nomount
+          curl -LSs "https://raw.githubusercontent.com/maxsteeel/nomount/refs/heads/dev/kernel/setup.sh" | bash -s dev
 
-          echo "NoMount commit dipakai (kernel + modul + nm): $(git -C NoMount rev-parse --short HEAD)"
+          echo "== NoMount branch/commit (hasil clone setup.sh ke kernel/NoMount) =="
           cd NoMount
+          git branch --show-current
+          git rev-parse --short HEAD
           test "$(git branch --show-current)" = "dev" || {
-            echo "ERROR: NoMount bukan branch dev"
+            echo "ERROR: NoMount bukan branch dev (setup.sh -s dev seharusnya checkout dev)"
             exit 1
           }
           cd ..
 
-          # Pastikan source branch yang dipakai benar-benar memiliki
-          # layout kernel/src yang diharapkan oleh patch 4.14.
-          test -s NoMount/kernel/src/Kconfig
-          test -s NoMount/kernel/src/Makefile
-          test -s NoMount/kernel/src/nomount.c
-          test -s NoMount/kernel/src/nomount.h
-
-          # fs/nomount adalah symlink ke kernel/src, sesuai setup.sh resmi.
-          rm -rf fs/nomount
-          ln -s ../NoMount/kernel/src fs/nomount
-
-          # Terapkan patch integrasi resmi 4.14 dari branch dev.
-          git apply --verbose NoMount/kernel/patches/nomount_4.14_kernel_integration.patch
-
-          echo "==================== NoMount (branch dev) ===================="
-          echo "NoMount source: $(readlink -f fs/nomount)"
-          echo ""
+          echo "==================== NoMount (branch dev, via setup.sh) ===================="
           echo "== fs/Kconfig =="
           grep -nF 'source "fs/nomount/Kconfig"' fs/Kconfig
           echo "== fs/Makefile =="
           grep -nF 'obj-$(CONFIG_NOMOUNT) += nomount/' fs/Makefile
           echo "== NoMount source =="
-          test -L fs/nomount
+          test -L fs/nomount || {
+            echo "ERROR: symlink fs/nomount tidak dibuat oleh setup.sh"
+            exit 1
+          }
           test -s fs/nomount/Kconfig
           test -s fs/nomount/Makefile
           test -s fs/nomount/nomount.c
@@ -471,14 +467,16 @@ jobs:
           }
           echo "OK: nomount.c mengandung nomount_srcu (locking SRCU khas branch dev)"
 
-          # Pastikan hook NoMount lama TIDAK ikut masuk ke source kernel.
+          # Pastikan hook NoMount lama TIDAK ikut masuk ke source kernel
+          # (sisa dari masa branch experimental/hookless dulu, sebelum branch dev).
           if grep -R -nE 'nomount_hooks.patch|nomount_handle_(getname|permission|dpath|iterate_dir|getattr)|nomount_spoof_(mmap_metadata|statfs)' \
               fs/namei.c fs/dcache.c fs/readdir.c fs/stat.c fs/proc/task_mmu.c fs/statfs.c 2>/dev/null; then
             echo "ERROR: hook NoMount lama masih terdeteksi di source kernel"
             exit 1
           fi
 
-          echo "NoMount branch dev: integration OK"
+          echo "NoMount branch dev (setup.sh resmi, tanpa patch manual - sesuai kebijakan baru upstream): OK"
+          ls -ld NoMount fs/nomount
 
       - name: Integrasikan Re:Kernel (Sakion-Team) - notifikasi freeze binder/signal
         working-directory: kernel
