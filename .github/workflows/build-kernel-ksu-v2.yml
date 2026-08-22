@@ -69,6 +69,30 @@
 # xiaomi_rosemary@rosemary-13 sebelum ditanam di sini (lihat step di bawah).
 # Patch lain (NoMount/Re:Kernel/Baseband) tetap dipisahkan dari ReSukiSU.
 #
+# RE-VERIFIKASI 22 Agustus 2026 (atas info PR upstream tiann/KernelSU #3521
+# "refactor sucompat" dan #3639 "handle execveat for new bionic libc", yang
+# di-cherry-pick ke ReSukiSU): sudah dicek langsung ke source main branch
+# ReSukiSU terbaru hari ini - KEDUA perubahan itu SUDAH MASUK, dan hook
+# manual kita di file ini SUDAH SESUAI tanpa perlu diubah sama sekali:
+# - Signature ksu_handle_execveat/faccessat/stat TIDAK berubah (masih persis
+#   sama dengan yang dipakai di patch fs/exec.c, fs/open.c, fs/stat.c).
+# - Syarat "manual hook harus panggil ksu_handle_execveat dari dalam
+#   do_execveat_common" (supaya kompatibel dengan bionic baru yang mapping
+#   semua execve ke execveat) - itu PERSIS tempat kita sudah taruh hook-nya.
+# - Fix "force cast AT_FDCWD" dan redirect su->ksud (dgn fallback ke sh kalau
+#   /data/adb/ksud belum ada) SEPENUHNYA internal di sucompat.c milik
+#   ReSukiSU sendiri - tidak terlihat/tidak perlu disentuh dari sisi patch
+#   kita di fs/exec.c, fs/open.c, fs/stat.c manapun.
+# - manual_hook_check.mk masih mengecek simbol yang PERSIS sama (execveat,
+#   faccessat, stat, newfstat_ret, fstat64_ret, sys_reboot) - tidak ada
+#   simbol baru yang wajib ditambahkan.
+# Sudah diuji end-to-end lagi hari ini terhadap kernel dlagia/android_kernel_
+# xiaomi_rosemary@rosemary-13 dengan commit TERBARU dari ReSukiSU, Re-Kernel,
+# Baseband-guard, dan NoMount (termasuk commit NoMount dev paling baru
+# "kernel, userspace: return back to keyring-based api" - tidak menyentuh
+# struktur Kconfig/Makefile yang kita pakai, jadi tidak ada dampak) - semua
+# 6 step patch lolos, brace seimbang, fs/Kconfig tetap 1 baris setelah fix.
+#
 # Re:Kernel (github.com/Sakion-Team/Re-Kernel): membuka netlink server
 # supaya tombstone/freezer di userspace tahu kapan binder call atau
 # signal (SIGKILL/SIGTERM/SIGABRT/SIGQUIT) menyasar proses yang sedang
