@@ -69,29 +69,18 @@
 # xiaomi_rosemary@rosemary-13 sebelum ditanam di sini (lihat step di bawah).
 # Patch lain (NoMount/Re:Kernel/Baseband) tetap dipisahkan dari ReSukiSU.
 #
-# RE-VERIFIKASI 22 Agustus 2026 (atas info PR upstream tiann/KernelSU #3521
-# "refactor sucompat" dan #3639 "handle execveat for new bionic libc", yang
-# di-cherry-pick ke ReSukiSU): sudah dicek langsung ke source main branch
-# ReSukiSU terbaru hari ini - KEDUA perubahan itu SUDAH MASUK, dan hook
-# manual kita di file ini SUDAH SESUAI tanpa perlu diubah sama sekali:
-# - Signature ksu_handle_execveat/faccessat/stat TIDAK berubah (masih persis
-#   sama dengan yang dipakai di patch fs/exec.c, fs/open.c, fs/stat.c).
-# - Syarat "manual hook harus panggil ksu_handle_execveat dari dalam
-#   do_execveat_common" (supaya kompatibel dengan bionic baru yang mapping
-#   semua execve ke execveat) - itu PERSIS tempat kita sudah taruh hook-nya.
-# - Fix "force cast AT_FDCWD" dan redirect su->ksud (dgn fallback ke sh kalau
-#   /data/adb/ksud belum ada) SEPENUHNYA internal di sucompat.c milik
-#   ReSukiSU sendiri - tidak terlihat/tidak perlu disentuh dari sisi patch
-#   kita di fs/exec.c, fs/open.c, fs/stat.c manapun.
-# - manual_hook_check.mk masih mengecek simbol yang PERSIS sama (execveat,
-#   faccessat, stat, newfstat_ret, fstat64_ret, sys_reboot) - tidak ada
-#   simbol baru yang wajib ditambahkan.
-# Sudah diuji end-to-end lagi hari ini terhadap kernel dlagia/android_kernel_
-# xiaomi_rosemary@rosemary-13 dengan commit TERBARU dari ReSukiSU, Re-Kernel,
-# Baseband-guard, dan NoMount (termasuk commit NoMount dev paling baru
-# "kernel, userspace: return back to keyring-based api" - tidak menyentuh
-# struktur Kconfig/Makefile yang kita pakai, jadi tidak ada dampak) - semua
-# 6 step patch lolos, brace seimbang, fs/Kconfig tetap 1 baris setelah fix.
+# RE-VERIFIKASI 24 Agustus 2026: dicek ulang langsung ke source main branch
+# ReSukiSU HARI INI (commit b2ac2fc "kernel: filter kernel modules at load
+# time"). Komit terbaru itu sepenuhnya self-contained (file baru feature/
+# module_load_filter.c/.h + registrasi via kernelsu_init()/_exit() milik
+# ReSukiSU sendiri) - TIDAK menyentuh manual_hook_check.mk, sucompat.c,
+# atau supercall.c, jadi TIDAK ADA dampak ke hook manual kita di fs/exec.c,
+# fs/open.c, fs/stat.c, kernel/reboot.c. Juga dicek ulang PR upstream
+# tiann/KernelSU #3521 (refactor sucompat) dan #3639 (handle execveat utk
+# bionic baru) yang sudah ter-cherry-pick sebelumnya - signature
+# ksu_handle_execveat/faccessat/stat dan syarat "manual hook harus panggil
+# ksu_handle_execveat dari dalam do_execveat_common" TETAP SAMA PERSIS
+# dengan yang dipakai di patch fs/exec.c. Tidak ada perubahan yang diperlukan.
 #
 # Re:Kernel (github.com/Sakion-Team/Re-Kernel): membuka netlink server
 # supaya tombstone/freezer di userspace tahu kapan binder call atau
@@ -440,22 +429,40 @@ jobs:
           # menyimpang dari cara resmi terbaru, meski masih apply bersih
           # untuk saat ini (karena file patch itu kebetulan belum dihapus).
           #
-          # BUG DITEMUKAN DI setup.sh RESMI (diuji langsung, bukan asumsi):
-          # skrip resmi menyisipkan `source "fs/nomount/Kconfig"` dengan
-          # `sed -i -e '/^endmenu/i\...'` - masalahnya fs/Kconfig kernel INI
+          # BUG DITEMUKAN DI setup.sh RESMI per 21 Agustus 2026 (diuji langsung, bukan
+          # asumsi): skrip resmi saat itu menyisipkan `source "fs/nomount/Kconfig"`
+          # dengan `sed -i -e '/^endmenu/i\...'` - masalahnya fs/Kconfig kernel INI
           # punya 5 baris `^endmenu` (submenu bersarang: Caches, CD-ROM/DVD,
           # DOS/FAT/NT, dst.), dan sed itu menyisipkan ke SEMUA baris endmenu
           # yang cocok, bukan cuma yang terakhir/top-level. Hasilnya: baris
           # source itu ke-duplikasi 5x, dan 2 di antaranya bahkan tersisip di
           # dalam blok `if BLOCK ... endif` (submenu CD-ROM/DVD dan DOS/FAT) -
           # config NOMOUNT jadi seolah bergantung pada BLOCK di sebagian
-          # deklarasi. Step ini SUDAH MEMPERBAIKI bug tsb secara otomatis
-          # setelah memanggil setup.sh: mempertahankan HANYA baris source yang
-          # tepat sebelum endmenu TERAKHIR (top-level, cocok persis dengan
-          # posisi yang dipakai patch resmi versi lama), menghapus 4 baris
-          # duplikat lainnya. Sudah diuji end-to-end di source dlagia/android_
-          # kernel_xiaomi_rosemary@rosemary-13: hasil akhir 1 baris, posisi
-          # benar, tidak ada residu di submenu lain.
+          # deklarasi. Step ini MEMPERBAIKI bug tsb secara otomatis setelah
+          # memanggil setup.sh: mempertahankan HANYA baris source yang tepat
+          # sebelum endmenu TERAKHIR (top-level, cocok persis dengan posisi
+          # yang dipakai patch resmi versi lama), menghapus baris duplikat
+          # lainnya (kalau ada).
+          #
+          # UPDATE 22-24 Agustus 2026: upstream SUDAH MEMPERBAIKI bug ini sendiri
+          # (commit df84aa0 "misc: update setup.sh...") - logika sed lama diganti
+          # `awk` yang melacak `last_match = NR` (baris endmenu TERAKHIR) sebelum
+          # menyisip, persis strategi fix manual di atas. Sudah diuji ulang
+          # langsung ke source dlagia/android_kernel_xiaomi_rosemary@rosemary-13
+          # hari ini: hasilnya SUDAH 1 baris sejak awal, fix Python di bawah cuma
+          # mencetak "OK: tidak ada bug duplikasi kali ini - tidak perlu
+          # diperbaiki" (no-op, aman). Blok fix ini SENGAJA DIPERTAHANKAN sebagai
+          # jaring pengaman kalau upstream suatu saat regresi ke perilaku lama -
+          # tidak ada ruginya tetap ada karena hasilnya idempotent baik bug ada
+          # maupun tidak.
+          #
+          # UPDATE LAIN (commit 28797f4 "kernel: remove kernel patches", 22 Agu
+          # 2026): folder kernel/patches/ (termasuk nomount_4.14_kernel_
+          # integration.patch yang DULU dipakai step ini via `git apply` sebelum
+          # beralih ke setup.sh) SEKARANG SUDAH BENAR-BENAR DIHAPUS dari repo -
+          # persis seperti peringatan "patches deprecated, akan dihapus" yang
+          # jadi alasan awal migrasi ke setup.sh. Konfirmasi: step ini TIDAK
+          # bergantung pada file itu sama sekali lagi, jadi tidak terdampak.
           #
           # PENTING: setup.sh sendiri yang meng-clone ke NoMount/ (working-
           # directory: kernel, jadi hasilnya kernel/NoMount/) - path ini SAMA
