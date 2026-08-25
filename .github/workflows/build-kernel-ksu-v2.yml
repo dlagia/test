@@ -313,10 +313,19 @@ jobs:
           # wajib yang dicek kernel/tools/inline_hook_check.mk ReSukiSU berhasil
           # tertanam (execveat, faccessat, sys_read, stat, sys_reboot, setresuid,
           # input_handle_event) - tidak ada "[-] ... patch failed" di log.
-          cp /tmp/susfs_src/Patches/susfs_inline_hook_patches.sh . 2>/dev/null || \
+          # PERBAIKAN: sebelumnya "A || B && C" tanpa pengelompokan - di bash
+          # && dan || sama-sama left-associative jadi ini terbaca (A || B) && C,
+          # BUKAN A || (B && C). Akibatnya kalau cp pertama (A) SUKSES, grup
+          # (A||B) sudah true dan C (cp dari susfs_src2) tetap dijalankan padahal
+          # /tmp/susfs_src2 belum pernah di-clone (B di-short-circuit) - persis
+          # penyebab "cp: cannot stat '/tmp/susfs_src2/...': No such file or
+          # directory". Fallback clone+cp sekarang dikelompokkan eksplisit
+          # dengan { } supaya hanya jalan kalau cp pertama benar-benar gagal.
+          cp /tmp/susfs_src/Patches/susfs_inline_hook_patches.sh . 2>/dev/null || {
             git clone --depth=1 -b mainline \
-              https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd.git /tmp/susfs_src2 && \
+              https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd.git /tmp/susfs_src2
             cp /tmp/susfs_src2/Patches/susfs_inline_hook_patches.sh .
+          }
 
           bash susfs_inline_hook_patches.sh 2>&1 | tee /tmp/inline_hook.log
 
