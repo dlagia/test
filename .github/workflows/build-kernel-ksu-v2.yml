@@ -238,6 +238,89 @@ jobs:
           echo "ReSukiSU/kernel/Kconfig, hook-nya ditempel step 'Jalankan SuSFS"
           echo "Inline Hook' di bawah - BUKAN lewat Manual Hook)."
 
+      - name: "Perbaiki mis-patch SUS_MAP di fs/proc/task_mmu.c (akibat --fuzz=3 salah sasaran)"
+        working-directory: kernel
+        run: |
+          # BUG BARU DITEMUKAN & DIPERBAIKI (build gagal dengan pesan persis:
+          # "fs/proc/task_mmu.c:821:3: error: void function 'smap_gather_stats'
+          # should not return a value [-Wreturn-type]").
+          #
+          # AKAR MASALAH (diverifikasi langsung dengan `patch --dry-run` ke source
+          # Windtap yang sebenarnya, bukan asumsi): hunk SUS_MAP di susfs_patch_to_4.14.patch
+          # aslinya menyasar fungsi show_smap() (int, context anchor "mss = &mss_stack;"
+          # dari kernel versi lain yang punya struktur show_smap berbeda). Source
+          # Windtap kernel 4.14 ini TIDAK punya baris itu di show_smap() sama sekali -
+          # show_smap() di sini malah tidak match konteks apa pun dari hunk tsb.
+          # Satu-satunya baris yang mirip ("smaps_walk.private = mss;") justru ada di
+          # fungsi TETANGGA smap_gather_stats() (void, bukan int). Karena hunk ini
+          # sudah diterapkan pakai --fuzz=3 (dilonggarkan untuk hunk lain yang memang
+          # butuh fuzz), patch tool salah menempelkan blok "if (SUSFS_IS_INODE_SUS_MAP)
+          # return 0;" ke DALAM smap_gather_stats (void) - bukan ke show_smap (int) -
+          # sehingga "return 0;" di fungsi void memicu -Wreturn-type = error (Werror aktif).
+          #
+          # PERBAIKAN: pindahkan blok itu dari smap_gather_stats() ke show_smap(),
+          # persis seperti niat asli patch SUSFS (skip tampilkan smap untuk file
+          # ber-flag SUS_MAP). Assert eksplisit dipasang di kedua langkah supaya build
+          # GAGAL JELAS kalau source berubah lagi upstream, bukan diam-diam salah.
+
+          echo "== 1) Hapus blok salah-tempel dari smap_gather_stats() (void) =="
+          grep -q 'static void smap_gather_stats' fs/proc/task_mmu.c || {
+            echo "ERROR: fungsi smap_gather_stats tidak ditemukan - struktur source berubah"
+            exit 1
+          }
+          python3 - <<'PYEOF'
+          import re, sys
+
+          path = "fs/proc/task_mmu.c"
+          with open(path) as f:
+              content = f.read()
+
+          bad_block = (
+              "\n#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n"
+              "\tif (vma->vm_file && SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file)))\n"
+              "\t\treturn 0;\n"
+              "#endif\n"
+              "\n\tsmaps_walk.private = mss;\n"
+          )
+          good_replacement = "\n\tsmaps_walk.private = mss;\n"
+
+          n = content.count(bad_block)
+          if n != 1:
+              print(f"ERROR: blok salah-tempel ditemukan {n}x di smap_gather_stats (harus 1)", file=sys.stderr)
+              sys.exit(1)
+          content = content.replace(bad_block, good_replacement, 1)
+
+          anchor = "static int show_smap(struct seq_file *m, void *v)\n{\n\tstruct vm_area_struct *vma = v;\n\tstruct mem_size_stats mss;\n"
+          n2 = content.count(anchor)
+          if n2 != 1:
+              print(f"ERROR: anchor show_smap() ditemukan {n2}x (harus 1)", file=sys.stderr)
+              sys.exit(1)
+          fixed_block = (
+              "\n#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n"
+              "\tif (vma->vm_file && SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file)))\n"
+              "\t\treturn 0;\n"
+              "#endif\n"
+          )
+          content = content.replace(anchor, anchor + fixed_block, 1)
+
+          with open(path, "w") as f:
+              f.write(content)
+
+          print("OK: blok SUS_MAP dipindah dari smap_gather_stats() ke show_smap()")
+          PYEOF
+
+          echo ""
+          echo "== 2) Verifikasi hasil =="
+          grep -A2 'static void smap_gather_stats' fs/proc/task_mmu.c | grep -q 'CONFIG_KSU_SUSFS_SUS_MAP' && {
+            echo "ERROR: blok SUS_MAP masih tersisa di smap_gather_stats"
+            exit 1
+          }
+          grep -A6 'static int show_smap(struct seq_file \*m, void \*v)' fs/proc/task_mmu.c | grep -q 'CONFIG_KSU_SUSFS_SUS_MAP' || {
+            echo "ERROR: blok SUS_MAP tidak ditemukan di show_smap setelah perbaikan"
+            exit 1
+          }
+          echo "OK: smap_gather_stats() bersih dari 'return 0' void, show_smap() sudah punya guard SUS_MAP yang benar"
+
       - name: Integrasikan ReSukiSU (setup.sh resmi, branch main)
         working-directory: kernel
         run: |
