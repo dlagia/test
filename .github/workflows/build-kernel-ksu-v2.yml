@@ -159,6 +159,31 @@ jobs:
           git clone --depth=1 -b rosemary-13 \
             https://github.com/Windtap/android_kernel_xiaomi_rosemary.git kernel
 
+      - name: Samakan SUBLEVEL dengan versi stock (4.14.186) - hasil temuan fsck.f2fs
+        working-directory: kernel
+        run: |
+          # DIKEMBALIKAN setelah laporan bootloop: step ini SEMPAT dihapus atas
+          # permintaan eksplisit ("hapus semua yang berhubungan sublevel/versi-perf"),
+          # tapi step ini aslinya lahir dari TEMUAN NYATA (diuji langsung, bukan
+          # asumsi) bahwa fsck.f2fs vendor Xiaomi (biner terpisah, di luar build
+          # ini, bagian dari boot image/ramdisk vendor) hardcode string
+          # "4.14.186-perf" sebagai versi kernel yang ia harapkan. Kalau versi
+          # kernel custom tidak cocok, fsck.f2fs vendor bisa salah pengecekan
+          # partisi f2fs saat boot - skenario umum penyebab bootloop. Menghapus
+          # step ini adalah kandidat penyebab paling kuat untuk laporan bootloop
+          # terbaru, karena persis satu-satunya perubahan versi antara build yang
+          # (kemungkinan) masih bisa boot dan build yang sekarang bootloop.
+          #
+          # Supaya uname -r kernel custom ini SAMA PERSIS dengan ekspektasi vendor
+          # (bukan cuma LOCALVERSION-nya, tapi angka SUBLEVEL asli di Makefile),
+          # ubah di sini SEBELUM apa pun lain dibangun - supaya konsisten di
+          # seluruh proses compile & versi LINUX_VERSION_CODE yang dipakai kode
+          # sumber (masih di rentang 4.14.x yang sama, jadi tidak mempengaruhi
+          # cabang kondisional versi manapun di patch ReSukiSU/NoMount/Re-Kernel).
+          grep -n '^SUBLEVEL = ' Makefile
+          sed -i 's/^SUBLEVEL = .*/SUBLEVEL = 186/' Makefile
+          grep -n '^SUBLEVEL = ' Makefile
+
       - name: Integrasikan SUSFS v2.2.0 (JackA1ltman/NonGKI_Kernel_Build_2nd)
         working-directory: kernel
         run: |
@@ -708,6 +733,12 @@ jobs:
         run: |
           DEF=arch/arm64/configs/rosemary_defconfig
           {
+            echo ""
+            echo "# Penamaan versi kernel - samakan dengan string vendor stock (fsck.f2fs: 4.14.186-perf)."
+            echo "# Angka SUBLEVEL sudah diubah ke 186 di Makefile (step 'Samakan SUBLEVEL...' lebih awal);"
+            echo "# di sini cuma tinggal set suffix '-perf' supaya uname -r jadi '4.14.186-perf' persis."
+            echo 'CONFIG_LOCALVERSION="-perf"'
+            echo "CONFIG_LOCALVERSION_AUTO=n"
             echo ""
             echo "# ReSukiSU (branch main resmi) - kernel 4.14 non-GKI, mode SuSFS Inline Hook"
             echo "# (BUKAN Manual Hook - lihat catatan panjang di step 'Jalankan SuSFS Inline"
