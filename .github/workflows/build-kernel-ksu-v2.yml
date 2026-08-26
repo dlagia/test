@@ -91,9 +91,28 @@
 #
 # ReSukiSU diintegrasikan lewat setup.sh RESMI (https://github.com/ReSukiSU/ReSukiSU,
 # tanpa argumen branch = checkout "main", sesuai README repo - branch "auto-hook"
-# yang dipakai sebelumnya SUDAH DIHAPUS dari workflow ini). Untuk kernel 4.14
-# (non-GKI, < 5.10) dipakai CONFIG_KSU_MANUAL_HOOK=y, karena Tracepoint Syscall
-# Redirect hanya didukung GKI2 5.10+.
+# yang dipakai sebelumnya SUDAH DIHAPUS dari workflow ini).
+#
+# STATUS HOOK MODE SAAT INI (26 Agustus 2026, terkini): dikonfirmasi langsung
+# dari kernel/Kconfig resmi ReSukiSU bahwa KSU_TRACEPOINT_HOOK / KSU_MANUAL_HOOK
+# / KSU_SUSFS adalah SATU BLOK `choice "KernelSU Hooking Method"` yang SALING
+# EKSKLUSIF - tidak bisa dua-duanya aktif sekaligus. Workflow ini SEKARANG
+# memilih opsi choice "SUSFS Inline Hook" (CONFIG_KSU_SUSFS=y) via step
+# "Terapkan patch dasar SUSFS" + "Terapkan SuSFS Inline Hook" - BUKAN LAGI
+# "Manual Hook" polos. Seluruh blok komentar di bawah ini (RE-VERIFIKASI 24 &
+# 26 Agustus 2026 tentang hook manual fs/exec.c/fs/open.c/fs/stat.c/kernel/
+# reboot.c, dan penjelasan AUTO_SETUID_HOOK/AUTO_INITRC_HOOK/AUTO_INPUT_HOOK)
+# adalah CATATAN HISTORIS dari saat workflow ini masih memakai Manual Hook -
+# dipertahankan untuk jejak audit, TAPI JANGAN dijadikan acuan konfigurasi
+# saat ini. Konfigurasi defconfig aktual ada di step "Aktifkan KSU di
+# defconfig", dan assertion di step "Compile kernel" memverifikasi choice
+# benar-benar jatuh ke KSU_SUSFS (bukan KSU_MANUAL_HOOK atau
+# KSU_TRACEPOINT_HOOK).
+#
+# ============== AWAL CATATAN HISTORIS (mode Manual Hook, SUDAH DIGANTI) ==============
+#
+# Untuk kernel 4.14 (non-GKI, < 5.10) DULU dipakai CONFIG_KSU_MANUAL_HOOK=y,
+# karena Tracepoint Syscall Redirect hanya didukung GKI2 5.10+.
 #
 # RE-VERIFIKASI 26 Agustus 2026 (ulang, terhadap docs resmi resukisu.github.io/
 # guide/manual-integrate.html, edit terakhir "3 hari lalu" pada saat cek): SEMUA
@@ -171,6 +190,8 @@
 # hari; nomor commit ini HANYA acuan historis kapan pengecekan terakhir
 # dilakukan manusia, BUKAN commit yang dijamin dipakai saat run berikutnya):
 # 6 step patch lolos semua, brace seimbang di 7 file yang dipatch.
+#
+# ============== AKHIR CATATAN HISTORIS (mode Manual Hook, SUDAH DIGANTI) ==============
 #
 # Re:Kernel (github.com/Sakion-Team/Re-Kernel): membuka netlink server
 # supaya tombstone/freezer di userspace tahu kapan binder call atau
@@ -697,25 +718,43 @@ jobs:
             echo "CONFIG_LOCALVERSION_AUTO=n"
             echo ""
             echo "CONFIG_KSU=y"
-            echo "CONFIG_KSU_TRACEPOINT_HOOK=n"
-            echo "CONFIG_KSU_MANUAL_HOOK=y"
-            # SUSFS AKTIF (lihat step "Terapkan patch dasar SUSFS" dan "Terapkan
-            # SuSFS Inline Hook" di atas). Karena kita memakai mode hook resmi
-            # ReSukiSU "SuSFS Inline Hook" (patch manual dari proyek SUSFS
-            # sendiri, BUKAN Manual Hook biasa), tiga AUTO_*_HOOK di bawah
-            # SENGAJA dimatikan - susfs_inline_hook_patches.sh sudah menanam
-            # hook setuid/init-rc/input secara manual langsung ke source
-            # (kernel/sys.c, fs/read_write.c, drivers/input/input.c). Membiarkan
-            # AUTO_*_HOOK tetap y akan membuat DUA jalur hook berjalan
-            # berbarengan (LSM auto-hook ReSukiSU + patch manual SUSFS) untuk
-            # fungsi yang sama - redundan dan berpotensi konflik urutan
-            # eksekusi, jadi dimatikan di sini.
+            # PERBAIKAN (setelah build gagal "CONFIG_KSU_MANUAL_HOOK tidak
+            # resolve ke y"): dikonfirmasi langsung dari kernel/Kconfig resmi
+            # ReSukiSU - KSU_TRACEPOINT_HOOK, KSU_MANUAL_HOOK, dan KSU_SUSFS
+            # adalah SATU BLOK `choice "KernelSU Hooking Method"` yang SALING
+            # EKSKLUSIF (bukan tiga fitur independen yang bisa digabung):
+            #   choice
+            #     prompt "KernelSU Hooking Method"
+            #     config KSU_TRACEPOINT_HOOK  bool "Tracepoint Syscall Redirect"
+            #     config KSU_MANUAL_HOOK      bool "Manually hook KernelSU"
+            #     config KSU_SUSFS            bool "SUSFS Inline Hook"
+            #   endchoice
+            # Menulis CONFIG_KSU_MANUAL_HOOK=y berbarengan dengan
+            # CONFIG_KSU_SUSFS=y (seperti versi sebelumnya) membuat Kconfig
+            # mencetak "override: KSU_SUSFS changes choice state" dan diam-diam
+            # membatalkan KSU_MANUAL_HOOK - baris itu SEKARANG DIHAPUS TOTAL,
+            # cukup set CONFIG_KSU_SUSFS=y saja untuk memilih opsi choice
+            # "SUSFS Inline Hook" (yang memang mode hook yang kita pakai sejak
+            # step "Terapkan SuSFS Inline Hook").
+            #
+            # Konsekuensi lanjutan: menu "KernelSU - Manual Hook Auto hook"
+            # (berisi AUTO_SETUID_HOOK/AUTO_INITRC_HOOK/AUTO_INPUT_HOOK) punya
+            # "depends on KSU_MANUAL_HOOK" di Kconfig resmi - karena
+            # KSU_MANUAL_HOOK sekarang TIDAK terpilih (choice jatuh ke SUSFS),
+            # ketiga opsi AUTO_*_HOOK itu otomatis TIDAK MUNCUL/tidak resolve
+            # sama sekali di .config (bukan diset ke n secara eksplisit,
+            # tapi memang tidak applicable) - makanya baris echo untuk
+            # ketiganya juga dihapus dari sini, menulisnya sekarang cuma jadi
+            # baris mati yang tidak pernah dibaca menuconfig/oldconfig.
+            # SUS_PATH/SUS_MOUNT/SUS_KSTAT/SPOOF_UNAME/ENABLE_LOG/
+            # HIDE_KSU_SUSFS_SYMBOLS/SPOOF_CMDLINE_OR_BOOTCONFIG/OPEN_REDIRECT/
+            # SUS_MAP semuanya "depends on KSU_SUSFS, default y" di Kconfig
+            # resmi - sudah dikonfirmasi dari log build sebelumnya bahwa semua
+            # itu otomatis resolve ke y begitu KSU_SUSFS=y, tidak perlu
+            # dituliskan manual satu-satu di sini.
             echo "CONFIG_KSU_SUSFS=y"
             echo "CONFIG_KALLSYMS=y"
             echo "CONFIG_KALLSYMS_ALL=y"
-            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK=n"
-            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK=n"
-            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INPUT_HOOK=n"
             echo ""
             echo "CONFIG_NOMOUNT=y"
             echo ""
@@ -746,12 +785,23 @@ jobs:
           grep -E '^(CONFIG_KSU|CONFIG_KALLSYMS)' out/.config || true
 
           grep -q '^CONFIG_KSU=y$' out/.config || { echo "ERROR: CONFIG_KSU tidak resolve ke y"; exit 1; }
-          grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config || { echo "ERROR: CONFIG_KSU_MANUAL_HOOK tidak resolve ke y"; exit 1; }
           grep -q '^CONFIG_KALLSYMS=y$' out/.config || { echo "ERROR: CONFIG_KALLSYMS tidak resolve ke y"; exit 1; }
           grep -q '^CONFIG_KALLSYMS_ALL=y$' out/.config || { echo "ERROR: CONFIG_KALLSYMS_ALL tidak resolve ke y"; exit 1; }
 
+          # PERBAIKAN: KSU_TRACEPOINT_HOOK / KSU_MANUAL_HOOK / KSU_SUSFS adalah
+          # satu blok `choice "KernelSU Hooking Method"` di kernel/Kconfig
+          # resmi ReSukiSU - saling eksklusif. Karena kita memilih opsi choice
+          # "SUSFS Inline Hook", KEDUA opsi lain WAJIB TIDAK aktif (baik karena
+          # memang tidak ditulis di defconfig, maupun karena Kconfig otomatis
+          # menonaktifkannya begitu KSU_SUSFS dipilih) - assertion di bawah
+          # memverifikasi choice benar-benar jatuh ke SUSFS, bukan menuntut
+          # ketiganya aktif sekaligus (yang mustahil secara desain Kconfig).
           if grep -q '^CONFIG_KSU_TRACEPOINT_HOOK=y$' out/.config; then
-            echo "ERROR: CONFIG_KSU_TRACEPOINT_HOOK=y aktif; kernel 4.14 harus memakai Manual Hook"
+            echo "ERROR: CONFIG_KSU_TRACEPOINT_HOOK=y aktif; seharusnya choice jatuh ke KSU_SUSFS (SUSFS Inline Hook)"
+            exit 1
+          fi
+          if grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config; then
+            echo "ERROR: CONFIG_KSU_MANUAL_HOOK=y aktif; seharusnya choice jatuh ke KSU_SUSFS (SUSFS Inline Hook), bukan Manual Hook polos"
             exit 1
           fi
 
@@ -759,12 +809,12 @@ jobs:
             echo "ERROR: CONFIG_KSU_SUSFS tidak resolve ke y - integrasi SUSFS (patch dasar + inline hook) tidak akan berfungsi"
             exit 1
           }
-          for opt in CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK CONFIG_KSU_MANUAL_HOOK_AUTO_INPUT_HOOK; do
-            if grep -q "^${opt}=y\$" out/.config; then
-              echo "ERROR: ${opt}=y aktif berbarengan dengan SuSFS Inline Hook - akan menghasilkan hook ganda (LSM auto-hook + patch manual). Set ke n di defconfig."
-              exit 1
-            fi
-          done
+          echo "OK: choice hooking method jatuh ke KSU_SUSFS (SUSFS Inline Hook), TRACEPOINT_HOOK dan MANUAL_HOOK non-aktif sesuai desain choice"
+          # Catatan: opsi CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK/AUTO_INITRC_HOOK/
+          # AUTO_INPUT_HOOK punya "depends on KSU_MANUAL_HOOK" di Kconfig resmi -
+          # karena KSU_MANUAL_HOOK tidak terpilih, ketiganya otomatis tidak
+          # resolve sama sekali (bukan "=n" eksplisit, tapi memang absen dari
+          # .config) - tidak perlu dicek di sini karena tidak applicable.
 
           echo ""
           echo "==================== RESOLVED NoMount CONFIG ===================="
