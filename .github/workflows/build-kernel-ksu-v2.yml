@@ -369,6 +369,107 @@ jobs:
           echo "OK: tidak ada residu .orig/.rej untuk file-file yang dipatch SUSFS"
 
           echo ""
+          echo "== PERBAIKAN OTOMATIS: bug salah-tempel akibat --fuzz=3 di fs/proc/task_mmu.c =="
+          # DITEMUKAN DARI KEGAGALAN BUILD SEBELUMNYA:
+          #   fs/proc/task_mmu.c:821:3: error: void function 'smap_gather_stats'
+          #   should not return a value [-Wreturn-type]
+          # Akar masalah: hunk CONFIG_KSU_SUSFS_SUS_MAP di patch aslinya ditujukan
+          # untuk show_smap() (fungsi int), TAPI karena --fuzz=3 dipakai untuk
+          # mengatasi drift context lain di file ini (basis patch mengasumsikan
+          # signature show_smap(struct seq_file *m, void *v, int is_pid) yang
+          # TIDAK ADA di kernel dlagia/android_kernel_xiaomi_rosemary - fork ini
+          # cuma punya show_smap(struct seq_file *m, void *v), 2 argumen), mesin
+          # fuzzy-match `patch` salah mengunci ke kemunculan kode mirip di
+          # smap_gather_stats() (fungsi void) yang SAMA-SAMA punya baris
+          # "smaps_walk.private = mss;" - akibatnya "return 0;" tertanam di
+          # fungsi void (compile error) DAN show_smap() jadi TIDAK PERNAH
+          # dapat guard SUS_MAP sama sekali (fitur SUS_MAP untuk show_smap
+          # jadi tidak berfungsi, bukan cuma gagal compile).
+          # Perbaikan berikut: hapus blok yang salah tempat dari
+          # smap_gather_stats(), lalu sisipkan guard yang benar di awal
+          # show_smap() (disesuaikan dengan signature 2-argumen fork ini).
+          python3 - << 'PYEOF'
+          import sys
+          path = "fs/proc/task_mmu.c"
+          with open(path) as f:
+              s = f.read()
+
+          bad_block = (
+              "\n#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n"
+              "\tif (vma->vm_file && SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file)))\n"
+              "\t\treturn 0;\n"
+              "#endif\n"
+          )
+          n_bad = s.count(bad_block)
+
+          target = (
+              "static int show_smap(struct seq_file *m, void *v)\n"
+              "{\n"
+              "\tstruct vm_area_struct *vma = v;\n"
+              "\tstruct mem_size_stats mss;\n"
+          )
+          already_fixed = "#ifdef CONFIG_KSU_SUSFS_SUS_MAP" in s and target in s and \
+              s.split(target, 1)[1].lstrip().startswith("#ifdef CONFIG_KSU_SUSFS_SUS_MAP")
+
+          if n_bad == 0:
+              print("OK: tidak ada indikasi bug ini terjadi kali ini (source/hasil patch mungkin sudah beda) - tidak ada yang diubah.")
+          elif n_bad > 1:
+              print(f"ERROR: blok mencurigakan ditemukan {n_bad}x (harus 0 atau 1) - struktur file kemungkinan sudah berubah, cek manual.")
+              sys.exit(1)
+          else:
+              s = s.replace(bad_block, "", 1)
+              print("OK: blok salah tempat di smap_gather_stats() (fungsi void) dihapus.")
+
+              n_target = s.count(target)
+              if n_target != 1:
+                  print(f"ERROR: anchor show_smap() ditemukan {n_target}x (harus 1x) - tidak bisa menyisipkan guard yang benar, cek manual.")
+                  sys.exit(1)
+              replacement = target + (
+                  "\n#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n"
+                  "\tif (vma->vm_file && SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file)))\n"
+                  "\t\treturn 0;\n"
+                  "#endif\n"
+              )
+              s = s.replace(target, replacement, 1)
+              with open(path, "w") as f:
+                  f.write(s)
+              print("OK: guard SUS_MAP disisipkan ulang di show_smap() (posisi benar, fungsi int).")
+          PYEOF
+
+          echo ""
+          echo "== Verifikasi tidak ada lagi 'return <angka>' di dalam fungsi void manapun di file yang dipatch SUSFS =="
+          python3 - << 'PYEOF'
+          import re, sys
+          files = ["fs/proc/task_mmu.c", "fs/proc_namespace.c", "fs/readdir.c", "fs/stat.c",
+                    "fs/statfs.c", "kernel/kallsyms.c", "kernel/sys.c", "mm/memory.c",
+                    "security/selinux/avc.c", "fs/namei.c", "fs/namespace.c",
+                    "fs/notify/fdinfo.c", "fs/proc/base.c", "fs/proc/cmdline.c", "fs/proc/fd.c"]
+          bad_total = []
+          for path in files:
+              try:
+                  src = open(path).read()
+              except FileNotFoundError:
+                  continue
+              for m in re.finditer(r'^(static\s+)?void\s+(\w+)\([^;{]*\)\s*\n?\{', src, re.M):
+                  start = m.end()
+                  depth = 1
+                  i = start
+                  while depth > 0 and i < len(src):
+                      if src[i] == '{': depth += 1
+                      elif src[i] == '}': depth -= 1
+                      i += 1
+                  body = src[start:i]
+                  if re.search(r'return\s+\d', body):
+                      bad_total.append(f"{path}: {m.group(2)}()")
+          if bad_total:
+              print("ERROR: masih ada fungsi void yang mengembalikan nilai (kemungkinan hunk salah tempel lain):")
+              for b in bad_total:
+                  print(" -", b)
+              sys.exit(1)
+          print("OK: tidak ada fungsi void yang salah mengembalikan nilai di file-file yang dipatch SUSFS.")
+          PYEOF
+
+          echo ""
           echo "== Verifikasi hasil patch dasar SUSFS =="
           for f in fs/susfs.c include/linux/susfs.h include/linux/susfs_def.h; do
             test -s "$f" || { echo "ERROR: $f tidak ada setelah patch"; exit 1; }
