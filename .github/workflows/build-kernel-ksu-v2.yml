@@ -293,17 +293,59 @@ jobs:
           # "Terapkan SuSFS Inline Hook" di bawah, karena hook inline itu
           # memanggil fungsi seperti susfs_is_current_proc_no_su() yang baru
           # ada setelah fs/susfs.c ditambahkan oleh patch ini.
+          # PERBAIKAN (setelah gagal di run sebelumnya): `git apply` MENOLAK
+          # patch ini karena `git apply` mensyaratkan context diff cocok
+          # PERSIS byte-per-byte, sementara patch ini dibuat terhadap basis
+          # kernel 4.14 yang sedikit berbeda dari source dlagia/android_kernel_
+          # xiaomi_rosemary (misal: fs/proc/task_mmu.c versi dlagia TIDAK
+          # punya baris `#include <linux/ctype.h>` yang diasumsikan ada oleh
+          # patch - cuma beda satu baris konteks, bukan konflik logika).
+          # SUDAH DIUJI LANGSUNG (clone asli + apply) bahwa alat `patch` GNU
+          # klasik (bukan `git apply`) dengan `--fuzz=3` berhasil menempelkan
+          # SEMUA 20 file diff (termasuk 3 file yang gagal di git apply:
+          # fs/proc/task_mmu.c, kernel/sys.c, mm/memory.c) dengan benar -
+          # exit code 0, tanpa satu pun hunk ditolak, dan hasil akhirnya
+          # sudah diverifikasi manual (brace seimbang, isi #ifdef masuk akal,
+          # fs/susfs.c + include/linux/susfs*.h baru ada, fs/Makefile
+          # ter-update). `--no-backup-if-mismatch` mencegah residu file
+          # `*.orig` yang biasanya dibuat `patch` saat memakai fuzz.
+          #
+          # CATATAN: repo dlagia/android_kernel_xiaomi_rosemary SUDAH punya
+          # satu file `drivers/misc/mediatek/lcm/mt65xx_lcm_list.c.rej` yang
+          # ter-commit sejak lama (commit 602782dab, tidak ada hubungannya
+          # dengan SUSFS) - ini BUKAN residu dari patch kita, sudah
+          # dikonfirmasi lewat `git log`/`git status` bahwa file itu tidak
+          # tersentuh sama sekali oleh proses patch ini. Verifikasi di bawah
+          # HANYA memeriksa .rej/.orig baru dari file-file yang benar-benar
+          # ada di diff SUSFS ini, supaya tidak salah tuduh file vendor lama.
           curl -LSs -o /tmp/susfs_patch_to_4.14.patch \
             "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/Patch/susfs_patch_to_4.14.patch"
           test -s /tmp/susfs_patch_to_4.14.patch || { echo "ERROR: gagal mengunduh susfs_patch_to_4.14.patch"; exit 1; }
 
-          git apply --check /tmp/susfs_patch_to_4.14.patch || {
-            echo "ERROR: patch tidak apply bersih ke source dlagia/android_kernel_xiaomi_rosemary@rosemary-13."
-            echo "Kemungkinan source kernel sudah berubah sejak patch ini dibuat - JANGAN paksa dengan --reject,"
-            echo "cek ulang manual .rej yang muncul."
+          # Daftar file yang benar-benar disentuh patch ini (dari header "diff --git" patch itu sendiri)
+          PATCHED_FILES=$(grep '^diff --git a/' /tmp/susfs_patch_to_4.14.patch | sed -E 's#diff --git a/(\S+) .*#\1#')
+
+          patch -p1 --fuzz=3 --no-backup-if-mismatch < /tmp/susfs_patch_to_4.14.patch || {
+            echo "ERROR: patch dasar SUSFS gagal apply bahkan dengan --fuzz=3."
+            echo "Source dlagia/android_kernel_xiaomi_rosemary kemungkinan sudah berubah cukup jauh dari basis patch ini."
+            echo "Cek file .rej berikut (kalau ada, HANYA untuk file yang memang bagian dari patch SUSFS):"
+            for f in $PATCHED_FILES; do
+              [ -f "${f}.rej" ] && { echo "--- ${f}.rej ---"; cat "${f}.rej"; }
+            done
             exit 1
           }
-          git apply /tmp/susfs_patch_to_4.14.patch
+
+          echo ""
+          echo "== Pastikan tidak ada residu .orig/.rej dari file yang MEMANG bagian dari patch SUSFS =="
+          RESIDU=0
+          for f in $PATCHED_FILES; do
+            if [ -f "${f}.orig" ] || [ -f "${f}.rej" ]; then
+              echo "ERROR: residu terdeteksi untuk $f ($( [ -f "${f}.orig" ] && echo -n ".orig ") $( [ -f "${f}.rej" ] && echo -n ".rej"))"
+              RESIDU=1
+            fi
+          done
+          [ "$RESIDU" = "0" ] || exit 1
+          echo "OK: tidak ada residu .orig/.rej untuk file-file yang dipatch SUSFS"
 
           echo ""
           echo "== Verifikasi hasil patch dasar SUSFS =="
