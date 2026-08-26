@@ -131,33 +131,39 @@
 # xiaomi_rosemary@rosemary-13 sebelum ditanam di sini (lihat step di bawah).
 # Patch lain (NoMount/Re:Kernel/Baseband) tetap dipisahkan dari ReSukiSU.
 #
-# RE-VERIFIKASI 24 Agustus 2026: dicek ulang langsung ke source main branch
-# ReSukiSU HARI INI (commit b2ac2fc "kernel: filter kernel modules at load
-# time"). Komit terbaru itu sepenuhnya self-contained (file baru feature/
+# CATATAN HISTORIS (SUDAH TIDAK BERLAKU, dipertahankan untuk jejak audit):
+# re-verifikasi 24 & 26 Agustus 2026 di bawah ini dilakukan SAAT workflow
+# masih memakai hook manual polos ("Pasang hook manual ReSukiSU") dengan
+# CONFIG_KSU_SUSFS=n secara sengaja. Sejak SuSFS diintegrasikan penuh (lihat
+# step "Terapkan patch dasar SUSFS" dan "Terapkan SuSFS Inline Hook" di atas),
+# hook fs/exec.c/fs/open.c/fs/stat.c/kernel/reboot.c SUDAH DIGANTI TOTAL oleh
+# hasil susfs_inline_hook_patches.sh (JackA1ltman), dan CONFIG_KSU_SUSFS
+# SEKARANG =y - jadi kesimpulan "kita SELALU jatuh ke cabang #else" di catatan
+# lama ini SUDAH TIDAK BENAR: build ini sekarang justru MEMANFAATKAN cabang
+# #ifdef CONFIG_KSU_SUSFS di kernel/feature/sucompat.c milik ReSukiSU (bukan
+# menghindarinya). Catatan asli (24 & 26 Agustus 2026) dipertahankan apa
+# adanya di bawah sebagai riwayat, tapi jangan jadikan acuan kondisi saat ini.
+#
+# RE-VERIFIKASI 24 Agustus 2026 (HISTORIS): dicek ulang langsung ke source main
+# branch ReSukiSU HARI ITU (commit b2ac2fc "kernel: filter kernel modules at
+# load time"). Komit itu sepenuhnya self-contained (file baru feature/
 # module_load_filter.c/.h + registrasi via kernelsu_init()/_exit() milik
 # ReSukiSU sendiri) - TIDAK menyentuh manual_hook_check.mk, sucompat.c,
-# atau supercall.c, jadi TIDAK ADA dampak ke hook manual kita di fs/exec.c,
-# fs/open.c, fs/stat.c, kernel/reboot.c. Juga dicek ulang PR upstream
-# tiann/KernelSU #3521 (refactor sucompat) dan #3639 (handle execveat utk
-# bionic baru) yang sudah ter-cherry-pick sebelumnya - signature
-# ksu_handle_execveat/faccessat/stat dan syarat "manual hook harus panggil
-# ksu_handle_execveat dari dalam do_execveat_common" TETAP SAMA PERSIS
-# dengan yang dipakai di patch fs/exec.c. Tidak ada perubahan yang diperlukan.
+# atau supercall.c, jadi TIDAK ADA dampak ke hook manual (LAMA) kita di
+# fs/exec.c, fs/open.c, fs/stat.c, kernel/reboot.c saat itu.
 #
-# RE-VERIFIKASI 26 Agustus 2026: ada commit baru YANG LANGSUNG MENYENTUH
+# RE-VERIFIKASI 26 Agustus 2026 (HISTORIS): ada commit yang LANGSUNG MENYENTUH
 # kernel/feature/sucompat.c (03b60f2 "kernel: sync with latest susfs") -
-# jadi diperiksa lebih ketat dari biasanya, bukan cuma dicek "apakah nama
-# filenya disebut". Perubahan intinya: kondisi varian SUSFS untuk
-# ksu_handle_faccessat/ksu_handle_stat diubah dari
+# kondisi varian SUSFS untuk ksu_handle_faccessat/ksu_handle_stat diubah dari
 # `#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,1,0) && defined(CONFIG_KSU_SUSFS)`
-# menjadi `#ifdef CONFIG_KSU_SUSFS` saja (syarat versi kernel dihapus).
-# TAPI karena build ini pakai CONFIG_KSU_SUSFS=n, kita SELALU jatuh ke
-# cabang #else favorit kita, dan cabang itu TIDAK BERUBAH SAMA SEKALI -
-# sudah dicek posisi #ifdef/#else/#endif-nya persis (baris 485-517 untuk
-# faccessat, 559-596 untuk stat): signature tetap
-# `ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode, int *__unused_flags)`
+# menjadi `#ifdef CONFIG_KSU_SUSFS` saja (syarat versi kernel dihapus). Saat
+# itu build masih CONFIG_KSU_SUSFS=n sehingga selalu jatuh ke cabang #else -
+# signature `ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode, int *__unused_flags)`
 # dan `ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags)`
-# - identik dengan extern declaration di patch fs/open.c dan fs/stat.c kita.
+# di cabang #else itu identik dengan yang dipakai hook manual (LAMA). Info ini
+# kini historis - hook manual lama sudah dihapus, cabang yang relevan sekarang
+# adalah cabang #ifdef CONFIG_KSU_SUSFS, yang justru menyediakan
+# ksu_handle_execveat_sucompat dkk yang dipakai susfs_inline_hook_patches.sh.
 # Sudah diuji end-to-end lagi dengan commit ReSukiSU 03b60f2 dan NoMount dev
 # b8d2683 (commit terlama yang tercatat manual di sini - lihat peringatan
 # stabilitas NoMount di atas: commit dev SAAT WORKFLOW INI DIJALANKAN hampir
@@ -219,13 +225,6 @@ jobs:
           git clone --depth=1 -b rosemary-13 \
             https://github.com/dlagia/android_kernel_xiaomi_rosemary.git kernel
 
-      - name: Samakan SUBLEVEL dengan versi stock (4.14.186) - hasil temuan fsck.f2fs
-        working-directory: kernel
-        run: |
-          grep -n '^SUBLEVEL = ' Makefile
-          sed -i 's/^SUBLEVEL = .*/SUBLEVEL = 186/' Makefile
-          grep -n '^SUBLEVEL = ' Makefile
-
       - name: Integrasikan ReSukiSU (setup.sh resmi, branch main)
         working-directory: kernel
         run: |
@@ -262,171 +261,168 @@ jobs:
           echo "ReSukiSU main (resmi): OK"
           ls -ld KernelSU drivers/kernelsu
 
-      - name: Pasang hook manual ReSukiSU (kernel 4.14, non-GKI)
+      - name: Terapkan patch dasar SUSFS ke kernel 4.14 (JackA1ltman/NonGKI_Kernel_Build_2nd)
         working-directory: kernel
         run: |
-          python3 - << 'PYEOF'
-          import sys
+          # Sumber: https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd (branch
+          # mainline), file Patches/Patch/susfs_patch_to_4.14.patch. Ini adalah
+          # backport patch susfs4ksu (simonpunk) ke kernel 4.14, karena repo
+          # susfs4ksu resmi SUDAH MENGHENTIKAN dukungan branch NonGKI-nya sendiri
+          # (dikonfirmasi langsung dari docs resmi ReSukiSU: "The NonGKI branches
+          # are deprecated" - resukisu.github.io/guide/build.html). JackA1ltman
+          # mengisi celah itu dengan mem-porting patch susfs4ksu ke tiap versi
+          # kernel non-GKI secara manual.
+          #
+          # VERIFIKASI ISI PATCH (diperiksa langsung, 4137 baris, 20 file diff):
+          # menambahkan file BARU fs/susfs.c, include/linux/susfs.h,
+          # include/linux/susfs_def.h (implementasi inti SUSFS), dan menyisipkan
+          # #ifdef CONFIG_KSU_SUSFS_* ke fs/namei.c, fs/namespace.c,
+          # fs/notify/fdinfo.c, fs/proc/base.c, fs/proc/cmdline.c, fs/proc/fd.c,
+          # fs/proc/task_mmu.c, fs/proc_namespace.c, fs/readdir.c, fs/stat.c,
+          # fs/statfs.c, kernel/kallsyms.c, kernel/sys.c, mm/memory.c,
+          # security/selinux/avc.c, dan fs/Makefile (nambah obj-$(CONFIG_KSU_SUSFS)
+          # += susfs.o). TIDAK ADA diff ke fs/Kconfig - opsi CONFIG_KSU_SUSFS_*
+          # (SUS_PATH, SUS_MOUNT, SUS_KSTAT, OPEN_REDIRECT, SPOOF_UNAME, dst.)
+          # sudah didefinisikan di kernel/Kconfig milik ReSukiSU sendiri (sesuai
+          # docs resmi susfs4ksu: "See $KernelSU_repo/kernel/Kconfig for
+          # supported features after applying the susfs patches") - jadi TIDAK
+          # perlu ditambahkan manual di sini, cukup toggle CONFIG_KSU_SUSFS=y di
+          # defconfig (lihat step "Aktifkan KSU di defconfig").
+          #
+          # URUTAN WAJIB: patch dasar ini HARUS diterapkan SEBELUM step
+          # "Terapkan SuSFS Inline Hook" di bawah, karena hook inline itu
+          # memanggil fungsi seperti susfs_is_current_proc_no_su() yang baru
+          # ada setelah fs/susfs.c ditambahkan oleh patch ini.
+          curl -LSs -o /tmp/susfs_patch_to_4.14.patch \
+            "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/Patch/susfs_patch_to_4.14.patch"
+          test -s /tmp/susfs_patch_to_4.14.patch || { echo "ERROR: gagal mengunduh susfs_patch_to_4.14.patch"; exit 1; }
 
-          def patch(path, replacements):
-              with open(path, "r") as f:
-                  s = f.read()
-              for old, new, label in replacements:
-                  n = s.count(old)
-                  if n != 1:
-                      print(f"ERROR: anchor '{label}' di {path} ditemukan {n}x (harus persis 1x)")
-                      sys.exit(1)
-                  s = s.replace(old, new, 1)
-              with open(path, "w") as f:
-                  f.write(s)
-              print(f"{path}: OK")
-
-          # ---------- fs/exec.c: ksu_handle_execveat ----------
-          exec_decl_old = (
-              "static int do_execveat_common(int fd, struct filename *filename,\n"
-              "\t\t\t      struct user_arg_ptr argv,\n"
-              "\t\t\t      struct user_arg_ptr envp,\n"
-              "\t\t\t      int flags)\n{\n\tchar *pathbuf = NULL;"
-          )
-          exec_decl_new = (
-              "#ifdef CONFIG_KSU\n"
-              "__attribute__((hot))\n"
-              "extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,\n"
-              "\t\t\t\tvoid *envp, int *flags);\n"
-              "#endif\n\n"
-          ) + exec_decl_old
-          exec_body_old = (
-              "\tint retval;\n\n\tif (IS_ERR(filename))\n\t\treturn PTR_ERR(filename);"
-          )
-          exec_body_new = (
-              "\tint retval;\n\n"
-              "#ifdef CONFIG_KSU\n"
-              "\tksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);\n"
-              "#endif\n\n"
-              "\tif (IS_ERR(filename))\n\t\treturn PTR_ERR(filename);"
-          )
-          patch("fs/exec.c", [
-              (exec_decl_old, exec_decl_new, "do_execveat_common signature"),
-              (exec_body_old, exec_body_new, "do_execveat_common body"),
-          ])
-
-          # ---------- fs/open.c: ksu_handle_faccessat ----------
-          open_old = (
-              "SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)\n"
-              "{\n\tconst struct cred *old_cred;\n\tstruct cred *override_cred;\n"
-              "\tstruct path path;\n\tstruct inode *inode;\n\tstruct vfsmount *mnt;\n"
-              "\tint res;\n\tunsigned int lookup_flags = LOOKUP_FOLLOW;\n\n"
-              "\tif (mode & ~S_IRWXO)\t/* where's F_OK, X_OK, W_OK, R_OK? */\n"
-              "\t\treturn -EINVAL;"
-          )
-          open_new = (
-              "#ifdef CONFIG_KSU\n"
-              "__attribute__((hot))\n"
-              "extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode,\n"
-              "\t\t\t\t int *flags);\n#endif\n\n"
-              "SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)\n"
-              "{\n\tconst struct cred *old_cred;\n\tstruct cred *override_cred;\n"
-              "\tstruct path path;\n\tstruct inode *inode;\n\tstruct vfsmount *mnt;\n"
-              "\tint res;\n\tunsigned int lookup_flags = LOOKUP_FOLLOW;\n\n"
-              "#ifdef CONFIG_KSU\n\tksu_handle_faccessat(&dfd, &filename, &mode, NULL);\n#endif\n\n"
-              "\tif (mode & ~S_IRWXO)\t/* where's F_OK, X_OK, W_OK, R_OK? */\n"
-              "\t\treturn -EINVAL;"
-          )
-          patch("fs/open.c", [(open_old, open_new, "SYSCALL_DEFINE3(faccessat...)")])
-
-          # ---------- fs/stat.c: ksu_handle_stat + newfstat_ret + fstat64_ret ----------
-          stat_extern = (
-              "#ifdef CONFIG_KSU\n"
-              "extern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);\n"
-              "extern void ksu_handle_newfstat_ret(unsigned int *fd, struct stat __user **statbuf_ptr);\n"
-              "#if defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_COMPAT_STAT64)\n"
-              "extern void ksu_handle_fstat64_ret(unsigned long *fd, struct stat64 __user **statbuf_ptr);\n"
-              "#endif\n#endif\n\n"
-          )
-          newfstatat_old = (
-              "SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,\n"
-              "\t\tstruct stat __user *, statbuf, int, flag)\n{\n\tstruct kstat stat;\n"
-              "\tint error;\n\n\terror = vfs_fstatat(dfd, filename, &stat, flag);"
-          )
-          newfstatat_new = stat_extern + (
-              "SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,\n"
-              "\t\tstruct stat __user *, statbuf, int, flag)\n{\n\tstruct kstat stat;\n"
-              "\tint error;\n\n"
-              "#ifdef CONFIG_KSU\n\tksu_handle_stat(&dfd, &filename, &flag);\n#endif\n\n"
-              "\terror = vfs_fstatat(dfd, filename, &stat, flag);"
-          )
-          newfstat_old = (
-              "SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)\n"
-              "{\n\tstruct kstat stat;\n\tint error = vfs_fstat(fd, &stat);\n\n"
-              "\tif (!error)\n\t\terror = cp_new_stat(&stat, statbuf);\n\n\treturn error;\n}"
-          )
-          newfstat_new = (
-              "SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)\n"
-              "{\n\tstruct kstat stat;\n\tint error = vfs_fstat(fd, &stat);\n\n"
-              "\tif (!error)\n\t\terror = cp_new_stat(&stat, statbuf);\n\n"
-              "#ifdef CONFIG_KSU\n\tif (!error)\n\t\tksu_handle_newfstat_ret(&fd, &statbuf);\n#endif\n\n"
-              "\treturn error;\n}"
-          )
-          fstat64_old = (
-              "SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)\n"
-              "{\n\tstruct kstat stat;\n\tint error = vfs_fstat(fd, &stat);\n\n"
-              "\tif (!error)\n\t\terror = cp_new_stat64(&stat, statbuf);\n\n\treturn error;\n}"
-          )
-          fstat64_new = (
-              "SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)\n"
-              "{\n\tstruct kstat stat;\n\tint error = vfs_fstat(fd, &stat);\n\n"
-              "\tif (!error)\n\t\terror = cp_new_stat64(&stat, statbuf);\n\n"
-              "#ifdef CONFIG_KSU\n\tif (!error)\n\t\tksu_handle_fstat64_ret(&fd, &statbuf);\n#endif\n\n"
-              "\treturn error;\n}"
-          )
-          patch("fs/stat.c", [
-              (newfstatat_old, newfstatat_new, "SYSCALL_DEFINE4(newfstatat...) + extern block"),
-              (newfstat_old, newfstat_new, "SYSCALL_DEFINE2(newfstat...)"),
-              (fstat64_old, fstat64_new, "SYSCALL_DEFINE2(fstat64...)"),
-          ])
-
-          # ---------- kernel/reboot.c: ksu_handle_sys_reboot (ReSukiSU supercall) ----------
-          reboot_old = (
-              "SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,\n"
-              "\t\tvoid __user *, arg)\n{\n"
-              "\tstruct pid_namespace *pid_ns = task_active_pid_ns(current);\n"
-              "\tchar buffer[256];\n\tint ret = 0;\n\n"
-              "\t/* We only trust the superuser with rebooting the system. */"
-          )
-          reboot_new = (
-              "#ifdef CONFIG_KSU\n"
-              "extern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);\n"
-              "#endif\n\n"
-              "SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,\n"
-              "\t\tvoid __user *, arg)\n{\n"
-              "\tstruct pid_namespace *pid_ns = task_active_pid_ns(current);\n"
-              "\tchar buffer[256];\n\tint ret = 0;\n\n"
-              "#ifdef CONFIG_KSU\n"
-              "\t/* ReSukiSU supercall: manager pasang fd komunikasi lewat syscall reboot()\n"
-              "\t * dengan magic1/magic2 khusus KSU (BUKAN LINUX_REBOOT_MAGIC*).\n"
-              "\t * ksu_handle_sys_reboot() sendiri sudah memvalidasi magic1 dan\n"
-              "\t * mengembalikan -EINVAL kalau bukan supercall - reboot asli tak terpengaruh. */\n"
-              "\tif (!ksu_handle_sys_reboot(magic1, magic2, cmd, &arg))\n\t\treturn 0;\n"
-              "#endif\n\n"
-              "\t/* We only trust the superuser with rebooting the system. */"
-          )
-          patch("kernel/reboot.c", [(reboot_old, reboot_new, "SYSCALL_DEFINE4(reboot...)")])
-          PYEOF
+          git apply --check /tmp/susfs_patch_to_4.14.patch || {
+            echo "ERROR: patch tidak apply bersih ke source dlagia/android_kernel_xiaomi_rosemary@rosemary-13."
+            echo "Kemungkinan source kernel sudah berubah sejak patch ini dibuat - JANGAN paksa dengan --reject,"
+            echo "cek ulang manual .rej yang muncul."
+            exit 1
+          }
+          git apply /tmp/susfs_patch_to_4.14.patch
 
           echo ""
-          echo "== Verifikasi simbol hook manual tertanam =="
+          echo "== Verifikasi hasil patch dasar SUSFS =="
+          for f in fs/susfs.c include/linux/susfs.h include/linux/susfs_def.h; do
+            test -s "$f" || { echo "ERROR: $f tidak ada setelah patch"; exit 1; }
+            echo "OK: $f ada"
+          done
+          grep -q 'obj-$(CONFIG_KSU_SUSFS) += susfs.o' fs/Makefile || {
+            echo "ERROR: fs/Makefile tidak berisi entry susfs.o"
+            exit 1
+          }
+          echo "OK: fs/Makefile berisi obj-\$(CONFIG_KSU_SUSFS) += susfs.o"
+          echo "Patch dasar SUSFS ke kernel 4.14: OK"
+
+      - name: Terapkan SuSFS Inline Hook ReSukiSU (JackA1ltman susfs_inline_hook_patches.sh)
+        working-directory: kernel
+        run: |
+          # Sumber: https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd
+          # (branch mainline), file Patches/susfs_inline_hook_patches.sh.
+          #
+          # Ini MENGGANTIKAN TOTAL step "Pasang hook manual ReSukiSU" versi lama
+          # (yang menanam ksu_handle_execveat/faccessat/stat/sys_reboot polos ke
+          # fs/exec.c, fs/open.c, fs/stat.c, kernel/reboot.c). Alasan penggantian:
+          # skrip ini mengimplementasikan mode hook resmi ketiga ReSukiSU, yaitu
+          # "SuSFS Inline Hook" ("An hook from SuSFS, like Manual Hook, but
+          # provide from SuSFS project, not this project" - github.com/ReSukiSU/
+          # ReSukiSU) - hook yang SAMA fungsinya tapi dibungkus logika SUSFS
+          # (ksu_su_compat_enabled, susfs_is_current_proc_no_su(),
+          # ksu_handle_execveat_sucompat, dst.) yang TIDAK ADA di hook manual
+          # polos versi lama. Kalau kedua skrip dijalankan bersamaan, skrip ini
+          # akan MENDETEKSI "ksu_handle" sudah ada di file (dari hook manual
+          # lama) dan MELEWATI file itu sepenuhnya ("[-] Warning: $i contains
+          # KernelSU ... continue") - artinya integrasi SUSFS di fs/exec.c,
+          # fs/open.c, fs/stat.c, kernel/reboot.c TIDAK AKAN PERNAH terpasang
+          # kalau hook manual lama masih ada. Karena itu step lama WAJIB
+          # dihapus total (sudah dilakukan) sebelum step ini ditambahkan.
+          #
+          # BUG DITEMUKAN DI SKRIP INI (diverifikasi langsung dari source,
+          # bukan asumsi): logika deteksi versi kernel di beberapa cabang
+          # menggunakan pola
+          #   [ "$FIRST_VERSION" -lt 4 ] && [ "$SECOND_VERSION" -lt 19 ]
+          # - untuk kernel MANAPUN dengan major version 4 (termasuk 4.14 kita),
+          # "$FIRST_VERSION -lt 4" SELALU FALSE (4 tidak < 4), jadi cabang ini
+          # tidak akan pernah kena untuk seluruh keluarga kernel 4.x, terlepas
+          # dari versi minor-nya. Dampak konkret yang sudah diverifikasi untuk
+          # kernel 4.14 kita:
+          #   - fs/namei.c (throne_tracker anti-detection): SELALU "Skipped"
+          #     untuk 4.x, sehingga hook penyamaran nama proses tracker TIDAK
+          #     terpasang di kernel ini. (Dampak: rendah - fitur pelengkap,
+          #     bukan syarat SUSFS inti berjalan.)
+          #   - security/security.c (legacy security_ops->bprm_check_security
+          #     dkk): SELALU "Skipped" untuk 4.x - TAPI ini SEBENARNYA BENAR
+          #     untuk 4.14, karena kernel ini sudah pakai LSM stacking modern
+          #     (security_hook_list), bukan struct security_operations lama -
+          #     anchor `security_ops->` yang dicari skrip memang sudah tidak
+          #     ada di kernel 4.14, jadi kebetulan hasilnya tetap benar di sini.
+          #   - security/selinux/hooks.c (ksu_hide_setprocattr, HANYA berlaku
+          #     kalau simbol ini ada di drivers/kernelsu/): kondisi elif-nya
+          #     "[ "$FIRST_VERSION" -lt 5 ] && [ "$SECOND_VERSION" -lt 10 ]"
+          #     untuk 4.14 juga FALSE (14 tidak < 10), sehingga jatuh ke cabang
+          #     "else" yang mencari anchor signature BARU
+          #     "selinux_setprocattr(const char *name, void *value, size_t size)"
+          #     - signature ini TIDAK ADA di kernel 4.14 (4.14 masih pakai
+          #     signature LAMA dengan parameter "struct task_struct *p," di
+          #     depan). Kalau ini terjadi, sed TIDAK menemukan match dan diam-
+          #     diam TIDAK menyisipkan extern declaration-nya, TAPI baris
+          #     pemanggilan ksu_hide_setprocattr(...) di bawahnya tetap
+          #     tersisip (anchor "char *str = value;" itu ada di kedua versi
+          #     signature) - hasilnya function dipanggil TANPA extern
+          #     declaration yang benar (implicit-declaration). Blok "PERBAIKAN
+          #     OTOMATIS" di bawah mendeteksi dan menambal kondisi spesifik ini
+          #     sendiri, khusus untuk kernel 4.14.
+          #
+          curl -LSs -o /tmp/susfs_inline_hook_patches.sh \
+            "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/susfs_inline_hook_patches.sh"
+          test -s /tmp/susfs_inline_hook_patches.sh || { echo "ERROR: gagal mengunduh susfs_inline_hook_patches.sh"; exit 1; }
+
+          bash /tmp/susfs_inline_hook_patches.sh 2>&1 | tee /tmp/susfs_inline_hook.log
+
+          echo ""
+          echo "== Cek kegagalan patch di log (jangan biarkan lolos diam-diam) =="
+          if grep -q "patch failed for unknown reasons" /tmp/susfs_inline_hook.log; then
+            echo "ERROR: minimal satu file gagal dipatch oleh susfs_inline_hook_patches.sh:"
+            grep -B2 "patch failed for unknown reasons" /tmp/susfs_inline_hook.log
+            exit 1
+          fi
+          echo "OK: tidak ada baris 'patch failed for unknown reasons' di log"
+
+          echo ""
+          echo "== PERBAIKAN OTOMATIS: bug deteksi versi utk security/selinux/hooks.c (lihat catatan di atas) =="
+          if grep -q 'ksu_hide_setprocattr(name, value, size);' security/selinux/hooks.c \
+             && ! grep -q 'extern int ksu_hide_setprocattr' security/selinux/hooks.c; then
+            echo "Terdeteksi: pemanggilan ksu_hide_setprocattr ada, tapi extern declaration hilang (persis bug yang diperkirakan)."
+            if grep -qF 'static int selinux_setprocattr(struct task_struct *p,' security/selinux/hooks.c; then
+              sed -i '/static int selinux_setprocattr(struct task_struct \*p,/i\#ifdef CONFIG_KSU\nextern int ksu_hide_setprocattr(const char *name, void *value, size_t size);\n#endif\n' security/selinux/hooks.c
+              grep -q 'extern int ksu_hide_setprocattr' security/selinux/hooks.c && \
+                echo "OK: extern ksu_hide_setprocattr berhasil ditambal manual dengan anchor signature lama (kernel 4.14)." || \
+                { echo "ERROR: penambalan manual gagal juga - cek anchor selinux_setprocattr di security/selinux/hooks.c"; exit 1; }
+            else
+              echo "ERROR: tidak ditemukan signature selinux_setprocattr(struct task_struct *p, ...) ATAUPUN extern-nya sudah ada - struktur kernel ini kemungkinan berbeda dari dugaan, cek manual."
+              exit 1
+            fi
+          else
+            echo "OK: tidak ada indikasi bug ini terjadi kali ini (baik karena ksu_hide_setprocattr tidak dipakai ReSukiSU versi ini, atau extern-nya sudah tersisip benar oleh skrip)."
+          fi
+
+          echo ""
+          echo "== Verifikasi hook inti SUSFS tertanam (fs/exec.c, fs/open.c, fs/stat.c, kernel/reboot.c) =="
           for pair in \
-            "fs/exec.c:ksu_handle_execveat" \
+            "fs/exec.c:ksu_handle_execveat_sucompat" \
             "fs/open.c:ksu_handle_faccessat" \
             "fs/stat.c:ksu_handle_stat" \
-            "fs/stat.c:ksu_handle_newfstat_ret" \
-            "fs/stat.c:ksu_handle_fstat64_ret" \
             "kernel/reboot.c:ksu_handle_sys_reboot"; do
             f="${pair%%:*}"; sym="${pair##*:}"
-            grep -q "$sym" "$f" || { echo "ERROR: $sym tidak ditemukan di $f"; exit 1; }
+            grep -q "$sym" "$f" || { echo "ERROR: $sym tidak ditemukan di $f - SuSFS Inline Hook gagal terpasang"; exit 1; }
             echo "OK: $sym -> $f"
           done
 
+          echo "SuSFS Inline Hook ReSukiSU: OK"
 
       - name: Commit ReSukiSU + bersihkan dirty
         working-directory: kernel
@@ -650,18 +646,34 @@ jobs:
           DEF=arch/arm64/configs/rosemary_defconfig
           {
             echo ""
+            # Catatan: suffix "-perf" TIDAK LAGI dijamin sama persis dengan
+            # string vendor stock (dulu "4.14.186-perf" via paksa SUBLEVEL=186,
+            # sekarang SUBLEVEL dihapus - lihat header file). Suffix ini murni
+            # kosmetik sekarang; SUBLEVEL asli mengikuti apa pun yang tertulis
+            # di Makefile source dlagia/android_kernel_xiaomi_rosemary saat ini.
             echo 'CONFIG_LOCALVERSION="-perf"'
             echo "CONFIG_LOCALVERSION_AUTO=n"
             echo ""
             echo "CONFIG_KSU=y"
             echo "CONFIG_KSU_TRACEPOINT_HOOK=n"
             echo "CONFIG_KSU_MANUAL_HOOK=y"
-            echo "CONFIG_KSU_SUSFS=n"
+            # SUSFS AKTIF (lihat step "Terapkan patch dasar SUSFS" dan "Terapkan
+            # SuSFS Inline Hook" di atas). Karena kita memakai mode hook resmi
+            # ReSukiSU "SuSFS Inline Hook" (patch manual dari proyek SUSFS
+            # sendiri, BUKAN Manual Hook biasa), tiga AUTO_*_HOOK di bawah
+            # SENGAJA dimatikan - susfs_inline_hook_patches.sh sudah menanam
+            # hook setuid/init-rc/input secara manual langsung ke source
+            # (kernel/sys.c, fs/read_write.c, drivers/input/input.c). Membiarkan
+            # AUTO_*_HOOK tetap y akan membuat DUA jalur hook berjalan
+            # berbarengan (LSM auto-hook ReSukiSU + patch manual SUSFS) untuk
+            # fungsi yang sama - redundan dan berpotensi konflik urutan
+            # eksekusi, jadi dimatikan di sini.
+            echo "CONFIG_KSU_SUSFS=y"
             echo "CONFIG_KALLSYMS=y"
             echo "CONFIG_KALLSYMS_ALL=y"
-            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK=y"
-            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK=y"
-            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INPUT_HOOK=y"
+            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK=n"
+            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK=n"
+            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INPUT_HOOK=n"
             echo ""
             echo "CONFIG_NOMOUNT=y"
             echo ""
@@ -701,10 +713,16 @@ jobs:
             exit 1
           fi
 
-          if grep -q '^CONFIG_KSU_SUSFS=y$' out/.config; then
-            echo "ERROR: CONFIG_KSU_SUSFS=y aktif; build ini ditujukan untuk Manual Hook tanpa SUSFS"
+          grep -q '^CONFIG_KSU_SUSFS=y$' out/.config || {
+            echo "ERROR: CONFIG_KSU_SUSFS tidak resolve ke y - integrasi SUSFS (patch dasar + inline hook) tidak akan berfungsi"
             exit 1
-          fi
+          }
+          for opt in CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK CONFIG_KSU_MANUAL_HOOK_AUTO_INPUT_HOOK; do
+            if grep -q "^${opt}=y\$" out/.config; then
+              echo "ERROR: ${opt}=y aktif berbarengan dengan SuSFS Inline Hook - akan menghasilkan hook ganda (LSM auto-hook + patch manual). Set ke n di defconfig."
+              exit 1
+            fi
+          done
 
           echo ""
           echo "==================== RESOLVED NoMount CONFIG ===================="
