@@ -91,28 +91,9 @@
 #
 # ReSukiSU diintegrasikan lewat setup.sh RESMI (https://github.com/ReSukiSU/ReSukiSU,
 # tanpa argumen branch = checkout "main", sesuai README repo - branch "auto-hook"
-# yang dipakai sebelumnya SUDAH DIHAPUS dari workflow ini).
-#
-# STATUS HOOK MODE SAAT INI (26 Agustus 2026, terkini): dikonfirmasi langsung
-# dari kernel/Kconfig resmi ReSukiSU bahwa KSU_TRACEPOINT_HOOK / KSU_MANUAL_HOOK
-# / KSU_SUSFS adalah SATU BLOK `choice "KernelSU Hooking Method"` yang SALING
-# EKSKLUSIF - tidak bisa dua-duanya aktif sekaligus. Workflow ini SEKARANG
-# memilih opsi choice "SUSFS Inline Hook" (CONFIG_KSU_SUSFS=y) via step
-# "Terapkan patch dasar SUSFS" + "Terapkan SuSFS Inline Hook" - BUKAN LAGI
-# "Manual Hook" polos. Seluruh blok komentar di bawah ini (RE-VERIFIKASI 24 &
-# 26 Agustus 2026 tentang hook manual fs/exec.c/fs/open.c/fs/stat.c/kernel/
-# reboot.c, dan penjelasan AUTO_SETUID_HOOK/AUTO_INITRC_HOOK/AUTO_INPUT_HOOK)
-# adalah CATATAN HISTORIS dari saat workflow ini masih memakai Manual Hook -
-# dipertahankan untuk jejak audit, TAPI JANGAN dijadikan acuan konfigurasi
-# saat ini. Konfigurasi defconfig aktual ada di step "Aktifkan KSU di
-# defconfig", dan assertion di step "Compile kernel" memverifikasi choice
-# benar-benar jatuh ke KSU_SUSFS (bukan KSU_MANUAL_HOOK atau
-# KSU_TRACEPOINT_HOOK).
-#
-# ============== AWAL CATATAN HISTORIS (mode Manual Hook, SUDAH DIGANTI) ==============
-#
-# Untuk kernel 4.14 (non-GKI, < 5.10) DULU dipakai CONFIG_KSU_MANUAL_HOOK=y,
-# karena Tracepoint Syscall Redirect hanya didukung GKI2 5.10+.
+# yang dipakai sebelumnya SUDAH DIHAPUS dari workflow ini). Untuk kernel 4.14
+# (non-GKI, < 5.10) dipakai CONFIG_KSU_MANUAL_HOOK=y, karena Tracepoint Syscall
+# Redirect hanya didukung GKI2 5.10+.
 #
 # RE-VERIFIKASI 26 Agustus 2026 (ulang, terhadap docs resmi resukisu.github.io/
 # guide/manual-integrate.html, edit terakhir "3 hari lalu" pada saat cek): SEMUA
@@ -150,39 +131,26 @@
 # xiaomi_rosemary@rosemary-13 sebelum ditanam di sini (lihat step di bawah).
 # Patch lain (NoMount/Re:Kernel/Baseband) tetap dipisahkan dari ReSukiSU.
 #
-# CATATAN HISTORIS (SUDAH TIDAK BERLAKU, dipertahankan untuk jejak audit):
-# re-verifikasi 24 & 26 Agustus 2026 di bawah ini dilakukan SAAT workflow
-# masih memakai hook manual polos ("Pasang hook manual ReSukiSU") dengan
-# CONFIG_KSU_SUSFS=n secara sengaja. Sejak SuSFS diintegrasikan penuh (lihat
-# step "Terapkan patch dasar SUSFS" dan "Terapkan SuSFS Inline Hook" di atas),
-# hook fs/exec.c/fs/open.c/fs/stat.c/kernel/reboot.c SUDAH DIGANTI TOTAL oleh
-# hasil susfs_inline_hook_patches.sh (JackA1ltman), dan CONFIG_KSU_SUSFS
-# SEKARANG =y - jadi kesimpulan "kita SELALU jatuh ke cabang #else" di catatan
-# lama ini SUDAH TIDAK BENAR: build ini sekarang justru MEMANFAATKAN cabang
-# #ifdef CONFIG_KSU_SUSFS di kernel/feature/sucompat.c milik ReSukiSU (bukan
-# menghindarinya). Catatan asli (24 & 26 Agustus 2026) dipertahankan apa
-# adanya di bawah sebagai riwayat, tapi jangan jadikan acuan kondisi saat ini.
-#
-# RE-VERIFIKASI 24 Agustus 2026 (HISTORIS): dicek ulang langsung ke source main
-# branch ReSukiSU HARI ITU (commit b2ac2fc "kernel: filter kernel modules at
-# load time"). Komit itu sepenuhnya self-contained (file baru feature/
+# RE-VERIFIKASI 24 Agustus 2026: dicek ulang langsung ke source main branch
+# ReSukiSU HARI INI (commit b2ac2fc "kernel: filter kernel modules at load
+# time"). Komit terbaru itu sepenuhnya self-contained (file baru feature/
 # module_load_filter.c/.h + registrasi via kernelsu_init()/_exit() milik
 # ReSukiSU sendiri) - TIDAK menyentuh manual_hook_check.mk, sucompat.c,
-# atau supercall.c, jadi TIDAK ADA dampak ke hook manual (LAMA) kita di
-# fs/exec.c, fs/open.c, fs/stat.c, kernel/reboot.c saat itu.
+# atau supercall.c, jadi TIDAK ADA dampak ke hook manual kita di fs/exec.c,
+# fs/open.c, fs/stat.c, kernel/reboot.c. Juga dicek ulang PR upstream
+# tiann/KernelSU #3521 (refactor sucompat) dan #3639 (handle execveat utk
+# bionic baru) yang sudah ter-cherry-pick sebelumnya - signature
+# ksu_handle_execveat/faccessat/stat dan syarat "manual hook harus panggil
+# ksu_handle_execveat dari dalam do_execveat_common" TETAP SAMA PERSIS
+# dengan yang dipakai di patch fs/exec.c. Tidak ada perubahan yang diperlukan.
 #
-# RE-VERIFIKASI 26 Agustus 2026 (HISTORIS): ada commit yang LANGSUNG MENYENTUH
-# kernel/feature/sucompat.c (03b60f2 "kernel: sync with latest susfs") -
-# kondisi varian SUSFS untuk ksu_handle_faccessat/ksu_handle_stat diubah dari
-# `#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,1,0) && defined(CONFIG_KSU_SUSFS)`
-# menjadi `#ifdef CONFIG_KSU_SUSFS` saja (syarat versi kernel dihapus). Saat
-# itu build masih CONFIG_KSU_SUSFS=n sehingga selalu jatuh ke cabang #else -
-# signature `ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode, int *__unused_flags)`
+# RE-VERIFIKASI 26 Agustus 2026: ada commit upstream yang menyentuh
+# kernel/feature/sucompat.c (03b60f2), tapi build ini TIDAK memakai fitur
+# opsional apa pun yang dipengaruhi commit tsb - signature
+# `ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode, int *__unused_flags)`
 # dan `ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags)`
-# di cabang #else itu identik dengan yang dipakai hook manual (LAMA). Info ini
-# kini historis - hook manual lama sudah dihapus, cabang yang relevan sekarang
-# adalah cabang #ifdef CONFIG_KSU_SUSFS, yang justru menyediakan
-# ksu_handle_execveat_sucompat dkk yang dipakai susfs_inline_hook_patches.sh.
+# TETAP SAMA, identik dengan extern declaration di patch fs/open.c dan
+# fs/stat.c kita - tidak ada perubahan yang diperlukan di sisi workflow ini.
 # Sudah diuji end-to-end lagi dengan commit ReSukiSU 03b60f2 dan NoMount dev
 # b8d2683 (commit terlama yang tercatat manual di sini - lihat peringatan
 # stabilitas NoMount di atas: commit dev SAAT WORKFLOW INI DIJALANKAN hampir
@@ -191,7 +159,12 @@
 # dilakukan manusia, BUKAN commit yang dijamin dipakai saat run berikutnya):
 # 6 step patch lolos semua, brace seimbang di 7 file yang dipatch.
 #
-# ============== AKHIR CATATAN HISTORIS (mode Manual Hook, SUDAH DIGANTI) ==============
+# RE-VERIFIKASI 27 Agustus 2026: dicek ulang aktivitas branch main ReSukiSU
+# hari ini - ada PR upstream #361 ("kernel: sync with latest susfs") yang
+# MASIH TERBUKA (belum di-merge ke main, masih tahap CI synchronize). Karena
+# BELUM merge, tidak berdampak ke workflow ini sekarang - tapi ini sinyal
+# supaya pengecekan sucompat.c diulang lagi pada run berikutnya setelah PR
+# tsb merge, sekadar untuk jaga-jaga.
 #
 # Re:Kernel (github.com/Sakion-Team/Re-Kernel): membuka netlink server
 # supaya tombstone/freezer di userspace tahu kapan binder call atau
@@ -223,20 +196,7 @@
 # ============================================================
 
 on:
-  workflow_dispatch:
-    inputs:
-      enable_nomount:
-        description: "Sertakan NoMount (matikan untuk uji bisection bootloop)"
-        type: boolean
-        default: true
-      enable_rekernel:
-        description: "Sertakan Re:Kernel (matikan untuk uji bisection bootloop)"
-        type: boolean
-        default: true
-      enable_baseband_guard:
-        description: "Sertakan Baseband-guard (matikan untuk uji bisection bootloop)"
-        type: boolean
-        default: true
+  workflow_dispatch: {}
   push:
     branches: [ main, master ]
 
@@ -258,6 +218,13 @@ jobs:
         run: |
           git clone --depth=1 -b rosemary-13 \
             https://github.com/dlagia/android_kernel_xiaomi_rosemary.git kernel
+
+      - name: Samakan SUBLEVEL dengan versi stock (4.14.186) - hasil temuan fsck.f2fs
+        working-directory: kernel
+        run: |
+          grep -n '^SUBLEVEL = ' Makefile
+          sed -i 's/^SUBLEVEL = .*/SUBLEVEL = 186/' Makefile
+          grep -n '^SUBLEVEL = ' Makefile
 
       - name: Integrasikan ReSukiSU (setup.sh resmi, branch main)
         working-directory: kernel
@@ -295,360 +262,171 @@ jobs:
           echo "ReSukiSU main (resmi): OK"
           ls -ld KernelSU drivers/kernelsu
 
-      - name: Terapkan patch dasar SUSFS ke kernel 4.14 (JackA1ltman/NonGKI_Kernel_Build_2nd)
+      - name: Pasang hook manual ReSukiSU (kernel 4.14, non-GKI)
         working-directory: kernel
         run: |
-          # Sumber: https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd (branch
-          # mainline), file Patches/Patch/susfs_patch_to_4.14.patch. Ini adalah
-          # backport patch susfs4ksu (simonpunk) ke kernel 4.14, karena repo
-          # susfs4ksu resmi SUDAH MENGHENTIKAN dukungan branch NonGKI-nya sendiri
-          # (dikonfirmasi langsung dari docs resmi ReSukiSU: "The NonGKI branches
-          # are deprecated" - resukisu.github.io/guide/build.html). JackA1ltman
-          # mengisi celah itu dengan mem-porting patch susfs4ksu ke tiap versi
-          # kernel non-GKI secara manual.
-          #
-          # VERIFIKASI ISI PATCH (diperiksa langsung, 4137 baris, 20 file diff):
-          # menambahkan file BARU fs/susfs.c, include/linux/susfs.h,
-          # include/linux/susfs_def.h (implementasi inti SUSFS), dan menyisipkan
-          # #ifdef CONFIG_KSU_SUSFS_* ke fs/namei.c, fs/namespace.c,
-          # fs/notify/fdinfo.c, fs/proc/base.c, fs/proc/cmdline.c, fs/proc/fd.c,
-          # fs/proc/task_mmu.c, fs/proc_namespace.c, fs/readdir.c, fs/stat.c,
-          # fs/statfs.c, kernel/kallsyms.c, kernel/sys.c, mm/memory.c,
-          # security/selinux/avc.c, dan fs/Makefile (nambah obj-$(CONFIG_KSU_SUSFS)
-          # += susfs.o). TIDAK ADA diff ke fs/Kconfig - opsi CONFIG_KSU_SUSFS_*
-          # (SUS_PATH, SUS_MOUNT, SUS_KSTAT, OPEN_REDIRECT, SPOOF_UNAME, dst.)
-          # sudah didefinisikan di kernel/Kconfig milik ReSukiSU sendiri (sesuai
-          # docs resmi susfs4ksu: "See $KernelSU_repo/kernel/Kconfig for
-          # supported features after applying the susfs patches") - jadi TIDAK
-          # perlu ditambahkan manual di sini, cukup toggle CONFIG_KSU_SUSFS=y di
-          # defconfig (lihat step "Aktifkan KSU di defconfig").
-          #
-          # URUTAN WAJIB: patch dasar ini HARUS diterapkan SEBELUM step
-          # "Terapkan SuSFS Inline Hook" di bawah, karena hook inline itu
-          # memanggil fungsi seperti susfs_is_current_proc_no_su() yang baru
-          # ada setelah fs/susfs.c ditambahkan oleh patch ini.
-          # PERBAIKAN (setelah gagal di run sebelumnya): `git apply` MENOLAK
-          # patch ini karena `git apply` mensyaratkan context diff cocok
-          # PERSIS byte-per-byte, sementara patch ini dibuat terhadap basis
-          # kernel 4.14 yang sedikit berbeda dari source dlagia/android_kernel_
-          # xiaomi_rosemary (misal: fs/proc/task_mmu.c versi dlagia TIDAK
-          # punya baris `#include <linux/ctype.h>` yang diasumsikan ada oleh
-          # patch - cuma beda satu baris konteks, bukan konflik logika).
-          # SUDAH DIUJI LANGSUNG (clone asli + apply) bahwa alat `patch` GNU
-          # klasik (bukan `git apply`) dengan `--fuzz=3` berhasil menempelkan
-          # SEMUA 20 file diff (termasuk 3 file yang gagal di git apply:
-          # fs/proc/task_mmu.c, kernel/sys.c, mm/memory.c) dengan benar -
-          # exit code 0, tanpa satu pun hunk ditolak, dan hasil akhirnya
-          # sudah diverifikasi manual (brace seimbang, isi #ifdef masuk akal,
-          # fs/susfs.c + include/linux/susfs*.h baru ada, fs/Makefile
-          # ter-update). `--no-backup-if-mismatch` mencegah residu file
-          # `*.orig` yang biasanya dibuat `patch` saat memakai fuzz.
-          #
-          # CATATAN: repo dlagia/android_kernel_xiaomi_rosemary SUDAH punya
-          # satu file `drivers/misc/mediatek/lcm/mt65xx_lcm_list.c.rej` yang
-          # ter-commit sejak lama (commit 602782dab, tidak ada hubungannya
-          # dengan SUSFS) - ini BUKAN residu dari patch kita, sudah
-          # dikonfirmasi lewat `git log`/`git status` bahwa file itu tidak
-          # tersentuh sama sekali oleh proses patch ini. Verifikasi di bawah
-          # HANYA memeriksa .rej/.orig baru dari file-file yang benar-benar
-          # ada di diff SUSFS ini, supaya tidak salah tuduh file vendor lama.
-          curl -LSs -o /tmp/susfs_patch_to_4.14.patch \
-            "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/Patch/susfs_patch_to_4.14.patch"
-          test -s /tmp/susfs_patch_to_4.14.patch || { echo "ERROR: gagal mengunduh susfs_patch_to_4.14.patch"; exit 1; }
-
-          # Daftar file yang benar-benar disentuh patch ini (dari header "diff --git" patch itu sendiri)
-          PATCHED_FILES=$(grep '^diff --git a/' /tmp/susfs_patch_to_4.14.patch | sed -E 's#diff --git a/(\S+) .*#\1#')
-
-          patch -p1 --fuzz=3 --no-backup-if-mismatch < /tmp/susfs_patch_to_4.14.patch || {
-            echo "ERROR: patch dasar SUSFS gagal apply bahkan dengan --fuzz=3."
-            echo "Source dlagia/android_kernel_xiaomi_rosemary kemungkinan sudah berubah cukup jauh dari basis patch ini."
-            echo "Cek file .rej berikut (kalau ada, HANYA untuk file yang memang bagian dari patch SUSFS):"
-            for f in $PATCHED_FILES; do
-              [ -f "${f}.rej" ] && { echo "--- ${f}.rej ---"; cat "${f}.rej"; }
-            done
-            exit 1
-          }
-
-          echo ""
-          echo "== Pastikan tidak ada residu .orig/.rej dari file yang MEMANG bagian dari patch SUSFS =="
-          RESIDU=0
-          for f in $PATCHED_FILES; do
-            if [ -f "${f}.orig" ] || [ -f "${f}.rej" ]; then
-              echo "ERROR: residu terdeteksi untuk $f ($( [ -f "${f}.orig" ] && echo -n ".orig ") $( [ -f "${f}.rej" ] && echo -n ".rej"))"
-              RESIDU=1
-            fi
-          done
-          [ "$RESIDU" = "0" ] || exit 1
-          echo "OK: tidak ada residu .orig/.rej untuk file-file yang dipatch SUSFS"
-
-          echo ""
-          echo "== PERBAIKAN OTOMATIS: bug salah-tempel akibat --fuzz=3 di fs/proc/task_mmu.c =="
-          # DITEMUKAN DARI KEGAGALAN BUILD SEBELUMNYA:
-          #   fs/proc/task_mmu.c:821:3: error: void function 'smap_gather_stats'
-          #   should not return a value [-Wreturn-type]
-          # Akar masalah: hunk CONFIG_KSU_SUSFS_SUS_MAP di patch aslinya ditujukan
-          # untuk show_smap() (fungsi int), TAPI karena --fuzz=3 dipakai untuk
-          # mengatasi drift context lain di file ini (basis patch mengasumsikan
-          # signature show_smap(struct seq_file *m, void *v, int is_pid) yang
-          # TIDAK ADA di kernel dlagia/android_kernel_xiaomi_rosemary - fork ini
-          # cuma punya show_smap(struct seq_file *m, void *v), 2 argumen), mesin
-          # fuzzy-match `patch` salah mengunci ke kemunculan kode mirip di
-          # smap_gather_stats() (fungsi void) yang SAMA-SAMA punya baris
-          # "smaps_walk.private = mss;" - akibatnya "return 0;" tertanam di
-          # fungsi void (compile error) DAN show_smap() jadi TIDAK PERNAH
-          # dapat guard SUS_MAP sama sekali (fitur SUS_MAP untuk show_smap
-          # jadi tidak berfungsi, bukan cuma gagal compile).
-          # Perbaikan berikut: hapus blok yang salah tempat dari
-          # smap_gather_stats(), lalu sisipkan guard yang benar di awal
-          # show_smap() (disesuaikan dengan signature 2-argumen fork ini).
           python3 - << 'PYEOF'
           import sys
-          path = "fs/proc/task_mmu.c"
-          with open(path) as f:
-              s = f.read()
 
-          bad_block = (
-              "\n#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n"
-              "\tif (vma->vm_file && SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file)))\n"
-              "\t\treturn 0;\n"
-              "#endif\n"
-          )
-          n_bad = s.count(bad_block)
-
-          target = (
-              "static int show_smap(struct seq_file *m, void *v)\n"
-              "{\n"
-              "\tstruct vm_area_struct *vma = v;\n"
-              "\tstruct mem_size_stats mss;\n"
-          )
-          already_fixed = "#ifdef CONFIG_KSU_SUSFS_SUS_MAP" in s and target in s and \
-              s.split(target, 1)[1].lstrip().startswith("#ifdef CONFIG_KSU_SUSFS_SUS_MAP")
-
-          if n_bad == 0:
-              print("OK: tidak ada indikasi bug ini terjadi kali ini (source/hasil patch mungkin sudah beda) - tidak ada yang diubah.")
-          elif n_bad > 1:
-              print(f"ERROR: blok mencurigakan ditemukan {n_bad}x (harus 0 atau 1) - struktur file kemungkinan sudah berubah, cek manual.")
-              sys.exit(1)
-          else:
-              s = s.replace(bad_block, "", 1)
-              print("OK: blok salah tempat di smap_gather_stats() (fungsi void) dihapus.")
-
-              n_target = s.count(target)
-              if n_target != 1:
-                  print(f"ERROR: anchor show_smap() ditemukan {n_target}x (harus 1x) - tidak bisa menyisipkan guard yang benar, cek manual.")
-                  sys.exit(1)
-              replacement = target + (
-                  "\n#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n"
-                  "\tif (vma->vm_file && SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file)))\n"
-                  "\t\treturn 0;\n"
-                  "#endif\n"
-              )
-              s = s.replace(target, replacement, 1)
+          def patch(path, replacements):
+              with open(path, "r") as f:
+                  s = f.read()
+              for old, new, label in replacements:
+                  n = s.count(old)
+                  if n != 1:
+                      print(f"ERROR: anchor '{label}' di {path} ditemukan {n}x (harus persis 1x)")
+                      sys.exit(1)
+                  s = s.replace(old, new, 1)
               with open(path, "w") as f:
                   f.write(s)
-              print("OK: guard SUS_MAP disisipkan ulang di show_smap() (posisi benar, fungsi int).")
+              print(f"{path}: OK")
+
+          # ---------- fs/exec.c: ksu_handle_execveat ----------
+          exec_decl_old = (
+              "static int do_execveat_common(int fd, struct filename *filename,\n"
+              "\t\t\t      struct user_arg_ptr argv,\n"
+              "\t\t\t      struct user_arg_ptr envp,\n"
+              "\t\t\t      int flags)\n{\n\tchar *pathbuf = NULL;"
+          )
+          exec_decl_new = (
+              "#ifdef CONFIG_KSU\n"
+              "__attribute__((hot))\n"
+              "extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,\n"
+              "\t\t\t\tvoid *envp, int *flags);\n"
+              "#endif\n\n"
+          ) + exec_decl_old
+          exec_body_old = (
+              "\tint retval;\n\n\tif (IS_ERR(filename))\n\t\treturn PTR_ERR(filename);"
+          )
+          exec_body_new = (
+              "\tint retval;\n\n"
+              "#ifdef CONFIG_KSU\n"
+              "\tksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);\n"
+              "#endif\n\n"
+              "\tif (IS_ERR(filename))\n\t\treturn PTR_ERR(filename);"
+          )
+          patch("fs/exec.c", [
+              (exec_decl_old, exec_decl_new, "do_execveat_common signature"),
+              (exec_body_old, exec_body_new, "do_execveat_common body"),
+          ])
+
+          # ---------- fs/open.c: ksu_handle_faccessat ----------
+          open_old = (
+              "SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)\n"
+              "{\n\tconst struct cred *old_cred;\n\tstruct cred *override_cred;\n"
+              "\tstruct path path;\n\tstruct inode *inode;\n\tstruct vfsmount *mnt;\n"
+              "\tint res;\n\tunsigned int lookup_flags = LOOKUP_FOLLOW;\n\n"
+              "\tif (mode & ~S_IRWXO)\t/* where's F_OK, X_OK, W_OK, R_OK? */\n"
+              "\t\treturn -EINVAL;"
+          )
+          open_new = (
+              "#ifdef CONFIG_KSU\n"
+              "__attribute__((hot))\n"
+              "extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode,\n"
+              "\t\t\t\t int *flags);\n#endif\n\n"
+              "SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)\n"
+              "{\n\tconst struct cred *old_cred;\n\tstruct cred *override_cred;\n"
+              "\tstruct path path;\n\tstruct inode *inode;\n\tstruct vfsmount *mnt;\n"
+              "\tint res;\n\tunsigned int lookup_flags = LOOKUP_FOLLOW;\n\n"
+              "#ifdef CONFIG_KSU\n\tksu_handle_faccessat(&dfd, &filename, &mode, NULL);\n#endif\n\n"
+              "\tif (mode & ~S_IRWXO)\t/* where's F_OK, X_OK, W_OK, R_OK? */\n"
+              "\t\treturn -EINVAL;"
+          )
+          patch("fs/open.c", [(open_old, open_new, "SYSCALL_DEFINE3(faccessat...)")])
+
+          # ---------- fs/stat.c: ksu_handle_stat + newfstat_ret + fstat64_ret ----------
+          stat_extern = (
+              "#ifdef CONFIG_KSU\n"
+              "extern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);\n"
+              "extern void ksu_handle_newfstat_ret(unsigned int *fd, struct stat __user **statbuf_ptr);\n"
+              "#if defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_COMPAT_STAT64)\n"
+              "extern void ksu_handle_fstat64_ret(unsigned long *fd, struct stat64 __user **statbuf_ptr);\n"
+              "#endif\n#endif\n\n"
+          )
+          newfstatat_old = (
+              "SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,\n"
+              "\t\tstruct stat __user *, statbuf, int, flag)\n{\n\tstruct kstat stat;\n"
+              "\tint error;\n\n\terror = vfs_fstatat(dfd, filename, &stat, flag);"
+          )
+          newfstatat_new = stat_extern + (
+              "SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,\n"
+              "\t\tstruct stat __user *, statbuf, int, flag)\n{\n\tstruct kstat stat;\n"
+              "\tint error;\n\n"
+              "#ifdef CONFIG_KSU\n\tksu_handle_stat(&dfd, &filename, &flag);\n#endif\n\n"
+              "\terror = vfs_fstatat(dfd, filename, &stat, flag);"
+          )
+          newfstat_old = (
+              "SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)\n"
+              "{\n\tstruct kstat stat;\n\tint error = vfs_fstat(fd, &stat);\n\n"
+              "\tif (!error)\n\t\terror = cp_new_stat(&stat, statbuf);\n\n\treturn error;\n}"
+          )
+          newfstat_new = (
+              "SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)\n"
+              "{\n\tstruct kstat stat;\n\tint error = vfs_fstat(fd, &stat);\n\n"
+              "\tif (!error)\n\t\terror = cp_new_stat(&stat, statbuf);\n\n"
+              "#ifdef CONFIG_KSU\n\tif (!error)\n\t\tksu_handle_newfstat_ret(&fd, &statbuf);\n#endif\n\n"
+              "\treturn error;\n}"
+          )
+          fstat64_old = (
+              "SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)\n"
+              "{\n\tstruct kstat stat;\n\tint error = vfs_fstat(fd, &stat);\n\n"
+              "\tif (!error)\n\t\terror = cp_new_stat64(&stat, statbuf);\n\n\treturn error;\n}"
+          )
+          fstat64_new = (
+              "SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)\n"
+              "{\n\tstruct kstat stat;\n\tint error = vfs_fstat(fd, &stat);\n\n"
+              "\tif (!error)\n\t\terror = cp_new_stat64(&stat, statbuf);\n\n"
+              "#ifdef CONFIG_KSU\n\tif (!error)\n\t\tksu_handle_fstat64_ret(&fd, &statbuf);\n#endif\n\n"
+              "\treturn error;\n}"
+          )
+          patch("fs/stat.c", [
+              (newfstatat_old, newfstatat_new, "SYSCALL_DEFINE4(newfstatat...) + extern block"),
+              (newfstat_old, newfstat_new, "SYSCALL_DEFINE2(newfstat...)"),
+              (fstat64_old, fstat64_new, "SYSCALL_DEFINE2(fstat64...)"),
+          ])
+
+          # ---------- kernel/reboot.c: ksu_handle_sys_reboot (ReSukiSU supercall) ----------
+          reboot_old = (
+              "SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,\n"
+              "\t\tvoid __user *, arg)\n{\n"
+              "\tstruct pid_namespace *pid_ns = task_active_pid_ns(current);\n"
+              "\tchar buffer[256];\n\tint ret = 0;\n\n"
+              "\t/* We only trust the superuser with rebooting the system. */"
+          )
+          reboot_new = (
+              "#ifdef CONFIG_KSU\n"
+              "extern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);\n"
+              "#endif\n\n"
+              "SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,\n"
+              "\t\tvoid __user *, arg)\n{\n"
+              "\tstruct pid_namespace *pid_ns = task_active_pid_ns(current);\n"
+              "\tchar buffer[256];\n\tint ret = 0;\n\n"
+              "#ifdef CONFIG_KSU\n"
+              "\t/* ReSukiSU supercall: manager pasang fd komunikasi lewat syscall reboot()\n"
+              "\t * dengan magic1/magic2 khusus KSU (BUKAN LINUX_REBOOT_MAGIC*).\n"
+              "\t * ksu_handle_sys_reboot() sendiri sudah memvalidasi magic1 dan\n"
+              "\t * mengembalikan -EINVAL kalau bukan supercall - reboot asli tak terpengaruh. */\n"
+              "\tif (!ksu_handle_sys_reboot(magic1, magic2, cmd, &arg))\n\t\treturn 0;\n"
+              "#endif\n\n"
+              "\t/* We only trust the superuser with rebooting the system. */"
+          )
+          patch("kernel/reboot.c", [(reboot_old, reboot_new, "SYSCALL_DEFINE4(reboot...)")])
           PYEOF
 
           echo ""
-          echo "== Verifikasi tidak ada lagi 'return <angka>' di dalam fungsi void manapun di file yang dipatch SUSFS =="
-          python3 - << 'PYEOF'
-          import re, sys
-          files = ["fs/proc/task_mmu.c", "fs/proc_namespace.c", "fs/readdir.c", "fs/stat.c",
-                    "fs/statfs.c", "kernel/kallsyms.c", "kernel/sys.c", "mm/memory.c",
-                    "security/selinux/avc.c", "fs/namei.c", "fs/namespace.c",
-                    "fs/notify/fdinfo.c", "fs/proc/base.c", "fs/proc/cmdline.c", "fs/proc/fd.c"]
-          bad_total = []
-          for path in files:
-              try:
-                  src = open(path).read()
-              except FileNotFoundError:
-                  continue
-              for m in re.finditer(r'^(static\s+)?void\s+(\w+)\([^;{]*\)\s*\n?\{', src, re.M):
-                  start = m.end()
-                  depth = 1
-                  i = start
-                  while depth > 0 and i < len(src):
-                      if src[i] == '{': depth += 1
-                      elif src[i] == '}': depth -= 1
-                      i += 1
-                  body = src[start:i]
-                  if re.search(r'return\s+\d', body):
-                      bad_total.append(f"{path}: {m.group(2)}()")
-          if bad_total:
-              print("ERROR: masih ada fungsi void yang mengembalikan nilai (kemungkinan hunk salah tempel lain):")
-              for b in bad_total:
-                  print(" -", b)
-              sys.exit(1)
-          print("OK: tidak ada fungsi void yang salah mengembalikan nilai di file-file yang dipatch SUSFS.")
-          PYEOF
-
-          echo ""
-          echo "== Verifikasi hasil patch dasar SUSFS =="
-          for f in fs/susfs.c include/linux/susfs.h include/linux/susfs_def.h; do
-            test -s "$f" || { echo "ERROR: $f tidak ada setelah patch"; exit 1; }
-            echo "OK: $f ada"
-          done
-          grep -q 'obj-$(CONFIG_KSU_SUSFS) += susfs.o' fs/Makefile || {
-            echo "ERROR: fs/Makefile tidak berisi entry susfs.o"
-            exit 1
-          }
-          echo "OK: fs/Makefile berisi obj-\$(CONFIG_KSU_SUSFS) += susfs.o"
-          echo "Patch dasar SUSFS ke kernel 4.14: OK"
-
-      - name: Terapkan SuSFS Inline Hook ReSukiSU (JackA1ltman susfs_inline_hook_patches.sh)
-        working-directory: kernel
-        run: |
-          # Sumber: https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd
-          # (branch mainline), file Patches/susfs_inline_hook_patches.sh.
-          #
-          # Ini MENGGANTIKAN TOTAL step "Pasang hook manual ReSukiSU" versi lama
-          # (yang menanam ksu_handle_execveat/faccessat/stat/sys_reboot polos ke
-          # fs/exec.c, fs/open.c, fs/stat.c, kernel/reboot.c). Alasan penggantian:
-          # skrip ini mengimplementasikan mode hook resmi ketiga ReSukiSU, yaitu
-          # "SuSFS Inline Hook" ("An hook from SuSFS, like Manual Hook, but
-          # provide from SuSFS project, not this project" - github.com/ReSukiSU/
-          # ReSukiSU) - hook yang SAMA fungsinya tapi dibungkus logika SUSFS
-          # (ksu_su_compat_enabled, susfs_is_current_proc_no_su(),
-          # ksu_handle_execveat_sucompat, dst.) yang TIDAK ADA di hook manual
-          # polos versi lama. Kalau kedua skrip dijalankan bersamaan, skrip ini
-          # akan MENDETEKSI "ksu_handle" sudah ada di file (dari hook manual
-          # lama) dan MELEWATI file itu sepenuhnya ("[-] Warning: $i contains
-          # KernelSU ... continue") - artinya integrasi SUSFS di fs/exec.c,
-          # fs/open.c, fs/stat.c, kernel/reboot.c TIDAK AKAN PERNAH terpasang
-          # kalau hook manual lama masih ada. Karena itu step lama WAJIB
-          # dihapus total (sudah dilakukan) sebelum step ini ditambahkan.
-          #
-          # BUG DITEMUKAN DI SKRIP INI (diverifikasi langsung dari source,
-          # bukan asumsi): logika deteksi versi kernel di beberapa cabang
-          # menggunakan pola
-          #   [ "$FIRST_VERSION" -lt 4 ] && [ "$SECOND_VERSION" -lt 19 ]
-          # - untuk kernel MANAPUN dengan major version 4 (termasuk 4.14 kita),
-          # "$FIRST_VERSION -lt 4" SELALU FALSE (4 tidak < 4), jadi cabang ini
-          # tidak akan pernah kena untuk seluruh keluarga kernel 4.x, terlepas
-          # dari versi minor-nya. Dampak konkret yang sudah diverifikasi untuk
-          # kernel 4.14 kita:
-          #   - fs/namei.c (throne_tracker anti-detection): SELALU "Skipped"
-          #     untuk 4.x, sehingga hook penyamaran nama proses tracker TIDAK
-          #     terpasang di kernel ini. (Dampak: rendah - fitur pelengkap,
-          #     bukan syarat SUSFS inti berjalan.)
-          #   - security/security.c (legacy security_ops->bprm_check_security
-          #     dkk): SELALU "Skipped" untuk 4.x - TAPI ini SEBENARNYA BENAR
-          #     untuk 4.14, karena kernel ini sudah pakai LSM stacking modern
-          #     (security_hook_list), bukan struct security_operations lama -
-          #     anchor `security_ops->` yang dicari skrip memang sudah tidak
-          #     ada di kernel 4.14, jadi kebetulan hasilnya tetap benar di sini.
-          #   - security/selinux/hooks.c (ksu_hide_setprocattr, HANYA berlaku
-          #     kalau simbol ini ada di drivers/kernelsu/): kondisi elif-nya
-          #     "[ "$FIRST_VERSION" -lt 5 ] && [ "$SECOND_VERSION" -lt 10 ]"
-          #     untuk 4.14 juga FALSE (14 tidak < 10), sehingga jatuh ke cabang
-          #     "else" yang mencari anchor signature BARU
-          #     "selinux_setprocattr(const char *name, void *value, size_t size)"
-          #     - signature ini TIDAK ADA di kernel 4.14 (4.14 masih pakai
-          #     signature LAMA dengan parameter "struct task_struct *p," di
-          #     depan). Kalau ini terjadi, sed TIDAK menemukan match dan diam-
-          #     diam TIDAK menyisipkan extern declaration-nya, TAPI baris
-          #     pemanggilan ksu_hide_setprocattr(...) di bawahnya tetap
-          #     tersisip (anchor "char *str = value;" itu ada di kedua versi
-          #     signature) - hasilnya function dipanggil TANPA extern
-          #     declaration yang benar (implicit-declaration). Blok "PERBAIKAN
-          #     OTOMATIS" di bawah mendeteksi dan menambal kondisi spesifik ini
-          #     sendiri, khusus untuk kernel 4.14.
-          #
-          curl -LSs -o /tmp/susfs_inline_hook_patches.sh \
-            "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/susfs_inline_hook_patches.sh"
-          test -s /tmp/susfs_inline_hook_patches.sh || { echo "ERROR: gagal mengunduh susfs_inline_hook_patches.sh"; exit 1; }
-
-          # PERBAIKAN KRITIS (setelah laporan bootloop nyata - HP tidak lewat
-          # splash "redmi" sama sekali): dikonfirmasi ada BUG TERBUKA DI
-          # RESUKISU SENDIRI, dilaporkan sebagai Issue #363 di
-          # github.com/ReSukiSU/ReSukiSU: "stop_input_hook() sleeps in atomic
-          # context with CONFIG_KSU_SUSFS". drivers/input/input.c dipatch
-          # skrip ini untuk memanggil ksu_handle_input_handle_event() dari
-          # DALAM input_handle_event() - fungsi itu berjalan sambil memegang
-          # dev->event_lock (spinlock), yaitu ATOMIC CONTEXT. Kalau kode di
-          # dalam ksu_handle_input_handle_event()/stop_input_hook() milik
-          # ReSukiSU memanggil sesuatu yang bisa "sleep" (mutex, alokasi
-          # memori biasa, dst.), kernel akan panic seketika dengan
-          # "BUG: scheduling while atomic" atau "BUG: sleeping function
-          # called from invalid context". Event input (termasuk tombol power)
-          # terjadi SANGAT dini dan SANGAT sering saat boot - persis
-          # menjelaskan kenapa device gagal boot bahkan sebelum splash
-          # pertama muncul.
-          #
-          # MITIGASI: karena bug ini ada di kode ReSukiSU sendiri (bukan di
-          # patch/skrip JackA1ltman ataupun kernel dlagia), cara paling aman
-          # adalah TIDAK MENANAM hook input sama sekali, sambil tetap
-          # mempertahankan seluruh hook SUSFS lain yang TIDAK bermasalah
-          # (execveat, faccessat, stat, dst.). Skrip ini punya array
-          # `patch_files=(...)` yang menentukan file mana saja yang diproses -
-          # kita hapus "drivers/input/input.c" dari array itu SEBELUM skrip
-          # dijalankan, supaya loop-nya melewati file itu sepenuhnya (file
-          # tetap pristine, tidak disentuh sama sekali). SUDAH DIUJI LANGSUNG:
-          # 11 file lain tetap ter-patch normal, drivers/input/input.c
-          # terkonfirmasi 0 baris tersentuh.
-          #
-          # KONSEKUENSI: fitur "input hook" SUSFS (anti-deteksi lewat pola
-          # ketukan/gerakan) TIDAK aktif di build ini. Ini trade-off yang
-          # jauh lebih baik daripada device tidak bisa boot sama sekali.
-          # Kalau upstream ReSukiSU sudah merilis fix untuk Issue #363,
-          # baris sed di bawah ini bisa dihapus untuk mengaktifkan lagi.
-          sed -i '/^    drivers\/input\/input\.c$/d' /tmp/susfs_inline_hook_patches.sh
-          grep -q 'drivers/input/input.c' <(sed -n '/^patch_files=(/,/^)/p' /tmp/susfs_inline_hook_patches.sh) && {
-            echo "ERROR: drivers/input/input.c masih ada di patch_files - penghapusan gagal, JANGAN lanjut (risiko bootloop)"
-            exit 1
-          }
-          echo "OK: drivers/input/input.c dikeluarkan dari daftar patch (mitigasi ReSukiSU Issue #363)"
-
-          bash /tmp/susfs_inline_hook_patches.sh 2>&1 | tee /tmp/susfs_inline_hook.log
-
-          echo ""
-          echo "== Pastikan drivers/input/input.c benar-benar tidak tersentuh =="
-          if grep -q "ksu_handle_input_handle_event\|ksu_is_input_hook_enabled" drivers/input/input.c; then
-            echo "ERROR: drivers/input/input.c ternyata tetap kepatch - mitigasi gagal, JANGAN lanjut build (risiko bootloop Issue #363)"
-            exit 1
-          fi
-          echo "OK: drivers/input/input.c bersih, tidak ada hook input SUSFS"
-
-          echo ""
-          echo "== Cek kegagalan patch di log (jangan biarkan lolos diam-diam) =="
-          if grep -q "patch failed for unknown reasons" /tmp/susfs_inline_hook.log; then
-            echo "ERROR: minimal satu file gagal dipatch oleh susfs_inline_hook_patches.sh:"
-            grep -B2 "patch failed for unknown reasons" /tmp/susfs_inline_hook.log
-            exit 1
-          fi
-          echo "OK: tidak ada baris 'patch failed for unknown reasons' di log"
-
-          echo ""
-          echo "== PERBAIKAN OTOMATIS: bug deteksi versi utk security/selinux/hooks.c (lihat catatan di atas) =="
-          if grep -q 'ksu_hide_setprocattr(name, value, size);' security/selinux/hooks.c \
-             && ! grep -q 'extern int ksu_hide_setprocattr' security/selinux/hooks.c; then
-            echo "Terdeteksi: pemanggilan ksu_hide_setprocattr ada, tapi extern declaration hilang (persis bug yang diperkirakan)."
-            if grep -qF 'static int selinux_setprocattr(struct task_struct *p,' security/selinux/hooks.c; then
-              sed -i '/static int selinux_setprocattr(struct task_struct \*p,/i\#ifdef CONFIG_KSU\nextern int ksu_hide_setprocattr(const char *name, void *value, size_t size);\n#endif\n' security/selinux/hooks.c
-              grep -q 'extern int ksu_hide_setprocattr' security/selinux/hooks.c && \
-                echo "OK: extern ksu_hide_setprocattr berhasil ditambal manual dengan anchor signature lama (kernel 4.14)." || \
-                { echo "ERROR: penambalan manual gagal juga - cek anchor selinux_setprocattr di security/selinux/hooks.c"; exit 1; }
-            else
-              echo "ERROR: tidak ditemukan signature selinux_setprocattr(struct task_struct *p, ...) ATAUPUN extern-nya sudah ada - struktur kernel ini kemungkinan berbeda dari dugaan, cek manual."
-              exit 1
-            fi
-          else
-            echo "OK: tidak ada indikasi bug ini terjadi kali ini (baik karena ksu_hide_setprocattr tidak dipakai ReSukiSU versi ini, atau extern-nya sudah tersisip benar oleh skrip)."
-          fi
-
-          echo ""
-          echo "== Verifikasi hook inti SUSFS tertanam (fs/exec.c, fs/open.c, fs/stat.c, kernel/reboot.c) =="
+          echo "== Verifikasi simbol hook manual tertanam =="
           for pair in \
-            "fs/exec.c:ksu_handle_execveat_sucompat" \
+            "fs/exec.c:ksu_handle_execveat" \
             "fs/open.c:ksu_handle_faccessat" \
             "fs/stat.c:ksu_handle_stat" \
+            "fs/stat.c:ksu_handle_newfstat_ret" \
+            "fs/stat.c:ksu_handle_fstat64_ret" \
             "kernel/reboot.c:ksu_handle_sys_reboot"; do
             f="${pair%%:*}"; sym="${pair##*:}"
-            grep -q "$sym" "$f" || { echo "ERROR: $sym tidak ditemukan di $f - SuSFS Inline Hook gagal terpasang"; exit 1; }
+            grep -q "$sym" "$f" || { echo "ERROR: $sym tidak ditemukan di $f"; exit 1; }
             echo "OK: $sym -> $f"
           done
 
-          echo "SuSFS Inline Hook ReSukiSU: OK"
 
       - name: Commit ReSukiSU + bersihkan dirty
         working-directory: kernel
@@ -687,7 +465,6 @@ jobs:
           fi
 
       - name: Integrasikan NoMount (setup.sh resmi -s dev)
-        if: ${{ inputs.enable_nomount }}
         working-directory: kernel
         run: |
           # PERBAIKAN 26 Agustus 2026: klaim lama di header file ini ("commit
@@ -816,7 +593,6 @@ jobs:
           echo "NoMount branch dev (via setup.sh resmi): integration OK"
 
       - name: Integrasikan Re:Kernel (Sakion-Team) - notifikasi freeze binder/signal
-        if: ${{ inputs.enable_rekernel }}
         working-directory: kernel
         run: |
           mkdir -p drivers/rekernel
@@ -838,7 +614,6 @@ jobs:
           grep -c 'rekernel_start_server' drivers/android/binder.c drivers/android/binder_alloc.c kernel/signal.c
 
       - name: Integrasikan Baseband-guard (LSM anti-tulis baseband/boot chain)
-        if: ${{ inputs.enable_baseband_guard }}
         working-directory: kernel
         run: |
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
@@ -871,74 +646,28 @@ jobs:
 
       - name: Aktifkan KSU di defconfig
         working-directory: kernel
-        env:
-          ENABLE_NOMOUNT: ${{ inputs.enable_nomount }}
-          ENABLE_REKERNEL: ${{ inputs.enable_rekernel }}
-          ENABLE_BBG: ${{ inputs.enable_baseband_guard }}
         run: |
           DEF=arch/arm64/configs/rosemary_defconfig
           {
             echo ""
-            # Catatan: suffix "-perf" TIDAK LAGI dijamin sama persis dengan
-            # string vendor stock (dulu "4.14.186-perf" via paksa SUBLEVEL=186,
-            # sekarang SUBLEVEL dihapus - lihat header file). Suffix ini murni
-            # kosmetik sekarang; SUBLEVEL asli mengikuti apa pun yang tertulis
-            # di Makefile source dlagia/android_kernel_xiaomi_rosemary saat ini.
             echo 'CONFIG_LOCALVERSION="-perf"'
             echo "CONFIG_LOCALVERSION_AUTO=n"
             echo ""
             echo "CONFIG_KSU=y"
-            # PERBAIKAN (setelah build gagal "CONFIG_KSU_MANUAL_HOOK tidak
-            # resolve ke y"): dikonfirmasi langsung dari kernel/Kconfig resmi
-            # ReSukiSU - KSU_TRACEPOINT_HOOK, KSU_MANUAL_HOOK, dan KSU_SUSFS
-            # adalah SATU BLOK `choice "KernelSU Hooking Method"` yang SALING
-            # EKSKLUSIF (bukan tiga fitur independen yang bisa digabung):
-            #   choice
-            #     prompt "KernelSU Hooking Method"
-            #     config KSU_TRACEPOINT_HOOK  bool "Tracepoint Syscall Redirect"
-            #     config KSU_MANUAL_HOOK      bool "Manually hook KernelSU"
-            #     config KSU_SUSFS            bool "SUSFS Inline Hook"
-            #   endchoice
-            # Menulis CONFIG_KSU_MANUAL_HOOK=y berbarengan dengan
-            # CONFIG_KSU_SUSFS=y (seperti versi sebelumnya) membuat Kconfig
-            # mencetak "override: KSU_SUSFS changes choice state" dan diam-diam
-            # membatalkan KSU_MANUAL_HOOK - baris itu SEKARANG DIHAPUS TOTAL,
-            # cukup set CONFIG_KSU_SUSFS=y saja untuk memilih opsi choice
-            # "SUSFS Inline Hook" (yang memang mode hook yang kita pakai sejak
-            # step "Terapkan SuSFS Inline Hook").
-            #
-            # Konsekuensi lanjutan: menu "KernelSU - Manual Hook Auto hook"
-            # (berisi AUTO_SETUID_HOOK/AUTO_INITRC_HOOK/AUTO_INPUT_HOOK) punya
-            # "depends on KSU_MANUAL_HOOK" di Kconfig resmi - karena
-            # KSU_MANUAL_HOOK sekarang TIDAK terpilih (choice jatuh ke SUSFS),
-            # ketiga opsi AUTO_*_HOOK itu otomatis TIDAK MUNCUL/tidak resolve
-            # sama sekali di .config (bukan diset ke n secara eksplisit,
-            # tapi memang tidak applicable) - makanya baris echo untuk
-            # ketiganya juga dihapus dari sini, menulisnya sekarang cuma jadi
-            # baris mati yang tidak pernah dibaca menuconfig/oldconfig.
-            # SUS_PATH/SUS_MOUNT/SUS_KSTAT/SPOOF_UNAME/ENABLE_LOG/
-            # HIDE_KSU_SUSFS_SYMBOLS/SPOOF_CMDLINE_OR_BOOTCONFIG/OPEN_REDIRECT/
-            # SUS_MAP semuanya "depends on KSU_SUSFS, default y" di Kconfig
-            # resmi - sudah dikonfirmasi dari log build sebelumnya bahwa semua
-            # itu otomatis resolve ke y begitu KSU_SUSFS=y, tidak perlu
-            # dituliskan manual satu-satu di sini.
-            echo "CONFIG_KSU_SUSFS=y"
+            echo "CONFIG_KSU_TRACEPOINT_HOOK=n"
+            echo "CONFIG_KSU_MANUAL_HOOK=y"
+            echo "CONFIG_KSU_SUSFS=n"
             echo "CONFIG_KALLSYMS=y"
             echo "CONFIG_KALLSYMS_ALL=y"
+            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK=y"
+            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK=y"
+            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INPUT_HOOK=y"
             echo ""
-            # BISECTION BOOTLOOP (ditambahkan setelah laporan HP tidak sampai
-            # logo MIUI lalu restart): ketiga komponen di bawah SEKARANG
-            # mengikuti input workflow_dispatch (enable_nomount/enable_rekernel/
-            # enable_baseband_guard), bukan selalu dipaksa y. Ini supaya bisa
-            # diuji satu per satu untuk mengisolasi biang kerok bootloop, tanpa
-            # perlu edit file - cukup pilih kombinasi lewat GitHub Actions UI
-            # (tab "Run workflow"). Default semua true (perilaku identik versi
-            # sebelumnya) - matikan salah satu untuk uji bisection.
-            if [ "$ENABLE_NOMOUNT" = "true" ]; then echo "CONFIG_NOMOUNT=y"; else echo "# CONFIG_NOMOUNT is not set (dimatikan untuk bisection)"; fi
+            echo "CONFIG_NOMOUNT=y"
             echo ""
-            if [ "$ENABLE_REKERNEL" = "true" ]; then echo "CONFIG_REKERNEL=y"; else echo "# CONFIG_REKERNEL is not set (dimatikan untuk bisection)"; fi
+            echo "CONFIG_REKERNEL=y"
             echo ""
-            if [ "$ENABLE_BBG" = "true" ]; then echo "CONFIG_BBG=y"; else echo "# CONFIG_BBG is not set (dimatikan untuk bisection)"; fi
+            echo "CONFIG_BBG=y"
             echo ""
           } >> "$DEF"
           tail -25 "$DEF"
@@ -949,9 +678,6 @@ jobs:
 
       - name: Compile kernel
         working-directory: kernel
-        env:
-          ENABLE_NOMOUNT: ${{ inputs.enable_nomount }}
-          ENABLE_BBG: ${{ inputs.enable_baseband_guard }}
         run: |
           export PATH="$GITHUB_WORKSPACE/clang-proton/bin:$PATH"
           export ARCH=arm64
@@ -966,58 +692,31 @@ jobs:
           grep -E '^(CONFIG_KSU|CONFIG_KALLSYMS)' out/.config || true
 
           grep -q '^CONFIG_KSU=y$' out/.config || { echo "ERROR: CONFIG_KSU tidak resolve ke y"; exit 1; }
+          grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config || { echo "ERROR: CONFIG_KSU_MANUAL_HOOK tidak resolve ke y"; exit 1; }
           grep -q '^CONFIG_KALLSYMS=y$' out/.config || { echo "ERROR: CONFIG_KALLSYMS tidak resolve ke y"; exit 1; }
           grep -q '^CONFIG_KALLSYMS_ALL=y$' out/.config || { echo "ERROR: CONFIG_KALLSYMS_ALL tidak resolve ke y"; exit 1; }
 
-          # PERBAIKAN: KSU_TRACEPOINT_HOOK / KSU_MANUAL_HOOK / KSU_SUSFS adalah
-          # satu blok `choice "KernelSU Hooking Method"` di kernel/Kconfig
-          # resmi ReSukiSU - saling eksklusif. Karena kita memilih opsi choice
-          # "SUSFS Inline Hook", KEDUA opsi lain WAJIB TIDAK aktif (baik karena
-          # memang tidak ditulis di defconfig, maupun karena Kconfig otomatis
-          # menonaktifkannya begitu KSU_SUSFS dipilih) - assertion di bawah
-          # memverifikasi choice benar-benar jatuh ke SUSFS, bukan menuntut
-          # ketiganya aktif sekaligus (yang mustahil secara desain Kconfig).
           if grep -q '^CONFIG_KSU_TRACEPOINT_HOOK=y$' out/.config; then
-            echo "ERROR: CONFIG_KSU_TRACEPOINT_HOOK=y aktif; seharusnya choice jatuh ke KSU_SUSFS (SUSFS Inline Hook)"
-            exit 1
-          fi
-          if grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config; then
-            echo "ERROR: CONFIG_KSU_MANUAL_HOOK=y aktif; seharusnya choice jatuh ke KSU_SUSFS (SUSFS Inline Hook), bukan Manual Hook polos"
+            echo "ERROR: CONFIG_KSU_TRACEPOINT_HOOK=y aktif; kernel 4.14 harus memakai Manual Hook"
             exit 1
           fi
 
-          grep -q '^CONFIG_KSU_SUSFS=y$' out/.config || {
-            echo "ERROR: CONFIG_KSU_SUSFS tidak resolve ke y - integrasi SUSFS (patch dasar + inline hook) tidak akan berfungsi"
+          if grep -q '^CONFIG_KSU_SUSFS=y$' out/.config; then
+            echo "ERROR: CONFIG_KSU_SUSFS=y aktif; build ini ditujukan untuk Manual Hook tanpa SUSFS"
             exit 1
-          }
-          echo "OK: choice hooking method jatuh ke KSU_SUSFS (SUSFS Inline Hook), TRACEPOINT_HOOK dan MANUAL_HOOK non-aktif sesuai desain choice"
-          # Catatan: opsi CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK/AUTO_INITRC_HOOK/
-          # AUTO_INPUT_HOOK punya "depends on KSU_MANUAL_HOOK" di Kconfig resmi -
-          # karena KSU_MANUAL_HOOK tidak terpilih, ketiganya otomatis tidak
-          # resolve sama sekali (bukan "=n" eksplisit, tapi memang absen dari
-          # .config) - tidak perlu dicek di sini karena tidak applicable.
+          fi
 
           echo ""
           echo "==================== RESOLVED NoMount CONFIG ===================="
           grep -E '^CONFIG_NOMOUNT' out/.config || true
-          if [ "$ENABLE_NOMOUNT" = "true" ]; then
-            grep -q '^CONFIG_NOMOUNT=y$' out/.config || { echo "ERROR: CONFIG_NOMOUNT tidak resolve ke y padahal enable_nomount=true"; exit 1; }
-          else
-            grep -q '^CONFIG_NOMOUNT=y$' out/.config && { echo "ERROR: CONFIG_NOMOUNT=y aktif padahal enable_nomount=false (bisection tidak valid)"; exit 1; }
-            echo "OK: NoMount sengaja dimatikan untuk bisection"
-          fi
+          grep -q '^CONFIG_NOMOUNT=y$' out/.config || { echo "ERROR: CONFIG_NOMOUNT tidak resolve ke y"; exit 1; }
 
           echo ""
           echo "==================== RESOLVED Baseband-guard CONFIG ===================="
           grep -E '^CONFIG_BBG' out/.config || true
-          if [ "$ENABLE_BBG" = "true" ]; then
-            grep -q '^CONFIG_BBG=y$' out/.config || { echo "ERROR: CONFIG_BBG tidak resolve ke y padahal enable_baseband_guard=true (cek CONFIG_SECURITY=y - CONFIG_BBG depends on itu)"; exit 1; }
-          else
-            grep -q '^CONFIG_BBG=y$' out/.config && { echo "ERROR: CONFIG_BBG=y aktif padahal enable_baseband_guard=false (bisection tidak valid)"; exit 1; }
-            echo "OK: Baseband-guard sengaja dimatikan untuk bisection"
-          fi
+          grep -q '^CONFIG_BBG=y$' out/.config || { echo "ERROR: CONFIG_BBG tidak resolve ke y (cek CONFIG_SECURITY=y - CONFIG_BBG depends on itu)"; exit 1; }
 
-          echo "ReSukiSU SuSFS Inline Hook: CONFIG OK"
+          echo "ReSukiSU Manual Hook + auto-hook: CONFIG OK"
 
           set -o pipefail
           if ! make -k O=out -j"$(nproc)" \
@@ -1053,7 +752,6 @@ jobs:
           grep -iE "resukisu.*manual_hook|using manual hook|using a manual|using lsm hooks" /tmp/build.log || true
 
       - name: Compile nm (NoMount userspace CLI, commit sama dgn kernel)
-        if: ${{ inputs.enable_nomount }}
         run: |
           NM_SRC="kernel/NoMount/userspace/src"
           test -d "$NM_SRC" || { echo "ERROR: $NM_SRC tidak ada - step Integrasikan NoMount gagal?"; exit 1; }
@@ -1090,10 +788,6 @@ jobs:
           fi
 
       - name: Rakit paket AnyKernel3 (template asli fjrXTR)
-        env:
-          ENABLE_NOMOUNT: ${{ inputs.enable_nomount }}
-          ENABLE_REKERNEL: ${{ inputs.enable_rekernel }}
-          ENABLE_BBG: ${{ inputs.enable_baseband_guard }}
         run: |
           git clone --depth=1 https://github.com/fjrXTR/AnyKernel3.git AnyKernel3
           rm -rf AnyKernel3/.git
@@ -1103,15 +797,7 @@ jobs:
 
           cp "${{ steps.kimg.outputs.path }}" "AnyKernel3/${{ steps.kimg.outputs.name }}"
 
-          # Nama ZIP mencerminkan kombinasi komponen yang BENAR-BENAR aktif di
-          # build ini (bukan selalu "nomount-rekernel-bbg") - penting untuk
-          # bisection bootloop supaya tidak salah kira sedang menguji
-          # kombinasi yang mana.
-          TAG="ksu-susfs"
-          [ "$ENABLE_NOMOUNT" = "true" ] && TAG="${TAG}-nomount"
-          [ "$ENABLE_REKERNEL" = "true" ] && TAG="${TAG}-rekernel"
-          [ "$ENABLE_BBG" = "true" ] && TAG="${TAG}-bbg"
-          ZIP="rosemary-${TAG}-$(date +%Y%m%d-%H%M%S).zip"
+          ZIP="rosemary-ksu-nomount-rekernel-bbg-$(date +%Y%m%d-%H%M%S).zip"
 
           ( cd AnyKernel3 && zip -r9 "../$ZIP" . -x '.git*' )
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
