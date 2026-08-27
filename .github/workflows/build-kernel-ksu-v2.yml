@@ -223,7 +223,20 @@
 # ============================================================
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      enable_nomount:
+        description: "Sertakan NoMount (matikan untuk uji bisection bootloop)"
+        type: boolean
+        default: true
+      enable_rekernel:
+        description: "Sertakan Re:Kernel (matikan untuk uji bisection bootloop)"
+        type: boolean
+        default: true
+      enable_baseband_guard:
+        description: "Sertakan Baseband-guard (matikan untuk uji bisection bootloop)"
+        type: boolean
+        default: true
   push:
     branches: [ main, master ]
 
@@ -625,6 +638,7 @@ jobs:
           fi
 
       - name: Integrasikan NoMount (setup.sh resmi -s dev)
+        if: ${{ inputs.enable_nomount }}
         working-directory: kernel
         run: |
           # PERBAIKAN 26 Agustus 2026: klaim lama di header file ini ("commit
@@ -753,6 +767,7 @@ jobs:
           echo "NoMount branch dev (via setup.sh resmi): integration OK"
 
       - name: Integrasikan Re:Kernel (Sakion-Team) - notifikasi freeze binder/signal
+        if: ${{ inputs.enable_rekernel }}
         working-directory: kernel
         run: |
           mkdir -p drivers/rekernel
@@ -774,6 +789,7 @@ jobs:
           grep -c 'rekernel_start_server' drivers/android/binder.c drivers/android/binder_alloc.c kernel/signal.c
 
       - name: Integrasikan Baseband-guard (LSM anti-tulis baseband/boot chain)
+        if: ${{ inputs.enable_baseband_guard }}
         working-directory: kernel
         run: |
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
@@ -806,6 +822,10 @@ jobs:
 
       - name: Aktifkan KSU di defconfig
         working-directory: kernel
+        env:
+          ENABLE_NOMOUNT: ${{ inputs.enable_nomount }}
+          ENABLE_REKERNEL: ${{ inputs.enable_rekernel }}
+          ENABLE_BBG: ${{ inputs.enable_baseband_guard }}
         run: |
           DEF=arch/arm64/configs/rosemary_defconfig
           {
@@ -857,11 +877,19 @@ jobs:
             echo "CONFIG_KALLSYMS=y"
             echo "CONFIG_KALLSYMS_ALL=y"
             echo ""
-            echo "CONFIG_NOMOUNT=y"
+            # BISECTION BOOTLOOP (ditambahkan setelah laporan HP tidak sampai
+            # logo MIUI lalu restart): ketiga komponen di bawah SEKARANG
+            # mengikuti input workflow_dispatch (enable_nomount/enable_rekernel/
+            # enable_baseband_guard), bukan selalu dipaksa y. Ini supaya bisa
+            # diuji satu per satu untuk mengisolasi biang kerok bootloop, tanpa
+            # perlu edit file - cukup pilih kombinasi lewat GitHub Actions UI
+            # (tab "Run workflow"). Default semua true (perilaku identik versi
+            # sebelumnya) - matikan salah satu untuk uji bisection.
+            if [ "$ENABLE_NOMOUNT" = "true" ]; then echo "CONFIG_NOMOUNT=y"; else echo "# CONFIG_NOMOUNT is not set (dimatikan untuk bisection)"; fi
             echo ""
-            echo "CONFIG_REKERNEL=y"
+            if [ "$ENABLE_REKERNEL" = "true" ]; then echo "CONFIG_REKERNEL=y"; else echo "# CONFIG_REKERNEL is not set (dimatikan untuk bisection)"; fi
             echo ""
-            echo "CONFIG_BBG=y"
+            if [ "$ENABLE_BBG" = "true" ]; then echo "CONFIG_BBG=y"; else echo "# CONFIG_BBG is not set (dimatikan untuk bisection)"; fi
             echo ""
           } >> "$DEF"
           tail -25 "$DEF"
@@ -872,6 +900,9 @@ jobs:
 
       - name: Compile kernel
         working-directory: kernel
+        env:
+          ENABLE_NOMOUNT: ${{ inputs.enable_nomount }}
+          ENABLE_BBG: ${{ inputs.enable_baseband_guard }}
         run: |
           export PATH="$GITHUB_WORKSPACE/clang-proton/bin:$PATH"
           export ARCH=arm64
@@ -920,14 +951,24 @@ jobs:
           echo ""
           echo "==================== RESOLVED NoMount CONFIG ===================="
           grep -E '^CONFIG_NOMOUNT' out/.config || true
-          grep -q '^CONFIG_NOMOUNT=y$' out/.config || { echo "ERROR: CONFIG_NOMOUNT tidak resolve ke y"; exit 1; }
+          if [ "$ENABLE_NOMOUNT" = "true" ]; then
+            grep -q '^CONFIG_NOMOUNT=y$' out/.config || { echo "ERROR: CONFIG_NOMOUNT tidak resolve ke y padahal enable_nomount=true"; exit 1; }
+          else
+            grep -q '^CONFIG_NOMOUNT=y$' out/.config && { echo "ERROR: CONFIG_NOMOUNT=y aktif padahal enable_nomount=false (bisection tidak valid)"; exit 1; }
+            echo "OK: NoMount sengaja dimatikan untuk bisection"
+          fi
 
           echo ""
           echo "==================== RESOLVED Baseband-guard CONFIG ===================="
           grep -E '^CONFIG_BBG' out/.config || true
-          grep -q '^CONFIG_BBG=y$' out/.config || { echo "ERROR: CONFIG_BBG tidak resolve ke y (cek CONFIG_SECURITY=y - CONFIG_BBG depends on itu)"; exit 1; }
+          if [ "$ENABLE_BBG" = "true" ]; then
+            grep -q '^CONFIG_BBG=y$' out/.config || { echo "ERROR: CONFIG_BBG tidak resolve ke y padahal enable_baseband_guard=true (cek CONFIG_SECURITY=y - CONFIG_BBG depends on itu)"; exit 1; }
+          else
+            grep -q '^CONFIG_BBG=y$' out/.config && { echo "ERROR: CONFIG_BBG=y aktif padahal enable_baseband_guard=false (bisection tidak valid)"; exit 1; }
+            echo "OK: Baseband-guard sengaja dimatikan untuk bisection"
+          fi
 
-          echo "ReSukiSU Manual Hook + auto-hook: CONFIG OK"
+          echo "ReSukiSU SuSFS Inline Hook: CONFIG OK"
 
           set -o pipefail
           if ! make -k O=out -j"$(nproc)" \
@@ -963,6 +1004,7 @@ jobs:
           grep -iE "resukisu.*manual_hook|using manual hook|using a manual|using lsm hooks" /tmp/build.log || true
 
       - name: Compile nm (NoMount userspace CLI, commit sama dgn kernel)
+        if: ${{ inputs.enable_nomount }}
         run: |
           NM_SRC="kernel/NoMount/userspace/src"
           test -d "$NM_SRC" || { echo "ERROR: $NM_SRC tidak ada - step Integrasikan NoMount gagal?"; exit 1; }
@@ -999,6 +1041,10 @@ jobs:
           fi
 
       - name: Rakit paket AnyKernel3 (template asli fjrXTR)
+        env:
+          ENABLE_NOMOUNT: ${{ inputs.enable_nomount }}
+          ENABLE_REKERNEL: ${{ inputs.enable_rekernel }}
+          ENABLE_BBG: ${{ inputs.enable_baseband_guard }}
         run: |
           git clone --depth=1 https://github.com/fjrXTR/AnyKernel3.git AnyKernel3
           rm -rf AnyKernel3/.git
@@ -1008,7 +1054,15 @@ jobs:
 
           cp "${{ steps.kimg.outputs.path }}" "AnyKernel3/${{ steps.kimg.outputs.name }}"
 
-          ZIP="rosemary-ksu-nomount-rekernel-bbg-$(date +%Y%m%d-%H%M%S).zip"
+          # Nama ZIP mencerminkan kombinasi komponen yang BENAR-BENAR aktif di
+          # build ini (bukan selalu "nomount-rekernel-bbg") - penting untuk
+          # bisection bootloop supaya tidak salah kira sedang menguji
+          # kombinasi yang mana.
+          TAG="ksu-susfs"
+          [ "$ENABLE_NOMOUNT" = "true" ] && TAG="${TAG}-nomount"
+          [ "$ENABLE_REKERNEL" = "true" ] && TAG="${TAG}-rekernel"
+          [ "$ENABLE_BBG" = "true" ] && TAG="${TAG}-bbg"
+          ZIP="rosemary-${TAG}-$(date +%Y%m%d-%H%M%S).zip"
 
           ( cd AnyKernel3 && zip -r9 "../$ZIP" . -x '.git*' )
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
