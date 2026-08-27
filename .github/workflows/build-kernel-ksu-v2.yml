@@ -558,7 +558,56 @@ jobs:
             "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/susfs_inline_hook_patches.sh"
           test -s /tmp/susfs_inline_hook_patches.sh || { echo "ERROR: gagal mengunduh susfs_inline_hook_patches.sh"; exit 1; }
 
+          # PERBAIKAN KRITIS (setelah laporan bootloop nyata - HP tidak lewat
+          # splash "redmi" sama sekali): dikonfirmasi ada BUG TERBUKA DI
+          # RESUKISU SENDIRI, dilaporkan sebagai Issue #363 di
+          # github.com/ReSukiSU/ReSukiSU: "stop_input_hook() sleeps in atomic
+          # context with CONFIG_KSU_SUSFS". drivers/input/input.c dipatch
+          # skrip ini untuk memanggil ksu_handle_input_handle_event() dari
+          # DALAM input_handle_event() - fungsi itu berjalan sambil memegang
+          # dev->event_lock (spinlock), yaitu ATOMIC CONTEXT. Kalau kode di
+          # dalam ksu_handle_input_handle_event()/stop_input_hook() milik
+          # ReSukiSU memanggil sesuatu yang bisa "sleep" (mutex, alokasi
+          # memori biasa, dst.), kernel akan panic seketika dengan
+          # "BUG: scheduling while atomic" atau "BUG: sleeping function
+          # called from invalid context". Event input (termasuk tombol power)
+          # terjadi SANGAT dini dan SANGAT sering saat boot - persis
+          # menjelaskan kenapa device gagal boot bahkan sebelum splash
+          # pertama muncul.
+          #
+          # MITIGASI: karena bug ini ada di kode ReSukiSU sendiri (bukan di
+          # patch/skrip JackA1ltman ataupun kernel dlagia), cara paling aman
+          # adalah TIDAK MENANAM hook input sama sekali, sambil tetap
+          # mempertahankan seluruh hook SUSFS lain yang TIDAK bermasalah
+          # (execveat, faccessat, stat, dst.). Skrip ini punya array
+          # `patch_files=(...)` yang menentukan file mana saja yang diproses -
+          # kita hapus "drivers/input/input.c" dari array itu SEBELUM skrip
+          # dijalankan, supaya loop-nya melewati file itu sepenuhnya (file
+          # tetap pristine, tidak disentuh sama sekali). SUDAH DIUJI LANGSUNG:
+          # 11 file lain tetap ter-patch normal, drivers/input/input.c
+          # terkonfirmasi 0 baris tersentuh.
+          #
+          # KONSEKUENSI: fitur "input hook" SUSFS (anti-deteksi lewat pola
+          # ketukan/gerakan) TIDAK aktif di build ini. Ini trade-off yang
+          # jauh lebih baik daripada device tidak bisa boot sama sekali.
+          # Kalau upstream ReSukiSU sudah merilis fix untuk Issue #363,
+          # baris sed di bawah ini bisa dihapus untuk mengaktifkan lagi.
+          sed -i '/^    drivers\/input\/input\.c$/d' /tmp/susfs_inline_hook_patches.sh
+          grep -q 'drivers/input/input.c' <(sed -n '/^patch_files=(/,/^)/p' /tmp/susfs_inline_hook_patches.sh) && {
+            echo "ERROR: drivers/input/input.c masih ada di patch_files - penghapusan gagal, JANGAN lanjut (risiko bootloop)"
+            exit 1
+          }
+          echo "OK: drivers/input/input.c dikeluarkan dari daftar patch (mitigasi ReSukiSU Issue #363)"
+
           bash /tmp/susfs_inline_hook_patches.sh 2>&1 | tee /tmp/susfs_inline_hook.log
+
+          echo ""
+          echo "== Pastikan drivers/input/input.c benar-benar tidak tersentuh =="
+          if grep -q "ksu_handle_input_handle_event\|ksu_is_input_hook_enabled" drivers/input/input.c; then
+            echo "ERROR: drivers/input/input.c ternyata tetap kepatch - mitigasi gagal, JANGAN lanjut build (risiko bootloop Issue #363)"
+            exit 1
+          fi
+          echo "OK: drivers/input/input.c bersih, tidak ada hook input SUSFS"
 
           echo ""
           echo "== Cek kegagalan patch di log (jangan biarkan lolos diam-diam) =="
