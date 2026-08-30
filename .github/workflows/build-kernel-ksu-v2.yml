@@ -930,6 +930,21 @@ jobs:
           done
           echo "Semua CONFIG fatal Droidspaces resolve ke y"
 
+          echo ""
+          echo "==================== RESOLVED CONFIG_ANDROID_PARANOID_NETWORK (investigasi) ===================="
+          # DITAMBAHKAN setelah laporan pengguna: dialog "sistem Android ada
+          # masalah, hubungi produsen" (Verified Boot orange-state warning)
+          # dilaporkan baru muncul SETELAH integrasi Droidspaces. Status
+          # verifiedbootstate=orange SECARA TEKNIS ditentukan bootloader vs
+          # vbmeta (independen dari isi kernel), jadi baris CONFIG di bawah
+          # BUKAN penyebab paling mungkin untuk dialog itu sendiri - TAPI ini
+          # satu-satunya CONFIG_* baru dari Droidspaces yang mengubah
+          # perilaku KEAMANAN Android system-wide (bukan cuma namespace/
+          # cgroup pasif), jadi dicatat resolved value-nya di log build
+          # supaya bisa dikorelasikan/dieliminasi sebagai penyebab tanpa
+          # perlu re-build cuma untuk lihat nilai ini.
+          grep -E '^(CONFIG_ANDROID_PARANOID_NETWORK|# CONFIG_ANDROID_PARANOID_NETWORK)' out/.config || echo "CONFIG_ANDROID_PARANOID_NETWORK: tidak ditemukan di .config sama sekali (kemungkinan Kconfig ini tidak ada di source rosemary-13 - MTK/Xiaomi kadang sudah hapus opsi ini dari Kconfig sendiri)"
+
           echo "ReSukiSU Manual Hook + auto-hook: CONFIG OK"
 
           set -o pipefail
