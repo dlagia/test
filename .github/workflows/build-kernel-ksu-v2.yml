@@ -644,6 +644,132 @@ jobs:
           echo '== cek sisa =='
           echo -n 'no_sanitize( tersisa: '; grep -rl 'no_sanitize(' --include='*.h' --include='*.c' . 2>/dev/null | wc -l
 
+      - name: Integrasikan Droidspaces-OSS (patch source non-GKI)
+        working-directory: kernel
+        run: |
+          # https://github.com/ravindu644/Droidspaces-OSS - container runtime
+          # userspace (binary statis musl, LXC-like). BUKAN driver/hook kernel
+          # seperti NoMount/ReSukiSU/Re:Kernel/Baseband-guard di atas - yang
+          # dibutuhkan cuma: (1) sejumlah CONFIG_* di defconfig (namespace,
+          # cgroup, seccomp, netfilter) - lihat step "Aktifkan KSU di
+          # defconfig" di bawah, tempat semua CONFIG_* Droidspaces digabung
+          # supaya proses defconfig cuma jalan sekali - dan (2) beberapa patch
+          # source KECIL khusus kernel non-GKI (3.18/4.4/4.9/4.14/4.19) dari
+          # Documentation/resources/kernel-patches/non-GKI di repo resminya
+          # (dikonfirmasi via Documentation/Kernel-Configuration.md resmi,
+          # bagian "Configuring Non-GKI Kernels" -> "Step 3: Apply Patches").
+          #
+          # KENAPA CLONE+APPLY LANGSUNG (bukan base64 embed seperti Re:Kernel):
+          # saya tidak berhasil mengambil isi mentah file .patch di folder itu
+          # (GitHub blokir fetch listing folder tree secara langsung ke tool
+          # ini) - jadi supaya TIDAK menebak-nebak isi patch kernel (yang
+          # fatal kalau salah), step ini clone repo resmi FRESH setiap run dan
+          # apply SEMUA .patch yang ADA di folder tsb apa adanya, persis
+          # instruksi resmi (`patch -p1 < file.patch`). Konsekuensinya SAMA
+          # dengan peringatan stabilitas NoMount branch dev: kalau upstream
+          # mengubah isi patch, run berikutnya otomatis pakai versi terbaru -
+          # tidak ada snapshot beku yang bisa diam-diam kadaluarsa, tapi juga
+          # tidak ada jaminan "sudah diuji manusia" seperti komponen lain di
+          # file ini. --dry-run dipakai dulu sebelum apply sungguhan sebagai
+          # pengaman kalau source kernel sudah tidak cocok dengan patch.
+          #
+          # CATATAN KOMPATIBILITAS (dari README resmi): "SuSFS is not
+          # supported... ensure HIDE SUS MOUNTS FOR ALL PROCESSES is disabled"
+          # - build ini SUDAH CONFIG_KSU_SUSFS=n sejak awal (permintaan
+          # eksplisit sebelumnya), jadi tidak ada konflik SUSFS sama sekali.
+          # README resmi juga eksplisit merekomendasikan KernelSU sebagai
+          # metode root ("Since Droidspaces requires a custom kernel anyway,
+          # we recommend adding KernelSU to your kernel") - kernel ini sudah
+          # pakai ReSukiSU (fork KernelSU), jadi kombinasi ini didukung resmi.
+          #
+          # PERINGATAN VFS DEADLOCK (dari dokumentasi resmi, BUKAN diuji
+          # manual di sini): ada bug grab_super() VFS deadlock yang disebut
+          # spesifik terjadi di "kernel 4.14.113" saat container systemd
+          # jalan, diperbaiki lewat toggle "Deadlock Shield" di app/CLI
+          # (--block-nested-namespaces) - TAPI mengaktifkan shield itu
+          # mengorbankan dukungan nested container (Docker-in-Droidspaces).
+          # Kernel workflow ini disamakan versinya ke 4.14.186 (lihat step
+          # "Samakan SUBLEVEL"), BUKAN 4.14.113 - jadi kemungkinan besar tidak
+          # kena bug spesifik ini, tapi ini TIDAK terverifikasi/terdaftar di
+          # dokumentasi resmi mereka (source dlagia/rosemary bukan device yang
+          # ada di "community-supported-devices" mereka). Kalau nanti systemd
+          # di dalam container hang/deadlock, coba aktifkan Deadlock Shield
+          # dari app Droidspaces sebagai langkah pertama debugging.
+          #
+          # WAJIB: seperti NoMount, ini menyentuh area VFS/namespace kernel -
+          # tetap test boot fisik + coba jalankan container sungguhan (bukan
+          # cuma boot normal) sebelum dianggap final.
+
+          rm -rf /tmp/droidspaces-oss
+          git clone --depth=1 https://github.com/ravindu644/Droidspaces-OSS.git /tmp/droidspaces-oss
+
+          PATCH_DIR="/tmp/droidspaces-oss/Documentation/resources/kernel-patches/non-GKI"
+          test -d "$PATCH_DIR" || {
+            echo "ERROR: folder patch non-GKI tidak ditemukan - path mungkin sudah berubah upstream, cek https://github.com/ravindu644/Droidspaces-OSS/tree/main/Documentation/resources/kernel-patches"
+            exit 1
+          }
+
+          shopt -s nullglob
+          PATCHES=("$PATCH_DIR"/*.patch)
+          if [ ${#PATCHES[@]} -eq 0 ]; then
+            echo "ERROR: tidak ada file .patch ditemukan di $PATCH_DIR"
+            exit 1
+          fi
+
+          echo "Ditemukan ${#PATCHES[@]} file patch non-GKI dari upstream Droidspaces-OSS:"
+          printf '  - %s\n' "${PATCHES[@]##*/}"
+          echo ""
+
+          # PERBAIKAN (ditemukan dari kegagalan CI run sungguhan pada patch
+          # 01.fix_kernel_panic_in_xt_qtaguid.patch - "can't find file to
+          # patch"): sebelum dry-run, cek dulu apakah file TARGET patch (baris
+          # "+++ b/...") benar-benar ada di source kernel ini. Kalau file
+          # target TIDAK ADA sama sekali, itu BUKAN error fatal - artinya
+          # subsistem yang mau di-fix (di sini: xt_qtaguid, modul netfilter
+          # legacy Android <9 yang banyak dibuang di fork kernel MIUI 13+
+          # sejak Android resmi deprecate xt_qtaguid demi eBPF traffic
+          # monitoring - dikonfirmasi via dokumentasi resmi source.android.com)
+          # memang tidak dikompilasi/tidak ada di kernel ini sama sekali,
+          # jadi tidak ada yang perlu di-fix - aman di-skip. Fatal HANYA kalau
+          # file-nya ADA tapi isinya sudah tidak cocok dengan hunk patch
+          # (linenya berubah/berbeda dari yang diasumsikan patch) - itu baru
+          # tanda source kernel benar-benar menyimpang dari asumsi patch.
+          for p in "${PATCHES[@]}"; do
+            echo "== Memeriksa target file: $(basename "$p") =="
+            target_files=$(grep -oP '^\+\+\+ [ab]/\K.*' "$p" | grep -v '^/dev/null$' | sort -u)
+            if [ -z "$target_files" ]; then
+              echo "ERROR: tidak bisa mendeteksi file target dari header patch $(basename "$p") - format patch tidak dikenali, cek manual"
+              exit 1
+            fi
+
+            missing=0
+            for tf in $target_files; do
+              if [ ! -f "$tf" ]; then
+                echo "  - $tf : TIDAK ADA di source kernel ini"
+                missing=1
+              else
+                echo "  - $tf : ada"
+              fi
+            done
+
+            if [ "$missing" = "1" ]; then
+              echo "SKIP: $(basename "$p") - file target tidak ada di rosemary-13, kemungkinan subsistem ini memang tidak dikompilasi di kernel ini (aman diabaikan, bukan bug)."
+              echo ""
+              continue
+            fi
+
+            echo "== Cek (--dry-run): $(basename "$p") =="
+            patch -p1 --dry-run < "$p" || {
+              echo "ERROR: dry-run GAGAL untuk $(basename "$p") - file target ADA tapi isinya sudah tidak cocok dengan patch (source kernel menyimpang dari asumsi patch). JANGAN paksa apply - cek manual dulu."
+              exit 1
+            }
+            echo "== Apply: $(basename "$p") =="
+            patch -p1 < "$p"
+            echo ""
+          done
+
+          echo "Droidspaces-OSS non-GKI patches: selesai diproses (${#PATCHES[@]} file - lihat log di atas untuk mana yang di-apply vs di-skip)"
+
       - name: Aktifkan KSU di defconfig
         working-directory: kernel
         run: |
@@ -668,6 +794,80 @@ jobs:
             echo "CONFIG_REKERNEL=y"
             echo ""
             echo "CONFIG_BBG=y"
+            echo ""
+            echo "# Droidspaces-OSS (non-GKI legacy kernel, 3.18/4.4/4.9/4.14/4.19)"
+            echo "# Verbatim dari Documentation/Kernel-Configuration.md resmi repo -"
+            echo "# https://github.com/ravindu644/Droidspaces-OSS - JANGAN tambah/kurangi"
+            echo "# item tanpa cek ulang docs resmi (ada catatan 'DO NOT enable anything"
+            echo "# other than recommended' untuk varian GKI mereka, sebagai kehati-hatian"
+            echo "# yang sama saya terapkan juga di sini untuk non-GKI)."
+            echo "# IPC mechanisms"
+            echo "CONFIG_SYSCTL=y"
+            echo "CONFIG_SYSVIPC=y"
+            echo "CONFIG_POSIX_MQUEUE=y"
+            echo "# Core namespace support"
+            echo "CONFIG_NAMESPACES=y"
+            echo "CONFIG_PID_NS=y"
+            echo "CONFIG_UTS_NS=y"
+            echo "CONFIG_IPC_NS=y"
+            echo "# Seccomp support"
+            echo "CONFIG_SECCOMP=y"
+            echo "CONFIG_SECCOMP_FILTER=y"
+            echo "# Control groups support"
+            echo "CONFIG_CGROUPS=y"
+            echo "CONFIG_CGROUP_DEVICE=y"
+            echo "CONFIG_CGROUP_PIDS=y"
+            echo "CONFIG_MEMCG=y"
+            echo "CONFIG_CGROUP_SCHED=y"
+            echo "CONFIG_FAIR_GROUP_SCHED=y"
+            echo "CONFIG_CGROUP_FREEZER=y"
+            echo "CONFIG_CGROUP_NET_PRIO=y"
+            echo "# Device filesystem support"
+            echo "CONFIG_DEVTMPFS=y"
+            echo "# Overlay filesystem support (mode volatile Droidspaces) -"
+            echo "# terpisah total dari NoMount, tidak saling ganggu (NoMount"
+            echo "# sengaja BUKAN overlay, lihat header file ini)."
+            echo "CONFIG_OVERLAY_FS=y"
+            echo "# xattr/posix acl di tmpfs (utk distro modern semacam NixOS)"
+            echo "CONFIG_TMPFS_POSIX_ACL=y"
+            echo "CONFIG_TMPFS_XATTR=y"
+            echo "# Firmware loading support"
+            echo "CONFIG_FW_LOADER=y"
+            echo "CONFIG_FW_LOADER_USER_HELPER=y"
+            echo "CONFIG_FW_LOADER_COMPRESS=y"
+            echo "# Isolasi jaringan (mode NAT/none)"
+            echo "CONFIG_NET_NS=y"
+            echo "CONFIG_VETH=y"
+            echo "CONFIG_BRIDGE=y"
+            echo "CONFIG_NETFILTER=y"
+            echo "CONFIG_BRIDGE_NETFILTER=y"
+            echo "CONFIG_NETFILTER_ADVANCED=y"
+            echo "CONFIG_NF_CONNTRACK=y"
+            echo "CONFIG_IP_NF_IPTABLES=y"
+            echo "CONFIG_IP_NF_FILTER=y"
+            echo "CONFIG_NF_NAT=y"
+            echo "CONFIG_NF_TABLES=y"
+            echo "CONFIG_IP_NF_TARGET_MASQUERADE=y"
+            echo "CONFIG_NETFILTER_XT_TARGET_MASQUERADE=y"
+            echo "CONFIG_NETFILTER_XT_TARGET_TCPMSS=y"
+            echo "CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y"
+            echo "CONFIG_NF_CONNTRACK_NETLINK=y"
+            echo "CONFIG_NF_NAT_REDIRECT=y"
+            echo "CONFIG_IP_ADVANCED_ROUTER=y"
+            echo "CONFIG_IP_MULTIPLE_TABLES=y"
+            echo "# legacy compat"
+            echo "CONFIG_NF_CONNTRACK_IPV4=y"
+            echo "CONFIG_NF_NAT_IPV4=y"
+            echo "CONFIG_IP_NF_NAT=y"
+            echo "# PENTING (bukan sekadar toggle namespace/cgroup biasa): ini"
+            echo "# mematikan pembatasan GID socket khas Android (Paranoid"
+            echo "# Networking) SECARA GLOBAL di seluruh sistem, bukan cuma di"
+            echo "# dalam container - efeknya menyentuh semua app, bukan hanya"
+            echo "# Droidspaces. Wajib =n di kernel non-GKI lawas menurut docs"
+            echo "# resmi (\"Disable this on older kernels to make internet"
+            echo "# work\"), tapi sadari ini perubahan perilaku jaringan"
+            echo "# system-wide, bukan efek samping yang terisolasi."
+            echo "CONFIG_ANDROID_PARANOID_NETWORK=n"
             echo ""
           } >> "$DEF"
           tail -25 "$DEF"
@@ -715,6 +915,20 @@ jobs:
           echo "==================== RESOLVED Baseband-guard CONFIG ===================="
           grep -E '^CONFIG_BBG' out/.config || true
           grep -q '^CONFIG_BBG=y$' out/.config || { echo "ERROR: CONFIG_BBG tidak resolve ke y (cek CONFIG_SECURITY=y - CONFIG_BBG depends on itu)"; exit 1; }
+
+          echo ""
+          echo "==================== RESOLVED Droidspaces-OSS CONFIG (item Fatal saja) ===================="
+          # Sesuai tabel resmi "What to Do If Something Is Missing" di
+          # Kernel-Configuration.md - hanya cek yang ditandai "Fatal. Containers
+          # cannot start." Item non-fatal (OverlayFS, NET_NS, VETH/BRIDGE,
+          # SECCOMP) sengaja TIDAK di-hard-fail di sini karena cuma menonaktifkan
+          # fitur opsional (volatile mode / NAT mode / shield), bukan bikin
+          # Droidspaces gagal total - biarkan resolve apa adanya, cek manual
+          # lewat 'droidspaces check' di device kalau curiga ada yang hilang.
+          for cfg in CONFIG_PID_NS CONFIG_NAMESPACES CONFIG_UTS_NS CONFIG_IPC_NS CONFIG_CGROUP_DEVICE CONFIG_DEVTMPFS; do
+            grep -q "^${cfg}=y$" out/.config || { echo "ERROR: ${cfg} tidak resolve ke y - FATAL untuk Droidspaces (containers tidak akan bisa start sama sekali)"; exit 1; }
+          done
+          echo "Semua CONFIG fatal Droidspaces resolve ke y"
 
           echo "ReSukiSU Manual Hook + auto-hook: CONFIG OK"
 
