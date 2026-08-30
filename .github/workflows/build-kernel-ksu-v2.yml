@@ -219,6 +219,90 @@ jobs:
           git clone --depth=1 -b rosemary-13 \
             https://github.com/dlagia/android_kernel_xiaomi_rosemary.git kernel
 
+      - name: Simpan stock_defconfig + patch IKCONFIG (fix dialog "device corrupt")
+        working-directory: kernel
+        run: |
+          # SOLUSI RESMI ditemukan dari ravindu644/Android-Kernel-Tutorials
+          # (pembuat Droidspaces-OSS) - README.md bagian "Additional Patches"
+          # -> "Fix: 'There's an internal problem with your device.' issue" -
+          # https://github.com/ravindu644/Android-Kernel-Tutorials/blob/main/patches/011.stock_defconfig.patch
+          #
+          # Ini KONFIRMASI, bukan tebakan lagi: teks Inggris "There's an
+          # internal problem with your device" persis sama dengan dialog
+          # yang dilaporkan pengguna ("sistem Android ada masalah dengan
+          # perangkat...") setelah menambahkan Droidspaces. Penjelasan
+          # resmi dari commit message-nya:
+          #   "Userspace reads /proc/config.gz and spits out an error
+          #    message after boot finishes when it doesn't like the
+          #    kernel's configuration."
+          #
+          # MEKANISME: /proc/config.gz (aktif kalau CONFIG_IKCONFIG_PROC=y)
+          # di-generate dari file kernel/configs.o <- kernel/config_data.gz,
+          # yang NORMALNYA diambil dari $(KCONFIG_CONFIG) (variabel kbuild
+          # standar yang resolve ke .config ASLI hasil compile sungguhan -
+          # termasuk SEMUA CONFIG_* custom kita: KSU, NOMOUNT, REKERNEL, BBG,
+          # dan terutama ~46 baris CONFIG_* Droidspaces yang jauh lebih
+          # signifikan dari komponen lain). Android baca file ini dan
+          # komplain kalau menyimpang cukup jauh dari config yang
+          # "diharapkan" untuk device ini.
+          #
+          # FIX (satu baris di kernel/Makefile): ganti sumber config_data.gz
+          # dari $(KCONFIG_CONFIG) (.config asli/custom) menjadi
+          # arch/arm64/configs/stock_defconfig (salinan defconfig ASLI
+          # sebelum kita modifikasi apa pun) - jadi /proc/config.gz SELALU
+          # menampilkan config bersih/stock, walau kernel yang BENAR-BENAR
+          # jalan tetap pakai .config custom kita sepenuhnya.
+          #
+          # PENTING soal MURNI KOSMETIK: ini TIDAK mengubah fungsi kernel
+          # SEDIKIT PUN. Seluruh `#ifdef CONFIG_X` di source kernel (yang
+          # menentukan driver/fitur apa yang benar-benar dikompilasi) tetap
+          # baca .config ASLI seperti biasa - yang diubah HANYA target file
+          # untuk kernel/config_data.gz, yaitu blob yang di-embed ke kernel
+          # binary semata-mata untuk diagnostik (/proc/config.gz). ReSukiSU,
+          # NoMount, Re:Kernel, Baseband-guard, Droidspaces - SEMUA tetap
+          # aktif dan berfungsi persis sama seperti sebelum patch ini.
+          #
+          # WAJIB DIJALANKAN PALING AWAL: step ini menyalin
+          # rosemary_defconfig SEBELUM step mana pun lain memodifikasinya
+          # (ReSukiSU/NoMount/Re-Kernel/BBG/Droidspaces semua append ke
+          # defconfig yang sama) - kalau step ini dijalankan belakangan,
+          # stock_defconfig yang tersimpan sudah tidak "stock" lagi.
+
+          DEF=arch/arm64/configs/rosemary_defconfig
+          test -f "$DEF" || {
+            echo "ERROR: $DEF tidak ditemukan - path defconfig mungkin beda di device lain"
+            exit 1
+          }
+
+          cp "$DEF" arch/arm64/configs/stock_defconfig
+          echo "OK: arch/arm64/configs/stock_defconfig disimpan (snapshot SEBELUM modifikasi apa pun)"
+          wc -l arch/arm64/configs/stock_defconfig
+
+          python3 - << 'PYEOF'
+          import sys
+
+          path = "kernel/Makefile"
+          old = "$(obj)/config_data.gz: $(KCONFIG_CONFIG) FORCE"
+          new = "$(obj)/config_data.gz: arch/arm64/configs/stock_defconfig FORCE"
+
+          with open(path) as f:
+              s = f.read()
+
+          n = s.count(old)
+          if n != 1:
+              print(f"ERROR: anchor config_data.gz rule ditemukan {n}x di {path} (harus persis 1x) - kernel/Makefile mungkin beda struktur dari yang diasumsikan patch 011.stock_defconfig.patch")
+              sys.exit(1)
+
+          s = s.replace(old, new, 1)
+          with open(path, "w") as f:
+              f.write(s)
+          print(f"{path}: OK - config_data.gz sekarang bersumber dari stock_defconfig, bukan .config asli")
+          PYEOF
+
+          echo ""
+          echo "== Verifikasi kernel/Makefile setelah patch =="
+          grep -n "config_data.gz:" kernel/Makefile
+
       - name: Samakan SUBLEVEL dengan versi stock (4.14.186) - hasil temuan fsck.f2fs
         working-directory: kernel
         run: |
