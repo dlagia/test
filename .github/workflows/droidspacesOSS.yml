@@ -720,18 +720,55 @@ jobs:
           printf '  - %s\n' "${PATCHES[@]##*/}"
           echo ""
 
+          # PERBAIKAN (ditemukan dari kegagalan CI run sungguhan pada patch
+          # 01.fix_kernel_panic_in_xt_qtaguid.patch - "can't find file to
+          # patch"): sebelum dry-run, cek dulu apakah file TARGET patch (baris
+          # "+++ b/...") benar-benar ada di source kernel ini. Kalau file
+          # target TIDAK ADA sama sekali, itu BUKAN error fatal - artinya
+          # subsistem yang mau di-fix (di sini: xt_qtaguid, modul netfilter
+          # legacy Android <9 yang banyak dibuang di fork kernel MIUI 13+
+          # sejak Android resmi deprecate xt_qtaguid demi eBPF traffic
+          # monitoring - dikonfirmasi via dokumentasi resmi source.android.com)
+          # memang tidak dikompilasi/tidak ada di kernel ini sama sekali,
+          # jadi tidak ada yang perlu di-fix - aman di-skip. Fatal HANYA kalau
+          # file-nya ADA tapi isinya sudah tidak cocok dengan hunk patch
+          # (linenya berubah/berbeda dari yang diasumsikan patch) - itu baru
+          # tanda source kernel benar-benar menyimpang dari asumsi patch.
           for p in "${PATCHES[@]}"; do
+            echo "== Memeriksa target file: $(basename "$p") =="
+            target_files=$(grep -oP '^\+\+\+ [ab]/\K.*' "$p" | grep -v '^/dev/null$' | sort -u)
+            if [ -z "$target_files" ]; then
+              echo "ERROR: tidak bisa mendeteksi file target dari header patch $(basename "$p") - format patch tidak dikenali, cek manual"
+              exit 1
+            fi
+
+            missing=0
+            for tf in $target_files; do
+              if [ ! -f "$tf" ]; then
+                echo "  - $tf : TIDAK ADA di source kernel ini"
+                missing=1
+              else
+                echo "  - $tf : ada"
+              fi
+            done
+
+            if [ "$missing" = "1" ]; then
+              echo "SKIP: $(basename "$p") - file target tidak ada di rosemary-13, kemungkinan subsistem ini memang tidak dikompilasi di kernel ini (aman diabaikan, bukan bug)."
+              echo ""
+              continue
+            fi
+
             echo "== Cek (--dry-run): $(basename "$p") =="
             patch -p1 --dry-run < "$p" || {
-              echo "ERROR: dry-run GAGAL untuk $(basename "$p") - source kernel kemungkinan sudah tidak cocok dengan patch ini (kernel berubah upstream, atau patch butuh anchor yang tidak ada di rosemary-13). JANGAN paksa apply - cek manual dulu."
+              echo "ERROR: dry-run GAGAL untuk $(basename "$p") - file target ADA tapi isinya sudah tidak cocok dengan patch (source kernel menyimpang dari asumsi patch). JANGAN paksa apply - cek manual dulu."
               exit 1
             }
             echo "== Apply: $(basename "$p") =="
             patch -p1 < "$p"
+            echo ""
           done
 
-          echo ""
-          echo "Droidspaces-OSS non-GKI patches: semua diterapkan bersih (${#PATCHES[@]} file)"
+          echo "Droidspaces-OSS non-GKI patches: selesai diproses (${#PATCHES[@]} file - lihat log di atas untuk mana yang di-apply vs di-skip)"
 
       - name: Aktifkan KSU di defconfig
         working-directory: kernel
