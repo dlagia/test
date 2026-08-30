@@ -1060,6 +1060,20 @@ jobs:
             exit 1
           fi
           ls -la out/arch/arm64/boot/
+
+          # PERBAIKAN (ditemukan dari laporan pengguna sungguhan - artifact
+          # zip tidak berisi file .config sama sekali walau sudah
+          # dikonfirmasi ADA saat compile via grep di step ini): akar
+          # masalahnya adalah `actions/upload-artifact` (via @actions/glob
+          # di baliknya) SECARA DEFAULT tidak menyertakan file yang namanya
+          # diawali titik ("dotfile"/hidden file di konvensi Unix) - bukan
+          # bug workflow kita di sisi compile, tapi keterbatasan tool
+          # upload GitHub sendiri. Solusinya: copy .config ke nama file
+          # TANPA titik di depan supaya pasti ikut ter-upload, lalu
+          # referensikan nama BARU itu di step "Upload paket" di bawah
+          # (bukan lagi kernel/out/.config langsung).
+          cp out/.config out/resolved-config.txt
+          echo "OK: out/.config disalin ke out/resolved-config.txt (nama tanpa titik-di-depan) supaya lolos filter hidden-file upload-artifact"
           echo ""
           echo "==================== VERIFIKASI MANUAL HOOK (resmi) ===================="
           grep -iE "resukisu.*manual_hook|using manual hook|using a manual|using lsm hooks" /tmp/build.log || true
@@ -1125,4 +1139,4 @@ jobs:
             ${{ steps.kimg.outputs.path }}
             ${{ steps.kimg.outputs.dtbo }}
             nm-src/nm
-            kernel/out/.config
+            kernel/out/resolved-config.txt
