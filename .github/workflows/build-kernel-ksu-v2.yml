@@ -181,10 +181,20 @@ jobs:
             libelf-dev libssl-dev zip zlib1g-dev xxd \
             libtinfo5 libncurses5 gcc-aarch64-linux-gnu
 
-      - name: Clone source kernel (dlagia/android_kernel_xiaomi_rosemary @ rosemary-13)
+      - name: Clone source kernel (dlagia/android_kernel_xiaomi_rosemary @ rosemary-13 PINNED)
         run: |
-          git clone --depth=1 -b rosemary-13 \
+          git clone --depth=1 \
             https://github.com/dlagia/android_kernel_xiaomi_rosemary.git kernel
+          cd kernel
+          git checkout --detach 602782dabb7a9b5925400f64ec00db7c632098a6
+          echo "==================== KERNEL SOURCE ===================="
+          echo "Kernel commit yang digunakan:"
+          git rev-parse HEAD
+          test "$(git rev-parse HEAD)" = "602782dabb7a9b5925400f64ec00db7c632098a6" || {
+            echo "ERROR: commit kernel tidak sesuai!"
+            exit 1
+          }
+          echo "KERNEL SOURCE COMMIT: OK"
 
       - name: Integrasikan ReSukiSU (setup.sh resmi, branch main)
         working-directory: kernel
@@ -401,6 +411,15 @@ jobs:
             echo "folder resmi JackA1ltman/NonGKI_Kernel_Build_2nd."
             exit 1
           }
+
+          echo "==================== VERIFY KERNEL COMMIT ===================="
+          echo "Kernel commit sebelum apply SUSFS:"
+          git rev-parse HEAD
+          test "$(git rev-parse HEAD)" = "602782dabb7a9b5925400f64ec00db7c632098a6" || {
+            echo "ERROR: source kernel bukan commit yang dipin!"
+            exit 1
+          }
+          git status --short
 
           echo "== Dry-run (git apply --check) =="
           if ! git apply --check --whitespace=nowarn "$PATCH" 2>/tmp/susfs-core-check.log; then
