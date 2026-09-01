@@ -547,35 +547,50 @@ jobs:
                   raise SystemExit('ERROR: task_mmu show_smap anchor tidak unik')
               s = s.replace(anchor, add, 1)
 
-          # pagemap local vma declaration + bypass
-          anchor = '\t\tint len;\n\t\tunsigned long end;\n\t\tpm.pos = 0;\n'
-          add = ('\t\tint len;\n'
-                 '\t\tunsigned long end;\n'
-                 '#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
-                 '\t\tstruct vm_area_struct *vma;\n'
-                 '#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
-                 '\t\tpm.pos = 0;\n')
-          if 'struct vm_area_struct *vma;' not in s[s.find('static ssize_t pagemap_read'):s.find('static int pagemap_open')]:
-              if s.count(anchor) != 1:
-                  raise SystemExit('ERROR: task_mmu pagemap declaration anchor tidak unik')
-              s = s.replace(anchor, add, 1)
+          # pagemap: lakukan modifikasi HANYA di dalam fungsi pagemap_read()
+          # supaya anchor tidak bentrok dengan blok serupa di file lain.
+          fn_start = s.find('static ssize_t pagemap_read(')
+          fn_end = s.find('static int pagemap_open', fn_start)
+          if fn_start < 0 or fn_end < 0:
+              raise SystemExit('ERROR: fungsi pagemap_read tidak ditemukan')
+          pagemap = s[fn_start:fn_end]
 
-          anchor = ('\t\tdown_read(&mm->mmap_sem);\n'
-                    '\t\tret = walk_page_range(start_vaddr, end, &pagemap_walk);\n')
-          add = ('\t\tdown_read(&mm->mmap_sem);\n'
-                 '#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
-                 '\t\tvma = find_vma(mm, start_vaddr);\n'
-                 '\t\tif (vma && vma->vm_file && SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file)))\n'
-                 '\t\t\tgoto bypass_orig_flow;\n'
-                 '#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
-                 '\t\tret = walk_page_range(start_vaddr, end, &pagemap_walk);\n'
-                 '#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
-                 'bypass_orig_flow:\n'
-                 '#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP\n')
-          if 'bypass_orig_flow:' not in s:
-              if s.count(anchor) != 1:
-                  raise SystemExit('ERROR: task_mmu pagemap flow anchor tidak unik')
-              s = s.replace(anchor, add, 1)
+          # Deklarasi vma tepat di blok while pagemap.
+          if 'struct vm_area_struct *vma;' not in pagemap:
+              while_anchor = ('\twhile (count && (start_vaddr < end_vaddr)) {\n'
+                              '\t\tint len;\n'
+                              '\t\tunsigned long end;\n'
+                              '\t\tpm.pos = 0;\n')
+              while_add = ('\twhile (count && (start_vaddr < end_vaddr)) {\n'
+                           '\t\tint len;\n'
+                           '\t\tunsigned long end;\n'
+                           '#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
+                           '\t\tstruct vm_area_struct *vma;\n'
+                           '#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
+                           '\t\tpm.pos = 0;\n')
+              if pagemap.count(while_anchor) != 1:
+                  raise SystemExit('ERROR: task_mmu pagemap while anchor tidak unik di pagemap_read()')
+              pagemap = pagemap.replace(while_anchor, while_add, 1)
+
+          # Bypass SUS_MAP juga hanya dicari di pagemap_read().
+          flow_anchor = ('\t\tdown_read(&mm->mmap_sem);\n'
+                         '\t\tret = walk_page_range(start_vaddr, end, &pagemap_walk);\n')
+          flow_add = ('\t\tdown_read(&mm->mmap_sem);\n'
+                      '#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
+                      '\t\tvma = find_vma(mm, start_vaddr);\n'
+                      '\t\tif (vma && vma->vm_file && SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file)))\n'
+                      '\t\t\tgoto bypass_orig_flow;\n'
+                      '#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
+                      '\t\tret = walk_page_range(start_vaddr, end, &pagemap_walk);\n'
+                      '#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
+                      'bypass_orig_flow:\n'
+                      '#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP\n')
+          if 'bypass_orig_flow:' not in pagemap:
+              if pagemap.count(flow_anchor) != 1:
+                  raise SystemExit('ERROR: task_mmu pagemap flow anchor tidak unik di pagemap_read()')
+              pagemap = pagemap.replace(flow_anchor, flow_add, 1)
+
+          s = s[:fn_start] + pagemap + s[fn_end:]
 
           p.write_text(s)
           print('OK: fs/proc/task_mmu.c targeted SUSFS changes applied')
