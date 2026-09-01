@@ -1,171 +1,86 @@
-name: Test SUSFS 4.14 compatibility - Rosemary
+name: Test SUSFS 4.14 - Rosemary
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+  push:
+    branches:
+      - rosemary-13
 
 jobs:
-  test-susfs:
-    name: Test SUSFS patch against rosemary-13
+  test:
     runs-on: ubuntu-22.04
     timeout-minutes: 20
 
     steps:
-      - name: Install dependencies
+      - name: Install tools
         run: |
           set -eux
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            ca-certificates curl git
+          sudo apt-get install -y --no-install-recommends git curl ca-certificates
 
-      - name: Clone kernel source rosemary-13
+      - name: Clone kernel rosemary-13
         run: |
           set -eux
-          git clone --depth=1 -b rosemary-13 \
+          git clone --depth=1 --single-branch -b rosemary-13 \
             https://github.com/dlagia/android_kernel_xiaomi_rosemary.git kernel
 
-      - name: Show kernel revision
+      - name: Show exact kernel commit
         working-directory: kernel
         run: |
-          set -eu
-          echo "================ KERNEL REVISION ================"
+          set -eux
+          echo "KERNEL HEAD:"
           git rev-parse HEAD
           git log -1 --oneline --decorate
           echo
-          echo "================ KERNEL VERSION ================"
-          grep -E '^(VERSION|PATCHLEVEL|SUBLEVEL|EXTRAVERSION) =' Makefile
-          echo
-          echo "================ STATUS ================"
-          git status --short
+          echo "KERNEL VERSION:"
+          grep -E '^(VERSION|PATCHLEVEL|SUBLEVEL|EXTRAVERSION) =' Makefile || true
 
-      - name: Download SUSFS patch and inline hook script
+      - name: Download SUSFS patch
         run: |
           set -eux
-          mkdir -p susfs-test
+          mkdir -p test-output
+          curl -fL --retry 3 --retry-all-errors \
+            'https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/Patch/susfs_patch_to_4.14.patch' \
+            -o test-output/susfs_patch_to_4.14.patch
+          sha256sum test-output/susfs_patch_to_4.14.patch
 
-          curl -fL --retry 3 \
-            https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/Patch/susfs_patch_to_4.14.patch \
-            -o susfs-test/susfs_patch_to_4.14.patch
-
-          curl -fL --retry 3 \
-            https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/susfs_inline_hook_patches.sh \
-            -o susfs-test/susfs_inline_hook_patches.sh
-
-          chmod +x susfs-test/susfs_inline_hook_patches.sh
-
-          echo "================ PATCH ================"
-          ls -lh susfs-test/susfs_patch_to_4.14.patch
-          echo "SHA256:"
-          sha256sum susfs-test/susfs_patch_to_4.14.patch
-
-          echo
-          echo "================ INLINE SCRIPT ================"
-          ls -lh susfs-test/susfs_inline_hook_patches.sh
-          echo "SHA256:"
-          sha256sum susfs-test/susfs_inline_hook_patches.sh
-
-      - name: TEST 1 - git apply --check
+      - name: SUSFS TEST - git apply check
         working-directory: kernel
         run: |
           set -o pipefail
-          echo "======================================================"
-          echo "TEST 1: SUSFS patch compatibility"
-          echo "======================================================"
-          git apply --check --verbose ../susfs-test/susfs_patch_to_4.14.patch 2>&1 | tee ../susfs-test/git-apply-check.log
+          echo '=================================================='
+          echo 'TEST: git apply --check'
+          echo '=================================================='
+          git apply --check --verbose ../test-output/susfs_patch_to_4.14.patch 2>&1 | \
+            tee ../test-output/git-apply-check.log
 
-          echo
-          echo "======================================================"
-          echo "RESULT: git apply --check = PASS"
-          echo "======================================================"
-
-      - name: TEST 2 - apply patch and verify whitespace
+      - name: SUSFS TEST - apply patch in disposable runner
         working-directory: kernel
         run: |
           set -eux
-          echo "======================================================"
-          echo "TEST 2: Actual patch application"
-          echo "======================================================"
-
-          git apply --verbose ../susfs-test/susfs_patch_to_4.14.patch
+          git apply --verbose ../test-output/susfs_patch_to_4.14.patch
           git diff --check
-
           echo
-          echo "================ MODIFIED FILES ================"
+          echo 'PATCH APPLIED OK'
+          echo 'Files changed:'
           git status --short
-
           echo
-          echo "================ DIFF STAT ================"
+          echo 'Diffstat:'
           git diff --stat
 
-          echo
-          echo "======================================================"
-          echo "RESULT: SUSFS patch applied successfully"
-          echo "======================================================"
-
-      - name: TEST 3 - inspect inline hook script
-        working-directory: kernel
+      - name: SUSFS TEST - script syntax
         run: |
-          set -eu
-          echo "======================================================"
-          echo "TEST 3: Inline hook script inspection"
-          echo "======================================================"
+          set -eux
+          curl -fL --retry 3 --retry-all-errors \
+            'https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/susfs_inline_hook_patches.sh' \
+            -o test-output/susfs_inline_hook_patches.sh
+          bash -n test-output/susfs_inline_hook_patches.sh
+          echo 'INLINE SCRIPT: bash -n PASS'
 
-          SCRIPT="../susfs-test/susfs_inline_hook_patches.sh"
-
-          echo "Shell syntax check..."
-          bash -n "$SCRIPT"
-          echo "OK: bash -n"
-
-          echo
-          echo "Script header:"
-          sed -n '1,80p' "$SCRIPT"
-
-          echo
-          echo "======================================================"
-          echo "IMPORTANT: TEST 3 only checks shell syntax."
-          echo "The script is NOT executed automatically here because"
-          echo "it may perform additional source modifications beyond"
-          echo "the .patch file and should be tested separately."
-          echo "======================================================"
-
-      - name: Save test report
-        if: always()
-        run: |
-          set +e
-          {
-            echo "SUSFS 4.14 compatibility test"
-            echo "Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-            echo
-            echo "Kernel repository: https://github.com/dlagia/android_kernel_xiaomi_rosemary"
-            echo "Kernel branch: rosemary-13"
-            echo "SUSFS repository: https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd"
-            echo
-            echo "Kernel HEAD:"
-            git -C kernel rev-parse HEAD
-            echo
-            echo "Kernel commit:"
-            git -C kernel log -1 --oneline --decorate
-            echo
-            echo "Kernel version:"
-            grep -E '^(VERSION|PATCHLEVEL|SUBLEVEL|EXTRAVERSION) =' kernel/Makefile
-            echo
-            echo "Patch SHA256:"
-            sha256sum susfs-test/susfs_patch_to_4.14.patch
-            echo
-            echo "Inline script SHA256:"
-            sha256sum susfs-test/susfs_inline_hook_patches.sh
-            echo
-            echo "Final kernel status after patch test:"
-            git -C kernel status --short
-          } | tee susfs-test/report.txt
-
-      - name: Upload test report
+      - name: Upload test log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: susfs-4.14-test-report
+          name: susfs-4.14-test
+          path: test-output/
           if-no-files-found: warn
-          path: |
-            susfs-test/report.txt
-            susfs-test/git-apply-check.log
-            susfs-test/susfs_patch_to_4.14.patch
-            susfs-test/susfs_inline_hook_patches.sh
