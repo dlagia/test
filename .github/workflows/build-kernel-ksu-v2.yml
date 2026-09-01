@@ -396,7 +396,7 @@ jobs:
             echo "OK: $sym -> $f"
           done
 
-      - name: Terapkan SUSFS - patch inti kernel (susfs_patch_to_4_14.patch)
+      - name: Terapkan SUSFS - patch inti kernel (clean + targeted 4.14 fixes)
         working-directory: kernel
         run: |
           PATCH="$GITHUB_WORKSPACE/Patches/susfs_patch_to_4_14.patch"
@@ -407,155 +407,242 @@ jobs:
 
           echo "==================== VERIFY KERNEL COMMIT ===================="
           git rev-parse HEAD
-          echo ""
-
-          # Patch SUSFS pengguna masih memiliki dua hunk yang konteksnya tidak
-          # identik dengan source rosemary-13 @ 602782d. Terapkan seluruh hunk
-          # lain secara normal; hunk yang ditolak akan diperbaiki dengan anchor
-          # source yang tepat di bawah ini.
-          echo "== Apply patch SUSFS dengan reject terkontrol =="
-          set +e
-          git apply --reject --whitespace=nowarn "$PATCH" 2>&1 | tee /tmp/susfs-apply.log
-          APPLY_RC=${PIPESTATUS[0]}
-          set -e
-
-          echo "== Hasil reject =="
-          REJECTS="$(find . -type f -name '*.rej' -print)"
-          if [ -n "$REJECTS" ]; then
-            echo "$REJECTS"
-          fi
-
-          # Hanya dua file berikut yang diketahui mempunyai hunk mismatch.
-          BAD_REJECTS="$(printf '%s\n' "$REJECTS" | sed '/^$/d' | grep -vE '^\./fs/proc/task_mmu\.c\.rej$|^\./mm/memory\.c\.rej$' || true)"
-          if [ -n "$BAD_REJECTS" ]; then
-            echo "ERROR: ada reject tak terduga:"
-            echo "$BAD_REJECTS"
+          test "$(git rev-parse HEAD)" = "602782dabb7a9b5925400f64ec00db7c632098a6" || {
+            echo "ERROR: commit kernel bukan 602782dabb7a9b5925400f64ec00db7c632098a6"
             exit 1
-          fi
+          }
 
-          echo "== Perbaikan hunk fs/proc/task_mmu.c =="
-          python3 - <<'PYEOF'
+          # Hapus .rej lama supaya tidak salah dibaca sebagai reject dari patch ini.
+          find . -type f -name '*.rej' -delete
+          rm -f /tmp/susfs-core.patch
+
+          # Patch pengguna sudah benar untuk seluruh file lain.
+          # Dua file di bawah dipasang secara deterministik dengan anchor source
+          # rosemary-13 @ 602782d karena konteks hunk upstream tidak stabil.
+          python3 - "$PATCH" /tmp/susfs-core.patch <<'PYEOF'
           import sys
+          from pathlib import Path
 
-          path = "fs/proc/task_mmu.c"
-          with open(path, "r") as f:
-              s = f.read()
-
-          old = "#include <linux/mm_inline.h>\n"
-          new = (
-              "#include <linux/mm_inline.h>\n"
-              "#include <linux/ctype.h>\n"
-              "#if defined(CONFIG_KSU_SUSFS_SUS_KSTAT) || defined(CONFIG_KSU_SUSFS_SUS_MAP) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)\n"
-              "#include <linux/susfs_def.h>\n"
-              "#endif // #if defined(CONFIG_KSU_SUSFS_SUS_KSTAT) || defined(CONFIG_KSU_SUSFS_SUS_MAP) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)\n"
-          )
-
-          if "#include <linux/susfs_def.h>" not in s:
-              if s.count(old) != 1:
-                  print("ERROR: anchor SUSFS include di fs/proc/task_mmu.c tidak unik")
-                  sys.exit(1)
-              s = s.replace(old, new, 1)
-              with open(path, "w") as f:
-                  f.write(s)
-              print("OK: task_mmu.c SUSFS include ditambahkan")
-          else:
-              print("OK: task_mmu.c SUSFS include sudah ada")
+          src = Path(sys.argv[1]).read_text()
+          out = []
+          lines = src.splitlines(True)
+          i = 0
+          skip_files = {"fs/proc/task_mmu.c", "mm/memory.c"}
+          while i < len(lines):
+              if lines[i].startswith("diff --git "):
+                  block_start = i
+                  j = i + 1
+                  while j < len(lines) and not lines[j].startswith("diff --git "):
+                      j += 1
+                  header = lines[block_start]
+                  path = header.split(" b/", 1)[1].strip() if " b/" in header else ""
+                  if path in skip_files:
+                      i = j
+                      continue
+                  out.extend(lines[block_start:j])
+                  i = j
+              else:
+                  i += 1
+          Path(sys.argv[2]).write_text("".join(out))
+          print("Filtered SUSFS patch: excluded fs/proc/task_mmu.c and mm/memory.c")
           PYEOF
 
-          echo "== Perbaikan hunk mm/memory.c =="
+          echo "== Dry-run clean SUSFS patch (semua file kecuali 2 file targeted) =="
+          git apply --check --whitespace=nowarn /tmp/susfs-core.patch
+          git apply --whitespace=nowarn /tmp/susfs-core.patch
+          echo "SUSFS patch utama: APPLIED OK"
+
+          echo "== Terapkan SUSFS fs/proc/task_mmu.c =="
           python3 - <<'PYEOF'
-          import sys
+          from pathlib import Path
+          p = Path('fs/proc/task_mmu.c')
+          s = p.read_text()
 
-          path = "mm/memory.c"
-          with open(path, "r") as f:
-              s = f.read()
-
-          # Include SUSFS (patch ini biasanya sudah berhasil diterapkan; jangan duplikasi).
-          include_anchor = '#include <asm/pgtable.h>\n\n#include "internal.h"'
-          include_new = (
-              '#include <asm/pgtable.h>\n\n'
-              '#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
-              '#include <linux/susfs_def.h>\n'
-              '#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP\n\n'
-              '#include "internal.h"'
-          )
+          # Includes
+          anchor = '#include <linux/mm_inline.h>\n'
+          add = ('#include <linux/mm_inline.h>\n'
+                 '#include <linux/ctype.h>\n'
+                 '#if defined(CONFIG_KSU_SUSFS_SUS_KSTAT) || defined(CONFIG_KSU_SUSFS_SUS_MAP) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)\n'
+                 '#include <linux/susfs_def.h>\n'
+                 '#endif // #if defined(CONFIG_KSU_SUSFS_SUS_KSTAT) || defined(CONFIG_KSU_SUSFS_SUS_MAP) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)\n')
           if '#include <linux/susfs_def.h>' not in s:
-              if s.count(include_anchor) != 1:
-                  print("ERROR: anchor include mm/memory.c tidak ditemukan/unik")
-                  sys.exit(1)
-              s = s.replace(include_anchor, include_new, 1)
+              if s.count(anchor) != 1:
+                  raise SystemExit('ERROR: task_mmu include anchor tidak unik')
+              s = s.replace(anchor, add, 1)
 
-          # Add SUSFS map guard in __access_remote_vm().
-          find_anchor = '\tint write = gup_flags & FOLL_WRITE;\n\tdown_read(&mm->mmap_sem);\n'
-          find_new = (
-              '\tint write = gup_flags & FOLL_WRITE;\n'
-              '\tdown_read(&mm->mmap_sem);\n'
-              '#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
-              '\tvma = find_vma(mm, addr);\n'
-              '#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
-          )
-          if 'vma = find_vma(mm, addr);' not in s:
-              if s.count(find_anchor) != 1:
-                  print("ERROR: anchor __access_remote_vm mm/memory.c tidak ditemukan/unik")
-                  sys.exit(1)
-              s = s.replace(find_anchor, find_new, 1)
+          # Externs after show_vma_header_prefix
+          anchor = ('\tseq_printf(m, "%08lx-%08lx %c%c%c%c %08llx %02x:%02x %lu ",\n'
+                    '\t\t   start,\n\t\t   end,\n\t\t   flags & VM_READ ? \'r\' : \'-\',\n'
+                    '\t\t   flags & VM_WRITE ? \'w\' : \'-\',\n'
+                    '\t\t   flags & VM_EXEC ? \'x\' : \'-\',\n'
+                    '\t\t   flags & VM_MAYSHARE ? \'s\' : \'p\',\n'
+                    '\t\t   pgoff,\n\t\t   MAJOR(dev), MINOR(dev), ino);\n}\n')
+          add = anchor + ('#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT\n'
+                          'extern void susfs_sus_kstat_spoof_show_map_vma(struct inode *inode, dev_t *out_dev, unsigned long *out_ino);\n'
+                          '#endif // #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT\n'
+                          '#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\n'
+                          'extern struct srcu_struct susfs_srcu_open_redirect;\n'
+                          'extern int susfs_open_redirect_spoof_show_map_vma_srcu(struct inode *inode, unsigned long *out_ino, dev_t *out_dev, char **out_spoofed_name);\n'
+                          '#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\n')
+          if 'susfs_sus_kstat_spoof_show_map_vma' not in s:
+              if s.count(anchor) != 1:
+                  raise SystemExit('ERROR: task_mmu show_vma_header_prefix anchor tidak unik')
+              s = s.replace(anchor, add, 1)
 
-          page_anchor = '\t\tstruct page *page = NULL;\n\t\tret = get_user_pages_remote(tsk, mm, addr, 1,\n'
-          page_new = (
-              '\t\tstruct page *page = NULL;\n'
-              '#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
-              '\t\tif (vma && vma->vm_file && SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file)))\n'
-              '\t\t\tbreak;\n'
-              '#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
-              '\t\tret = get_user_pages_remote(tsk, mm, addr, 1,\n'
-          )
+          # show_map_vma body
+          anchor = '\tif (file) {\n\t\tstruct inode *inode = file_inode(vma->vm_file);\n\t\tdev = inode->i_sb->s_dev;\n'
+          add = ('\tif (file) {\n\t\tstruct inode *inode = file_inode(vma->vm_file);\n'
+                 '#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\n'
+                 '\t\tif (SUSFS_IS_INODE_OPEN_REDIRECT(inode)) {\n'
+                 '\t\t\tchar *spoofed_redirected_name = NULL;\n'
+                 '\t\t\tint srcu_idx = srcu_read_lock(&susfs_srcu_open_redirect);\n'
+                 '\t\t\tint ret = susfs_open_redirect_spoof_show_map_vma_srcu(inode, &ino, &dev, &spoofed_redirected_name);\n'
+                 '\t\t\tif (!ret) {\n'
+                 '\t\t\t\tpgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;\n'
+                 '\t\t\t\tstart = vma->vm_start;\n'
+                 '\t\t\t\tend = vma->vm_end;\n'
+                 '\t\t\t\tshow_vma_header_prefix(m, start, end, flags, pgoff, dev, ino);\n'
+                 '\t\t\t\tseq_pad(m, \' \');\n'
+                 '\t\t\t\tif (spoofed_redirected_name)\n'
+                 '\t\t\t\t\tseq_puts(m, spoofed_redirected_name);\n'
+                 '\t\t\t\tseq_putc(m, \'\\n\');\n'
+                 '\t\t\t\tsrcu_read_unlock(&susfs_srcu_open_redirect, srcu_idx);\n'
+                 '\t\t\t\treturn;\n'
+                 '\t\t\t}\n'
+                 '\t\t\tsrcu_read_unlock(&susfs_srcu_open_redirect, srcu_idx);\n'
+                 '\t\t}\n'
+                 '#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\n'
+                 '#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
+                 '\t\tif (SUSFS_IS_INODE_SUS_MAP(inode))\n'
+                 '\t\t\treturn;\n'
+                 '#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
+                 '\t\tdev = inode->i_sb->s_dev;\n')
+          if 'SUSFS_IS_INODE_OPEN_REDIRECT(inode)' not in s:
+              if s.count(anchor) != 1:
+                  raise SystemExit('ERROR: task_mmu show_map_vma anchor tidak unik')
+              s = s.replace(anchor, add, 1)
+
+          # kstat spoof after pgoff
+          anchor = '\t\tpgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;\n\t}\n'
+          add = ('\t\tpgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;\n'
+                 '#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT\n'
+                 '\t\tsusfs_sus_kstat_spoof_show_map_vma(inode, &dev, &ino);\n'
+                 '#endif // #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT\n'
+                 '\t}\n')
+          if 'susfs_sus_kstat_spoof_show_map_vma(inode, &dev, &ino);' not in s:
+              if s.count(anchor) != 1:
+                  raise SystemExit('ERROR: task_mmu kstat anchor tidak unik')
+              s = s.replace(anchor, add, 1)
+
+          # show_smap guard
+          anchor = '\tsmap_gather_stats(vma, &mss);\n\n\tshow_map_vma(m, vma);\n'
+          add = ('\tsmap_gather_stats(vma, &mss);\n\n'
+                 '#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
+                 '\tif (vma->vm_file && SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file)))\n'
+                 '\t\treturn 0;\n'
+                 '#endif\n\n'
+                 '\tshow_map_vma(m, vma);\n')
           if 'SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file))' not in s:
-              if s.count(page_anchor) != 1:
-                  print("ERROR: anchor page guard mm/memory.c tidak ditemukan/unik")
-                  sys.exit(1)
-              s = s.replace(page_anchor, page_new, 1)
+              if s.count(anchor) != 1:
+                  raise SystemExit('ERROR: task_mmu show_smap anchor tidak unik')
+              s = s.replace(anchor, add, 1)
 
-          with open(path, "w") as f:
-              f.write(s)
-          print("OK: mm/memory.c SUSFS map guard terpasang")
+          # pagemap local vma declaration + bypass
+          anchor = '\t\tint len;\n\t\tunsigned long end;\n\t\tpm.pos = 0;\n'
+          add = ('\t\tint len;\n'
+                 '\t\tunsigned long end;\n'
+                 '#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
+                 '\t\tstruct vm_area_struct *vma;\n'
+                 '#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
+                 '\t\tpm.pos = 0;\n')
+          if 'struct vm_area_struct *vma;' not in s[s.find('static ssize_t pagemap_read'):s.find('static int pagemap_open')]:
+              if s.count(anchor) != 1:
+                  raise SystemExit('ERROR: task_mmu pagemap declaration anchor tidak unik')
+              s = s.replace(anchor, add, 1)
+
+          anchor = ('\t\tdown_read(&mm->mmap_sem);\n'
+                    '\t\tret = walk_page_range(start_vaddr, end, &pagemap_walk);\n')
+          add = ('\t\tdown_read(&mm->mmap_sem);\n'
+                 '#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
+                 '\t\tvma = find_vma(mm, start_vaddr);\n'
+                 '\t\tif (vma && vma->vm_file && SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file)))\n'
+                 '\t\t\tgoto bypass_orig_flow;\n'
+                 '#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
+                 '\t\tret = walk_page_range(start_vaddr, end, &pagemap_walk);\n'
+                 '#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
+                 'bypass_orig_flow:\n'
+                 '#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP\n')
+          if 'bypass_orig_flow:' not in s:
+              if s.count(anchor) != 1:
+                  raise SystemExit('ERROR: task_mmu pagemap flow anchor tidak unik')
+              s = s.replace(anchor, add, 1)
+
+          p.write_text(s)
+          print('OK: fs/proc/task_mmu.c targeted SUSFS changes applied')
           PYEOF
 
-          # Reject files hanya diharapkan dari dua hunk di atas.
-          rm -f ./fs/proc/task_mmu.c.rej ./mm/memory.c.rej
-          if [ -n "$REJECTS" ]; then
-            # Setelah perbaikan, tidak boleh ada .rej tersisa di tree.
-            LEFT="$(find . -type f -name '*.rej' -print)"
-            if [ -n "$LEFT" ]; then
-              echo "ERROR: reject file masih tersisa:"
-              echo "$LEFT"
-              exit 1
-            fi
-          fi
+          echo "== Terapkan SUSFS mm/memory.c =="
+          python3 - <<'PYEOF'
+          from pathlib import Path
+          p = Path('mm/memory.c')
+          s = p.read_text()
 
-          # APPLY_RC boleh non-zero hanya karena dua hunk yang diperbaiki manual.
-          if [ "$APPLY_RC" -ne 0 ] && [ -z "$REJECTS" ]; then
-            echo "ERROR: git apply gagal tanpa .rej; cek /tmp/susfs-apply.log"
+          # Include
+          anchor = '#include <asm/pgtable.h>\n\n#include "internal.h"'
+          add = ('#include <asm/pgtable.h>\n\n'
+                 '#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
+                 '#include <linux/susfs_def.h>\n'
+                 '#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP\n\n'
+                 '#include "internal.h"')
+          if '#include <linux/susfs_def.h>' not in s:
+              if s.count(anchor) != 1:
+                  raise SystemExit('ERROR: memory.c include anchor tidak unik')
+              s = s.replace(anchor, add, 1)
+
+          anchor = '\tint write = gup_flags & FOLL_WRITE;\n\tdown_read(&mm->mmap_sem);\n'
+          add = ('\tint write = gup_flags & FOLL_WRITE;\n'
+                 '\tdown_read(&mm->mmap_sem);\n'
+                 '#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
+                 '\tvma = find_vma(mm, addr);\n'
+                 '#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP\n')
+          if 'vma = find_vma(mm, addr);' not in s:
+              if s.count(anchor) != 1:
+                  raise SystemExit('ERROR: memory.c __access_remote_vm anchor tidak unik')
+              s = s.replace(anchor, add, 1)
+
+          anchor = '\t\tstruct page *page = NULL;\n\t\tret = get_user_pages_remote(tsk, mm, addr, 1,\n'
+          add = ('\t\tstruct page *page = NULL;\n'
+                 '#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
+                 '\t\tif (vma && vma->vm_file && SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file)))\n'
+                 '\t\t\tbreak;\n'
+                 '#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
+                 '\t\tret = get_user_pages_remote(tsk, mm, addr, 1,\n')
+          if 'SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file))' not in s:
+              if s.count(anchor) != 1:
+                  raise SystemExit('ERROR: memory.c page guard anchor tidak unik')
+              s = s.replace(anchor, add, 1)
+
+          p.write_text(s)
+          print('OK: mm/memory.c targeted SUSFS changes applied')
+          PYEOF
+
+          # Tidak boleh ada reject file tersisa.
+          if find . -type f -name '*.rej' -print -quit | grep -q .; then
+            echo "ERROR: masih ada file .rej setelah patch SUSFS"
+            find . -type f -name '*.rej' -print
             exit 1
           fi
 
-          echo "== Verifikasi file inti SUSFS tertanam =="
+          echo "== Verifikasi SUSFS targeted changes =="
+          grep -q '#include <linux/susfs_def.h>' fs/proc/task_mmu.c || { echo 'ERROR task_mmu include'; exit 1; }
+          grep -q 'susfs_sus_kstat_spoof_show_map_vma' fs/proc/task_mmu.c || { echo 'ERROR task_mmu kstat'; exit 1; }
+          grep -q 'bypass_orig_flow:' fs/proc/task_mmu.c || { echo 'ERROR task_mmu pagemap'; exit 1; }
+          grep -q 'SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file))' mm/memory.c || { echo 'ERROR memory map guard'; exit 1; }
           for f in fs/susfs.c include/linux/susfs.h include/linux/susfs_def.h; do
-            test -f "$f" || { echo "ERROR: $f tidak dibuat oleh patch"; exit 1; }
-            echo "OK: $f ada"
+            test -f "$f" || { echo "ERROR: $f tidak ada"; exit 1; }
           done
-          grep -q 'obj-$(CONFIG_KSU_SUSFS) += susfs.o' fs/Makefile || {
-            echo "ERROR: fs/Makefile tidak berisi entry build susfs.o"
-            exit 1
-          }
-          grep -q '#include <linux/susfs_def.h>' fs/proc/task_mmu.c || {
-            echo "ERROR: task_mmu.c belum memiliki SUSFS include"
-            exit 1
-          }
-          grep -q 'SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file))' mm/memory.c || {
-            echo "ERROR: memory.c belum memiliki SUSFS map guard"
-            exit 1
-          }
-          echo "OK: patch SUSFS inti selesai"
+          grep -q 'obj-$(CONFIG_KSU_SUSFS) += susfs.o' fs/Makefile || { echo 'ERROR fs/Makefile susfs.o'; exit 1; }
+          echo "SUSFS patch inti: OK"
 
       - name: Terapkan SUSFS - inline hook script resmi (susfs_inline_hook_patches.sh)
         working-directory: kernel
