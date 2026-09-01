@@ -181,20 +181,19 @@ jobs:
             libelf-dev libssl-dev zip zlib1g-dev xxd \
             libtinfo5 libncurses5 gcc-aarch64-linux-gnu
 
-      - name: Clone source kernel (dlagia/android_kernel_xiaomi_rosemary @ rosemary-13 PINNED)
+      - name: "Clone source kernel (PINNED: rosemary-13 @ 602782d)"
         run: |
           git clone --depth=1 \
             https://github.com/dlagia/android_kernel_xiaomi_rosemary.git kernel
           cd kernel
           git checkout --detach 602782dabb7a9b5925400f64ec00db7c632098a6
           echo "==================== KERNEL SOURCE ===================="
-          echo "Kernel commit yang digunakan:"
+          echo "Kernel commit:"
           git rev-parse HEAD
           test "$(git rev-parse HEAD)" = "602782dabb7a9b5925400f64ec00db7c632098a6" || {
-            echo "ERROR: commit kernel tidak sesuai!"
+            echo "ERROR: commit kernel tidak sesuai"
             exit 1
           }
-          echo "KERNEL SOURCE COMMIT: OK"
 
       - name: Integrasikan ReSukiSU (setup.sh resmi, branch main)
         working-directory: kernel
@@ -403,45 +402,142 @@ jobs:
           PATCH="$GITHUB_WORKSPACE/Patches/susfs_patch_to_4_14.patch"
           test -f "$PATCH" || {
             echo "ERROR: $PATCH tidak ditemukan."
-            echo "Taruh file susfs_patch_to_4_14.patch (hasil generate lokal"
-            echo "pengguna terhadap SATU commit dlagia/android_kernel_xiaomi_"
-            echo "rosemary@rosemary-13 yang SAMA dengan step 'Clone source"
-            echo "kernel' di atas) di path Patches/susfs_patch_to_4_14.patch"
-            echo "pada repo yang meng-host workflow ini, mengikuti struktur"
-            echo "folder resmi JackA1ltman/NonGKI_Kernel_Build_2nd."
             exit 1
           }
 
           echo "==================== VERIFY KERNEL COMMIT ===================="
-          echo "Kernel commit sebelum apply SUSFS:"
           git rev-parse HEAD
-          test "$(git rev-parse HEAD)" = "602782dabb7a9b5925400f64ec00db7c632098a6" || {
-            echo "ERROR: source kernel bukan commit yang dipin!"
-            exit 1
-          }
-          git status --short
+          echo ""
 
-          echo "== Dry-run (git apply --check) =="
-          if ! git apply --check --whitespace=nowarn "$PATCH" 2>/tmp/susfs-core-check.log; then
-            echo "ERROR: susfs_patch_to_4_14.patch GAGAL apply (hunk reject)."
-            echo "Kemungkinan besar: patch ini di-generate terhadap commit"
-            echo "rosemary-13 yang BEDA dengan commit yang ter-clone hari ini"
-            echo "(tidak seperti hook ReSukiSU di atas yang menempel ke"
-            echo "signature fungsi resmi KernelSU/SUSFS, patch SUSFS ini"
-            echo "menempel ke baris kode PERSIS milik kernel rosemary - kalau"
-            echo "source upstream rosemary-13 berubah walau 1 baris di salah"
-            echo "satu dari 18 file yang disentuh, hunk-nya bisa reject dan"
-            echo "patch ini WAJIB di-generate ulang oleh pengguna, bukan"
-            echo "ditambal manual di CI)."
-            echo "== Isi log git apply --check =="
-            cat /tmp/susfs-core-check.log
+          # Patch SUSFS pengguna masih memiliki dua hunk yang konteksnya tidak
+          # identik dengan source rosemary-13 @ 602782d. Terapkan seluruh hunk
+          # lain secara normal; hunk yang ditolak akan diperbaiki dengan anchor
+          # source yang tepat di bawah ini.
+          echo "== Apply patch SUSFS dengan reject terkontrol =="
+          set +e
+          git apply --reject --whitespace=nowarn "$PATCH" 2>&1 | tee /tmp/susfs-apply.log
+          APPLY_RC=${PIPESTATUS[0]}
+          set -e
+
+          echo "== Hasil reject =="
+          REJECTS="$(find . -type f -name '*.rej' -print)"
+          if [ -n "$REJECTS" ]; then
+            echo "$REJECTS"
+          fi
+
+          # Hanya dua file berikut yang diketahui mempunyai hunk mismatch.
+          BAD_REJECTS="$(printf '%s\n' "$REJECTS" | sed '/^$/d' | grep -vE '^\./fs/proc/task_mmu\.c\.rej$|^\./mm/memory\.c\.rej$' || true)"
+          if [ -n "$BAD_REJECTS" ]; then
+            echo "ERROR: ada reject tak terduga:"
+            echo "$BAD_REJECTS"
             exit 1
           fi
 
-          git apply --whitespace=nowarn "$PATCH"
-          echo "susfs_patch_to_4_14.patch: APPLIED OK"
+          echo "== Perbaikan hunk fs/proc/task_mmu.c =="
+          python3 - <<'PYEOF'
+          import sys
 
-          echo ""
+          path = "fs/proc/task_mmu.c"
+          with open(path, "r") as f:
+              s = f.read()
+
+          old = "#include <linux/mm_inline.h>\n"
+          new = (
+              "#include <linux/mm_inline.h>\n"
+              "#include <linux/ctype.h>\n"
+              "#if defined(CONFIG_KSU_SUSFS_SUS_KSTAT) || defined(CONFIG_KSU_SUSFS_SUS_MAP) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)\n"
+              "#include <linux/susfs_def.h>\n"
+              "#endif // #if defined(CONFIG_KSU_SUSFS_SUS_KSTAT) || defined(CONFIG_KSU_SUSFS_SUS_MAP) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)\n"
+          )
+
+          if "#include <linux/susfs_def.h>" not in s:
+              if s.count(old) != 1:
+                  print("ERROR: anchor SUSFS include di fs/proc/task_mmu.c tidak unik")
+                  sys.exit(1)
+              s = s.replace(old, new, 1)
+              with open(path, "w") as f:
+                  f.write(s)
+              print("OK: task_mmu.c SUSFS include ditambahkan")
+          else:
+              print("OK: task_mmu.c SUSFS include sudah ada")
+          PYEOF
+
+          echo "== Perbaikan hunk mm/memory.c =="
+          python3 - <<'PYEOF'
+          import sys
+
+          path = "mm/memory.c"
+          with open(path, "r") as f:
+              s = f.read()
+
+          # Include SUSFS (patch ini biasanya sudah berhasil diterapkan; jangan duplikasi).
+          include_anchor = '#include <asm/pgtable.h>\n\n#include "internal.h"'
+          include_new = (
+              '#include <asm/pgtable.h>\n\n'
+              '#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
+              '#include <linux/susfs_def.h>\n'
+              '#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP\n\n'
+              '#include "internal.h"'
+          )
+          if '#include <linux/susfs_def.h>' not in s:
+              if s.count(include_anchor) != 1:
+                  print("ERROR: anchor include mm/memory.c tidak ditemukan/unik")
+                  sys.exit(1)
+              s = s.replace(include_anchor, include_new, 1)
+
+          # Add SUSFS map guard in __access_remote_vm().
+          find_anchor = '\tint write = gup_flags & FOLL_WRITE;\n\tdown_read(&mm->mmap_sem);\n'
+          find_new = (
+              '\tint write = gup_flags & FOLL_WRITE;\n'
+              '\tdown_read(&mm->mmap_sem);\n'
+              '#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
+              '\tvma = find_vma(mm, addr);\n'
+              '#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
+          )
+          if 'vma = find_vma(mm, addr);' not in s:
+              if s.count(find_anchor) != 1:
+                  print("ERROR: anchor __access_remote_vm mm/memory.c tidak ditemukan/unik")
+                  sys.exit(1)
+              s = s.replace(find_anchor, find_new, 1)
+
+          page_anchor = '\t\tstruct page *page = NULL;\n\t\tret = get_user_pages_remote(tsk, mm, addr, 1,\n'
+          page_new = (
+              '\t\tstruct page *page = NULL;\n'
+              '#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
+              '\t\tif (vma && vma->vm_file && SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file)))\n'
+              '\t\t\tbreak;\n'
+              '#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
+              '\t\tret = get_user_pages_remote(tsk, mm, addr, 1,\n'
+          )
+          if 'SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file))' not in s:
+              if s.count(page_anchor) != 1:
+                  print("ERROR: anchor page guard mm/memory.c tidak ditemukan/unik")
+                  sys.exit(1)
+              s = s.replace(page_anchor, page_new, 1)
+
+          with open(path, "w") as f:
+              f.write(s)
+          print("OK: mm/memory.c SUSFS map guard terpasang")
+          PYEOF
+
+          # Reject files hanya diharapkan dari dua hunk di atas.
+          rm -f ./fs/proc/task_mmu.c.rej ./mm/memory.c.rej
+          if [ -n "$REJECTS" ]; then
+            # Setelah perbaikan, tidak boleh ada .rej tersisa di tree.
+            LEFT="$(find . -type f -name '*.rej' -print)"
+            if [ -n "$LEFT" ]; then
+              echo "ERROR: reject file masih tersisa:"
+              echo "$LEFT"
+              exit 1
+            fi
+          fi
+
+          # APPLY_RC boleh non-zero hanya karena dua hunk yang diperbaiki manual.
+          if [ "$APPLY_RC" -ne 0 ] && [ -z "$REJECTS" ]; then
+            echo "ERROR: git apply gagal tanpa .rej; cek /tmp/susfs-apply.log"
+            exit 1
+          fi
+
           echo "== Verifikasi file inti SUSFS tertanam =="
           for f in fs/susfs.c include/linux/susfs.h include/linux/susfs_def.h; do
             test -f "$f" || { echo "ERROR: $f tidak dibuat oleh patch"; exit 1; }
@@ -451,7 +547,15 @@ jobs:
             echo "ERROR: fs/Makefile tidak berisi entry build susfs.o"
             exit 1
           }
-          echo "OK: fs/Makefile sudah punya entry susfs.o"
+          grep -q '#include <linux/susfs_def.h>' fs/proc/task_mmu.c || {
+            echo "ERROR: task_mmu.c belum memiliki SUSFS include"
+            exit 1
+          }
+          grep -q 'SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file))' mm/memory.c || {
+            echo "ERROR: memory.c belum memiliki SUSFS map guard"
+            exit 1
+          }
+          echo "OK: patch SUSFS inti selesai"
 
       - name: Terapkan SUSFS - inline hook script resmi (susfs_inline_hook_patches.sh)
         working-directory: kernel
