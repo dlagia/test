@@ -47,55 +47,13 @@
 # floating cocok untuk selalu dapat fitur terbaru, tapi TIDAK cocok kalau
 # tujuannya "sekali diuji boot, lalu jangan berubah lagi".
 #
-# Sudah dibandingkan byte-per-byte terhadap experimental/hookless (SNAPSHOT
-# LAMA, lihat peringatan stabilitas di atas - sudah tidak bisa dianggap
-# berlaku otomatis untuk commit dev terbaru): file kernel/patches/
-# nomount_4.14_kernel_integration.patch, seluruh isi module/,
-# userspace/src/nm.c, userspace/src/nm.h, dan kernel/setup.sh IDENTIK persis
-# di kedua branch saat itu (tidak ada perbedaan protokol keyring/netlink
-# seperti dugaan versi workflow sebelumnya). SATU-SATUNYA perbedaan nyata
-# ada di kernel/src/nomount.c dan nomount.h: dev meng-upgrade locking
-# pembaca dari rwsem (down_read/up_read) ke SRCU (srcu_read_lock/
-# synchronize_srcu) - perbaikan konkurensi murni, bukan perubahan API atau
-# protokol komunikasi (BENAR untuk commit yang diperiksa saat itu; TIDAK
-# lagi otomatis benar untuk commit dev yang ditarik hari ini - lihat catatan
-# di atas). Sifat "hookless" (tukar pointer inode->i_op/file->f_op saat
-# runtime, tanpa sentuh fs/namei.c/fs/dcache.c/dst.) tetap identik di
-# branch dev, sudah dikonfirmasi ulang langsung dari source nomount.c
-# branch ini pada saat pengecekan tsb.
-#
-# Patch nomount_4.14_kernel_integration.patch (branch dev) sudah diuji
-# `git apply --check` langsung ke source dlagia/android_kernel_xiaomi_
-# rosemary@rosemary-13: apply bersih (sama seperti sebelumnya, karena
-# file patch-nya byte-identik) - CATATAN: file patch ini SENDIRI sudah
-# dihapus total dari repo upstream (lihat komentar di step NoMount di
-# bawah, commit 28797f4), jadi kalimat ini adalah catatan historis, BUKAN
-# langkah yang masih dijalankan workflow ini (workflow sudah pindah ke
-# setup.sh resmi, bukan git apply manual).
-#
-# CATATAN (permintaan eksplisit): perakitan module.zip flashable NoMount
-# (ko-loader, module-build, dst.) SUDAH DIHAPUS TOTAL dari workflow ini -
-# tidak ada lagi residu step, variabel env (MOD_ZIP), atau artifact terkait
-# modul flashable. Workflow ini sekarang hanya menghasilkan: kernel image
-# (dengan CONFIG_NOMOUNT=y built-in) dan biner CLI `nm` mentah. Kalau perlu
-# modul flashable untuk KernelSU Manager, rakit terpisah di luar workflow ini.
-#
-# CATATAN: tetap test lewat OrangeFox (backup Boot dulu) sebelum dianggap
-# final - upgrade locking rwsem->SRCU di branch dev belum pernah diuji boot
-# sungguhan di device fisik lewat workflow ini (baru diverifikasi di level
-# source/compile, belum di level runtime kernel yang benar-benar menyala).
-#
-# WAJIB: test lewat OrangeFox (backup Boot dulu!) sebelum dianggap final,
-# SAMA seperti Fase 1. Kernel ini basis sama dengan yang sudah terbukti
-# boot, tapi NoMount menyentuh VFS inti - tetap test dulu.
-#
 # ReSukiSU diintegrasikan lewat setup.sh RESMI (https://github.com/ReSukiSU/ReSukiSU,
 # tanpa argumen branch = checkout "main", sesuai README repo - branch "auto-hook"
 # yang dipakai sebelumnya SUDAH DIHAPUS dari workflow ini). Untuk kernel 4.14
 # (non-GKI, < 5.10) dipakai CONFIG_KSU_MANUAL_HOOK=y, karena Tracepoint Syscall
 # Redirect hanya didukung GKI2 5.10+.
 #
-# RE-VERIFIKASI 26 Agustus 2026 (ulang, terhadap docs resmi resukisu.github.io/
+# RE-VERIFIKASI 27 Agustus 2026 (ulang, terhadap docs resmi resukisu.github.io/
 # guide/manual-integrate.html, edit terakhir "3 hari lalu" pada saat cek): SEMUA
 # enam hook manual di bawah (execveat, faccessat, stat/newfstat/fstat64, sys_reboot)
 # signature dan titik sisipnya PERSIS SAMA dengan versi resmi terkini di docs.
@@ -103,68 +61,7 @@
 # ksu_handle_execveat ke DALAM do_execveat_common (dipakai workflow ini), dan
 # varian "Deprecated" yang menyisipkan ke do_execve/compat_do_execve (secara
 # eksplisit ditandai docs: "NOT recommended... Android 17 QPR2+"). Workflow ini
-# sudah pakai varian yang BENAR (bukan yang deprecated). Docs resmi juga
-# menambahkan atribut compiler `__attribute__((hot))` pada extern declaration
-# ksu_handle_execveat dan ksu_handle_faccessat (hint optimasi branch-prediction,
-# BUKAN syarat kompilasi) - sudah ditambahkan di step di bawah supaya 100%
-# verbatim dengan referensi resmi.
-#
-# Docs resmi juga mengonfirmasi: kalau CONFIG_KALLSYMS_ALL=y (sudah diaktifkan
-# eksplisit di defconfig, lihat step "Aktifkan KSU di defconfig"), seluruh
-# patch "Static symbol export" (hapus `static` dari write_op, sel_handle_
-# status_ops, selinux_ops, dst. di security/selinux/*.c) TIDAK diperlukan -
-# ReSukiSU hanya mewajibkan symbol-export manual itu kalau KALLSYMS_ALL mati.
-# Workflow ini sudah benar tidak menyentuh security/selinux/*.c sama sekali.
-#
-# Source resmi branch main TIDAK punya auto_hook_detect.mk/auto_hook.c (itu
-# spesifik branch auto-hook yang sudah tidak dipakai). kernel/Kbuild resmi
-# meng-include kernel/tools/manual_hook_check.mk yang HARD-FAIL saat compile
-# kalau simbol hook tidak ditemukan persis di source - tidak ada fallback
-# otomatis. Tiga hook (setuid/init-rc/input) tetap otomatis lewat LSM karena
-# CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK/AUTO_INITRC_HOOK/AUTO_INPUT_HOOK
-# default=y di Kconfig resmi (kernel 4.14 < 6.8, jadi valid dipakai, dan
-# dikonfirmasi ulang persis sesuai docs resmi: "For kernel 6.8 (not included
-# 6.8) and below, this hook can be automatically applied via LSM"). Sisanya
-# (execveat, faccessat, stat, newfstat_ret, fstat64_ret, sys_reboot) DIPATCH
-# MANUAL ke fs/exec.c, fs/open.c, fs/stat.c, kernel/reboot.c - setiap anchor
-# sudah diverifikasi baris-per-baris terhadap source dlagia/android_kernel_
-# xiaomi_rosemary@rosemary-13 sebelum ditanam di sini (lihat step di bawah).
-# Patch lain (NoMount/Re:Kernel/Baseband) tetap dipisahkan dari ReSukiSU.
-#
-# RE-VERIFIKASI 24 Agustus 2026: dicek ulang langsung ke source main branch
-# ReSukiSU HARI INI (commit b2ac2fc "kernel: filter kernel modules at load
-# time"). Komit terbaru itu sepenuhnya self-contained (file baru feature/
-# module_load_filter.c/.h + registrasi via kernelsu_init()/_exit() milik
-# ReSukiSU sendiri) - TIDAK menyentuh manual_hook_check.mk, sucompat.c,
-# atau supercall.c, jadi TIDAK ADA dampak ke hook manual kita di fs/exec.c,
-# fs/open.c, fs/stat.c, kernel/reboot.c. Juga dicek ulang PR upstream
-# tiann/KernelSU #3521 (refactor sucompat) dan #3639 (handle execveat utk
-# bionic baru) yang sudah ter-cherry-pick sebelumnya - signature
-# ksu_handle_execveat/faccessat/stat dan syarat "manual hook harus panggil
-# ksu_handle_execveat dari dalam do_execveat_common" TETAP SAMA PERSIS
-# dengan yang dipakai di patch fs/exec.c. Tidak ada perubahan yang diperlukan.
-#
-# RE-VERIFIKASI 26 Agustus 2026: ada commit upstream yang menyentuh
-# kernel/feature/sucompat.c (03b60f2), tapi build ini TIDAK memakai fitur
-# opsional apa pun yang dipengaruhi commit tsb - signature
-# `ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode, int *__unused_flags)`
-# dan `ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags)`
-# TETAP SAMA, identik dengan extern declaration di patch fs/open.c dan
-# fs/stat.c kita - tidak ada perubahan yang diperlukan di sisi workflow ini.
-# Sudah diuji end-to-end lagi dengan commit ReSukiSU 03b60f2 dan NoMount dev
-# b8d2683 (commit terlama yang tercatat manual di sini - lihat peringatan
-# stabilitas NoMount di atas: commit dev SAAT WORKFLOW INI DIJALANKAN hampir
-# pasti sudah lebih baru dari b8d2683, karena dev bergerak beberapa commit per
-# hari; nomor commit ini HANYA acuan historis kapan pengecekan terakhir
-# dilakukan manusia, BUKAN commit yang dijamin dipakai saat run berikutnya):
-# 6 step patch lolos semua, brace seimbang di 7 file yang dipatch.
-#
-# RE-VERIFIKASI 27 Agustus 2026: dicek ulang aktivitas branch main ReSukiSU
-# hari ini - ada PR upstream #361 ("kernel: sync with latest susfs") yang
-# MASIH TERBUKA (belum di-merge ke main, masih tahap CI synchronize). Karena
-# BELUM merge, tidak berdampak ke workflow ini sekarang - tapi ini sinyal
-# supaya pengecekan sucompat.c diulang lagi pada run berikutnya setelah PR
-# tsb merge, sekadar untuk jaga-jaga.
+# sudah pakai varian yang BENAR (bukan yang deprecated).
 #
 # Re:Kernel (github.com/Sakion-Team/Re-Kernel): membuka netlink server
 # supaya tombstone/freezer di userspace tahu kapan binder call atau
@@ -172,27 +69,22 @@
 # di-freeze cgroup, jadi bisa di-unfreeze tepat waktu (kurangi ANR).
 # Ditanam manual sesuai Integrate/README.md repo tsb (mode <=5.4).
 #
-# VERIFIKASI (update): keempat anchor (binder_transaction reply-path +
-# transaction-path, binder_alloc_new_buf_locked, do_send_sig_info) SUDAH
-# dicocokkan baris-per-baris ke source dlagia/android_kernel_xiaomi_
-# rosemary@rosemary-13 dan step Perl-nya SUDAH diuji end-to-end di source
-# itu (bukan lagi "tidak ditemukan publik" seperti catatan versi
-# sebelumnya - repo itu memang public dan sudah di-clone untuk verifikasi
-# ReSukiSU juga). Hasil: ke-4 anchor cocok tepat 1x, brace seimbang,
-# rekernel_start_server() muncul 2x di binder.c (reply+transaction path)
-# dan 1x masing-masing di binder_alloc.c/signal.c - sesuai ekspektasi.
-# CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK dari kernel/tools/manual_hook_check.mk
-# ReSukiSU dan JOBCTL_TRAP_FREEZE (caveat cgroup-freezer-v2 di README Re:Kernel)
-# TIDAK berlaku di kernel 4.14 rosemary-13 ini (belum backport freezer v2).
-# Pengecekan "match harus tepat 1x" di apply_rekernel_hooks.pl tetap
-# dipertahankan sebagai pengaman kalau upstream kernel source berubah.
-#
 # CATATAN (permintaan eksplisit): penambalan CVE-2026-43499 (GhostLock,
 # rtmutex/futex UAF -> local root exploit) yang sebelumnya ada di workflow
 # ini SUDAH DIHAPUS TOTAL atas permintaan langsung - baik step-nya, patch
-# base64-nya, maupun seluruh referensi ke CVE ini di komentar. Kernel hasil
-# build ini TIDAK lagi menyertakan backport fix untuk bug rt_mutex/futex
-# remove_waiter() tsb.
+# base64-nya, maupun seluruh referensi ke CVE ini di komentar.
+#
+# PERBAIKAN 30 Agustus 2026 (bug ditemukan dari laporan pengguna sungguhan):
+# step "Upload paket" SEBELUMNYA mereferensikan "kernel/out/.config" secara
+# langsung. Ternyata `actions/upload-artifact` (lewat @actions/glob di
+# baliknya) SECARA DEFAULT tidak menyertakan file yang namanya diawali titik
+# ("dotfile"/hidden file konvensi Unix) - walau file itu benar-benar ADA
+# saat compile (sudah dikonfirmasi via grep di step "Compile kernel"), file
+# itu GAGAL ikut ter-upload ke artifact zip, sehingga user tidak pernah bisa
+# melihat isi .config hasil compile-nya sama sekali. FIX: copy .config ke
+# nama file TANPA titik di depan (resolved-config.txt) sebelum upload, lalu
+# referensikan nama baru itu - bukan Droidspaces-related, ini bug umum yang
+# berlaku untuk workflow mana pun yang mencoba upload file dotfile.
 # ============================================================
 
 on:
@@ -218,90 +110,6 @@ jobs:
         run: |
           git clone --depth=1 -b rosemary-13 \
             https://github.com/dlagia/android_kernel_xiaomi_rosemary.git kernel
-
-      - name: Simpan stock_defconfig + patch IKCONFIG (fix dialog "device corrupt")
-        working-directory: kernel
-        run: |
-          # SOLUSI RESMI ditemukan dari ravindu644/Android-Kernel-Tutorials
-          # (pembuat Droidspaces-OSS) - README.md bagian "Additional Patches"
-          # -> "Fix: 'There's an internal problem with your device.' issue" -
-          # https://github.com/ravindu644/Android-Kernel-Tutorials/blob/main/patches/011.stock_defconfig.patch
-          #
-          # Ini KONFIRMASI, bukan tebakan lagi: teks Inggris "There's an
-          # internal problem with your device" persis sama dengan dialog
-          # yang dilaporkan pengguna ("sistem Android ada masalah dengan
-          # perangkat...") setelah menambahkan Droidspaces. Penjelasan
-          # resmi dari commit message-nya:
-          #   "Userspace reads /proc/config.gz and spits out an error
-          #    message after boot finishes when it doesn't like the
-          #    kernel's configuration."
-          #
-          # MEKANISME: /proc/config.gz (aktif kalau CONFIG_IKCONFIG_PROC=y)
-          # di-generate dari file kernel/configs.o <- kernel/config_data.gz,
-          # yang NORMALNYA diambil dari $(KCONFIG_CONFIG) (variabel kbuild
-          # standar yang resolve ke .config ASLI hasil compile sungguhan -
-          # termasuk SEMUA CONFIG_* custom kita: KSU, NOMOUNT, REKERNEL, BBG,
-          # dan terutama ~46 baris CONFIG_* Droidspaces yang jauh lebih
-          # signifikan dari komponen lain). Android baca file ini dan
-          # komplain kalau menyimpang cukup jauh dari config yang
-          # "diharapkan" untuk device ini.
-          #
-          # FIX (satu baris di kernel/Makefile): ganti sumber config_data.gz
-          # dari $(KCONFIG_CONFIG) (.config asli/custom) menjadi
-          # arch/arm64/configs/stock_defconfig (salinan defconfig ASLI
-          # sebelum kita modifikasi apa pun) - jadi /proc/config.gz SELALU
-          # menampilkan config bersih/stock, walau kernel yang BENAR-BENAR
-          # jalan tetap pakai .config custom kita sepenuhnya.
-          #
-          # PENTING soal MURNI KOSMETIK: ini TIDAK mengubah fungsi kernel
-          # SEDIKIT PUN. Seluruh `#ifdef CONFIG_X` di source kernel (yang
-          # menentukan driver/fitur apa yang benar-benar dikompilasi) tetap
-          # baca .config ASLI seperti biasa - yang diubah HANYA target file
-          # untuk kernel/config_data.gz, yaitu blob yang di-embed ke kernel
-          # binary semata-mata untuk diagnostik (/proc/config.gz). ReSukiSU,
-          # NoMount, Re:Kernel, Baseband-guard, Droidspaces - SEMUA tetap
-          # aktif dan berfungsi persis sama seperti sebelum patch ini.
-          #
-          # WAJIB DIJALANKAN PALING AWAL: step ini menyalin
-          # rosemary_defconfig SEBELUM step mana pun lain memodifikasinya
-          # (ReSukiSU/NoMount/Re-Kernel/BBG/Droidspaces semua append ke
-          # defconfig yang sama) - kalau step ini dijalankan belakangan,
-          # stock_defconfig yang tersimpan sudah tidak "stock" lagi.
-
-          DEF=arch/arm64/configs/rosemary_defconfig
-          test -f "$DEF" || {
-            echo "ERROR: $DEF tidak ditemukan - path defconfig mungkin beda di device lain"
-            exit 1
-          }
-
-          cp "$DEF" arch/arm64/configs/stock_defconfig
-          echo "OK: arch/arm64/configs/stock_defconfig disimpan (snapshot SEBELUM modifikasi apa pun)"
-          wc -l arch/arm64/configs/stock_defconfig
-
-          python3 - << 'PYEOF'
-          import sys
-
-          path = "kernel/Makefile"
-          old = "$(obj)/config_data.gz: $(KCONFIG_CONFIG) FORCE"
-          new = "$(obj)/config_data.gz: arch/arm64/configs/stock_defconfig FORCE"
-
-          with open(path) as f:
-              s = f.read()
-
-          n = s.count(old)
-          if n != 1:
-              print(f"ERROR: anchor config_data.gz rule ditemukan {n}x di {path} (harus persis 1x) - kernel/Makefile mungkin beda struktur dari yang diasumsikan patch 011.stock_defconfig.patch")
-              sys.exit(1)
-
-          s = s.replace(old, new, 1)
-          with open(path, "w") as f:
-              f.write(s)
-          print(f"{path}: OK - config_data.gz sekarang bersumber dari stock_defconfig, bukan .config asli")
-          PYEOF
-
-          echo ""
-          echo "== Verifikasi kernel/Makefile setelah patch =="
-          grep -n "config_data.gz:" kernel/Makefile
 
       - name: Samakan SUBLEVEL dengan versi stock (4.14.186) - hasil temuan fsck.f2fs
         working-directory: kernel
@@ -568,20 +376,7 @@ jobs:
           # KESIMPULAN: fix Python di bawah ini BUKAN sekadar jaring pengaman
           # basi/no-op seperti klaim versi file sebelumnya - fix ini AKTIF
           # DIPERLUKAN pada setiap run workflow ini selama upstream belum benar-
-          # benar memperbaikinya. Komentar lama yang menyatakan "sudah diperbaiki
-          # upstream, blok ini cuma jaring pengaman idempotent" sudah DIHAPUS
-          # supaya tidak menyesatkan siapa pun yang membaca file ini nanti.
-          #
-          # PERINGATAN STABILITAS PROTOKOL (lihat juga header file ini): branch
-          # dev NoMount mengalami banyak perubahan protokol kernel<->userspace
-          # dalam waktu singkat di upstream (replace netlink->keyring->
-          # /proc/keys->kembali ke keyring, dst.). Ini TIDAK merusak build
-          # workflow ini SELAMA nm.c dan nomount.c tetap diambil dari clone
-          # kernel/NoMount yang SAMA PERSIS (satu commit) di satu run yang sama
-          # - dan itu sudah jadi desain step ini serta step "Compile nm" di
-          # bawah. Yang TIDAK dijamin: kompatibilitas ANTAR run yang berbeda
-          # tanggal (jangan campur artifact nm/module dari run lama dengan
-          # kernel dari run baru).
+          # benar memperbaikinya.
           #
           # PENTING: setup.sh sendiri yang meng-clone ke NoMount/ (working-
           # directory: kernel, jadi hasilnya kernel/NoMount/) - path ini SAMA
@@ -728,144 +523,6 @@ jobs:
           echo '== cek sisa =='
           echo -n 'no_sanitize( tersisa: '; grep -rl 'no_sanitize(' --include='*.h' --include='*.c' . 2>/dev/null | wc -l
 
-      - name: Integrasikan Droidspaces-OSS (patch source non-GKI)
-        working-directory: kernel
-        run: |
-          # https://github.com/ravindu644/Droidspaces-OSS - container runtime
-          # userspace (binary statis musl, LXC-like). BUKAN driver/hook kernel
-          # seperti NoMount/ReSukiSU/Re:Kernel/Baseband-guard di atas - yang
-          # dibutuhkan cuma: (1) sejumlah CONFIG_* di defconfig (namespace,
-          # cgroup, seccomp, netfilter) - lihat step "Aktifkan KSU di
-          # defconfig" di bawah, tempat semua CONFIG_* Droidspaces digabung
-          # supaya proses defconfig cuma jalan sekali - dan (2) beberapa patch
-          # source KECIL khusus kernel non-GKI (3.18/4.4/4.9/4.14/4.19) dari
-          # Documentation/resources/kernel-patches/non-GKI di repo resminya
-          # (dikonfirmasi via Documentation/Kernel-Configuration.md resmi,
-          # bagian "Configuring Non-GKI Kernels" -> "Step 3: Apply Patches").
-          #
-          # KENAPA CLONE+APPLY LANGSUNG (bukan base64 embed seperti Re:Kernel):
-          # saya tidak berhasil mengambil isi mentah file .patch di folder itu
-          # (GitHub blokir fetch listing folder tree secara langsung ke tool
-          # ini) - jadi supaya TIDAK menebak-nebak isi patch kernel (yang
-          # fatal kalau salah), step ini clone repo resmi FRESH setiap run dan
-          # apply SEMUA .patch yang ADA di folder tsb apa adanya, persis
-          # instruksi resmi (`patch -p1 < file.patch`). Konsekuensinya SAMA
-          # dengan peringatan stabilitas NoMount branch dev: kalau upstream
-          # mengubah isi patch, run berikutnya otomatis pakai versi terbaru -
-          # tidak ada snapshot beku yang bisa diam-diam kadaluarsa, tapi juga
-          # tidak ada jaminan "sudah diuji manusia" seperti komponen lain di
-          # file ini. --dry-run dipakai dulu sebelum apply sungguhan sebagai
-          # pengaman kalau source kernel sudah tidak cocok dengan patch.
-          #
-          # CATATAN KOMPATIBILITAS (dari README resmi): "SuSFS is not
-          # supported... ensure HIDE SUS MOUNTS FOR ALL PROCESSES is disabled"
-          # - build ini SUDAH CONFIG_KSU_SUSFS=n sejak awal (permintaan
-          # eksplisit sebelumnya), jadi tidak ada konflik SUSFS sama sekali.
-          # README resmi juga eksplisit merekomendasikan KernelSU sebagai
-          # metode root ("Since Droidspaces requires a custom kernel anyway,
-          # we recommend adding KernelSU to your kernel") - kernel ini sudah
-          # pakai ReSukiSU (fork KernelSU), jadi kombinasi ini didukung resmi.
-          #
-          # PERINGATAN VFS DEADLOCK (dari dokumentasi resmi, BUKAN diuji
-          # manual di sini): ada bug grab_super() VFS deadlock yang disebut
-          # spesifik terjadi di "kernel 4.14.113" saat container systemd
-          # jalan, diperbaiki lewat toggle "Deadlock Shield" di app/CLI
-          # (--block-nested-namespaces) - TAPI mengaktifkan shield itu
-          # mengorbankan dukungan nested container (Docker-in-Droidspaces).
-          # Kernel workflow ini disamakan versinya ke 4.14.186 (lihat step
-          # "Samakan SUBLEVEL"), BUKAN 4.14.113 - jadi kemungkinan besar tidak
-          # kena bug spesifik ini, tapi ini TIDAK terverifikasi/terdaftar di
-          # dokumentasi resmi mereka (source dlagia/rosemary bukan device yang
-          # ada di "community-supported-devices" mereka). Kalau nanti systemd
-          # di dalam container hang/deadlock, coba aktifkan Deadlock Shield
-          # dari app Droidspaces sebagai langkah pertama debugging.
-          #
-          # WAJIB: seperti NoMount, ini menyentuh area VFS/namespace kernel -
-          # tetap test boot fisik + coba jalankan container sungguhan (bukan
-          # cuma boot normal) sebelum dianggap final.
-
-          rm -rf /tmp/droidspaces-oss
-          git clone --depth=1 https://github.com/ravindu644/Droidspaces-OSS.git /tmp/droidspaces-oss
-
-          PATCH_DIR="/tmp/droidspaces-oss/Documentation/resources/kernel-patches/non-GKI"
-          test -d "$PATCH_DIR" || {
-            echo "ERROR: folder patch non-GKI tidak ditemukan - path mungkin sudah berubah upstream, cek https://github.com/ravindu644/Droidspaces-OSS/tree/main/Documentation/resources/kernel-patches"
-            exit 1
-          }
-
-          shopt -s nullglob
-          PATCHES=("$PATCH_DIR"/*.patch)
-          if [ ${#PATCHES[@]} -eq 0 ]; then
-            echo "ERROR: tidak ada file .patch ditemukan di $PATCH_DIR"
-            exit 1
-          fi
-
-          echo "Ditemukan ${#PATCHES[@]} file patch non-GKI dari upstream Droidspaces-OSS:"
-          printf '  - %s\n' "${PATCHES[@]##*/}"
-          echo ""
-
-          # PERBAIKAN (ditemukan dari kegagalan CI run sungguhan pada patch
-          # 01.fix_kernel_panic_in_xt_qtaguid.patch - "can't find file to
-          # patch"): sebelum dry-run, cek dulu apakah file TARGET patch (baris
-          # "+++ b/...") benar-benar ada di source kernel ini. Kalau file
-          # target TIDAK ADA sama sekali, itu BUKAN error fatal - artinya
-          # subsistem yang mau di-fix (di sini: xt_qtaguid, modul netfilter
-          # legacy Android <9 yang banyak dibuang di fork kernel MIUI 13+
-          # sejak Android resmi deprecate xt_qtaguid demi eBPF traffic
-          # monitoring - dikonfirmasi via dokumentasi resmi source.android.com)
-          # memang tidak dikompilasi/tidak ada di kernel ini sama sekali,
-          # jadi tidak ada yang perlu di-fix - aman di-skip. Fatal HANYA kalau
-          # file-nya ADA tapi isinya sudah tidak cocok dengan hunk patch
-          # (linenya berubah/berbeda dari yang diasumsikan patch) - itu baru
-          # tanda source kernel benar-benar menyimpang dari asumsi patch.
-          for p in "${PATCHES[@]}"; do
-            echo "== Memeriksa target file: $(basename "$p") =="
-
-            # >>> TEST DIAGNOSTIK (sementara, mudah dikembalikan): skip PAKSA
-            # patch cgroup file prefix untuk isolasi penyebab dialog "device
-            # corrupt" - BUKAN karena patch-nya rusak/tidak valid (sudah
-            # diverifikasi bersih sebelumnya), cuma untuk tes A/B. Hapus blok
-            # if di bawah ini untuk kembali ke perilaku normal (apply patch).
-            if [[ "$(basename "$p")" == "02.fix_restore cgroup file prefix handling .patch" ]]; then
-              echo "SKIP (TEST DIAGNOSTIK): $(basename "$p") - sengaja dilewati untuk isolasi penyebab dialog device-corrupt, BUKAN karena patch invalid."
-              echo ""
-              continue
-            fi
-
-            target_files=$(grep -oP '^\+\+\+ [ab]/\K.*' "$p" | grep -v '^/dev/null$' | sort -u)
-            if [ -z "$target_files" ]; then
-              echo "ERROR: tidak bisa mendeteksi file target dari header patch $(basename "$p") - format patch tidak dikenali, cek manual"
-              exit 1
-            fi
-
-            missing=0
-            for tf in $target_files; do
-              if [ ! -f "$tf" ]; then
-                echo "  - $tf : TIDAK ADA di source kernel ini"
-                missing=1
-              else
-                echo "  - $tf : ada"
-              fi
-            done
-
-            if [ "$missing" = "1" ]; then
-              echo "SKIP: $(basename "$p") - file target tidak ada di rosemary-13, kemungkinan subsistem ini memang tidak dikompilasi di kernel ini (aman diabaikan, bukan bug)."
-              echo ""
-              continue
-            fi
-
-            echo "== Cek (--dry-run): $(basename "$p") =="
-            patch -p1 --dry-run < "$p" || {
-              echo "ERROR: dry-run GAGAL untuk $(basename "$p") - file target ADA tapi isinya sudah tidak cocok dengan patch (source kernel menyimpang dari asumsi patch). JANGAN paksa apply - cek manual dulu."
-              exit 1
-            }
-            echo "== Apply: $(basename "$p") =="
-            patch -p1 < "$p"
-            echo ""
-          done
-
-          echo "Droidspaces-OSS non-GKI patches: selesai diproses (${#PATCHES[@]} file - lihat log di atas untuk mana yang di-apply vs di-skip)"
-
       - name: Aktifkan KSU di defconfig
         working-directory: kernel
         run: |
@@ -891,83 +548,6 @@ jobs:
             echo ""
             echo "CONFIG_BBG=y"
             echo ""
-            echo "# Droidspaces-OSS (non-GKI legacy kernel, 3.18/4.4/4.9/4.14/4.19)"
-            echo "# Verbatim dari Documentation/Kernel-Configuration.md resmi repo -"
-            echo "# https://github.com/ravindu644/Droidspaces-OSS - JANGAN tambah/kurangi"
-            echo "# item tanpa cek ulang docs resmi (ada catatan 'DO NOT enable anything"
-            echo "# other than recommended' untuk varian GKI mereka, sebagai kehati-hatian"
-            echo "# yang sama saya terapkan juga di sini untuk non-GKI)."
-            echo "# IPC mechanisms"
-            echo "CONFIG_SYSCTL=y"
-            echo "CONFIG_SYSVIPC=y"
-            echo "CONFIG_POSIX_MQUEUE=y"
-            echo "# Core namespace support"
-            echo "CONFIG_NAMESPACES=y"
-            echo "CONFIG_PID_NS=y"
-            echo "CONFIG_UTS_NS=y"
-            echo "CONFIG_IPC_NS=y"
-            echo "# Seccomp support"
-            echo "CONFIG_SECCOMP=y"
-            echo "CONFIG_SECCOMP_FILTER=y"
-            echo "# Control groups support"
-            echo "CONFIG_CGROUPS=y"
-            echo "CONFIG_CGROUP_DEVICE=y"
-            echo "CONFIG_CGROUP_PIDS=y"
-            echo "CONFIG_MEMCG=y"
-            echo "CONFIG_CGROUP_SCHED=y"
-            echo "CONFIG_FAIR_GROUP_SCHED=y"
-            echo "CONFIG_CGROUP_FREEZER=y"
-            echo "CONFIG_CGROUP_NET_PRIO=y"
-            echo "# Device filesystem support"
-            echo "CONFIG_DEVTMPFS=y"
-            echo "# Overlay filesystem support (mode volatile Droidspaces) -"
-            echo "# terpisah total dari NoMount, tidak saling ganggu (NoMount"
-            echo "# sengaja BUKAN overlay, lihat header file ini)."
-            echo "CONFIG_OVERLAY_FS=y"
-            echo "# xattr/posix acl di tmpfs (utk distro modern semacam NixOS)"
-            echo "CONFIG_TMPFS_POSIX_ACL=y"
-            echo "CONFIG_TMPFS_XATTR=y"
-            echo "# Firmware loading support"
-            echo "CONFIG_FW_LOADER=y"
-            echo "CONFIG_FW_LOADER_USER_HELPER=y"
-            echo "CONFIG_FW_LOADER_COMPRESS=y"
-            echo "# =========================================================="
-            echo "# >>> TEST DIAGNOSTIK (sementara, ditandai jelas supaya gampang"
-            echo "# dikembalikan): blok netfilter/NAT/VETH/BRIDGE di bawah ini"
-            echo "# DIMATIKAN untuk isolasi penyebab dialog 'device corrupt'."
-            echo "# Efek kalau tes ini aktif: mode NAT/none Droidspaces TIDAK"
-            echo "# akan berfungsi (container tidak dapat akses internet lewat"
-            echo "# NAT), tapi container tetap BISA jalan (namespace/cgroup"
-            echo "# dasar tetap ada di atas). Ini BUKAN konfigurasi final yang"
-            echo "# direkomendasikan - kalau tes ini menyimpulkan blok ini"
-            echo "# BUKAN penyebabnya, kembalikan seperti semula."
-            echo "# =========================================================="
-            # echo "# Isolasi jaringan (mode NAT/none)"
-            # echo "CONFIG_NET_NS=y"
-            # echo "CONFIG_VETH=y"
-            # echo "CONFIG_BRIDGE=y"
-            # echo "CONFIG_NETFILTER=y"
-            # echo "CONFIG_BRIDGE_NETFILTER=y"
-            # echo "CONFIG_NETFILTER_ADVANCED=y"
-            # echo "CONFIG_NF_CONNTRACK=y"
-            # echo "CONFIG_IP_NF_IPTABLES=y"
-            # echo "CONFIG_IP_NF_FILTER=y"
-            # echo "CONFIG_NF_NAT=y"
-            # echo "CONFIG_NF_TABLES=y"
-            # echo "CONFIG_IP_NF_TARGET_MASQUERADE=y"
-            # echo "CONFIG_NETFILTER_XT_TARGET_MASQUERADE=y"
-            # echo "CONFIG_NETFILTER_XT_TARGET_TCPMSS=y"
-            # echo "CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y"
-            # echo "CONFIG_NF_CONNTRACK_NETLINK=y"
-            # echo "CONFIG_NF_NAT_REDIRECT=y"
-            # echo "CONFIG_IP_ADVANCED_ROUTER=y"
-            # echo "CONFIG_IP_MULTIPLE_TABLES=y"
-            # echo "# legacy compat"
-            # echo "CONFIG_NF_CONNTRACK_IPV4=y"
-            # echo "CONFIG_NF_NAT_IPV4=y"
-            # echo "CONFIG_IP_NF_NAT=y"
-            # echo "CONFIG_ANDROID_PARANOID_NETWORK=n"
-            echo "" 
           } >> "$DEF"
           tail -25 "$DEF"
 
@@ -1015,35 +595,6 @@ jobs:
           grep -E '^CONFIG_BBG' out/.config || true
           grep -q '^CONFIG_BBG=y$' out/.config || { echo "ERROR: CONFIG_BBG tidak resolve ke y (cek CONFIG_SECURITY=y - CONFIG_BBG depends on itu)"; exit 1; }
 
-          echo ""
-          echo "==================== RESOLVED Droidspaces-OSS CONFIG (item Fatal saja) ===================="
-          # Sesuai tabel resmi "What to Do If Something Is Missing" di
-          # Kernel-Configuration.md - hanya cek yang ditandai "Fatal. Containers
-          # cannot start." Item non-fatal (OverlayFS, NET_NS, VETH/BRIDGE,
-          # SECCOMP) sengaja TIDAK di-hard-fail di sini karena cuma menonaktifkan
-          # fitur opsional (volatile mode / NAT mode / shield), bukan bikin
-          # Droidspaces gagal total - biarkan resolve apa adanya, cek manual
-          # lewat 'droidspaces check' di device kalau curiga ada yang hilang.
-          for cfg in CONFIG_PID_NS CONFIG_NAMESPACES CONFIG_UTS_NS CONFIG_IPC_NS CONFIG_CGROUP_DEVICE CONFIG_DEVTMPFS; do
-            grep -q "^${cfg}=y$" out/.config || { echo "ERROR: ${cfg} tidak resolve ke y - FATAL untuk Droidspaces (containers tidak akan bisa start sama sekali)"; exit 1; }
-          done
-          echo "Semua CONFIG fatal Droidspaces resolve ke y"
-
-          echo ""
-          echo "==================== RESOLVED CONFIG_ANDROID_PARANOID_NETWORK (investigasi) ===================="
-          # DITAMBAHKAN setelah laporan pengguna: dialog "sistem Android ada
-          # masalah, hubungi produsen" (Verified Boot orange-state warning)
-          # dilaporkan baru muncul SETELAH integrasi Droidspaces. Status
-          # verifiedbootstate=orange SECARA TEKNIS ditentukan bootloader vs
-          # vbmeta (independen dari isi kernel), jadi baris CONFIG di bawah
-          # BUKAN penyebab paling mungkin untuk dialog itu sendiri - TAPI ini
-          # satu-satunya CONFIG_* baru dari Droidspaces yang mengubah
-          # perilaku KEAMANAN Android system-wide (bukan cuma namespace/
-          # cgroup pasif), jadi dicatat resolved value-nya di log build
-          # supaya bisa dikorelasikan/dieliminasi sebagai penyebab tanpa
-          # perlu re-build cuma untuk lihat nilai ini.
-          grep -E '^(CONFIG_ANDROID_PARANOID_NETWORK|# CONFIG_ANDROID_PARANOID_NETWORK)' out/.config || echo "CONFIG_ANDROID_PARANOID_NETWORK: tidak ditemukan di .config sama sekali (kemungkinan Kconfig ini tidak ada di source rosemary-13 - MTK/Xiaomi kadang sudah hapus opsi ini dari Kconfig sendiri)"
-
           echo "ReSukiSU Manual Hook + auto-hook: CONFIG OK"
 
           set -o pipefail
@@ -1076,17 +627,9 @@ jobs:
           fi
           ls -la out/arch/arm64/boot/
 
-          # PERBAIKAN (ditemukan dari laporan pengguna sungguhan - artifact
-          # zip tidak berisi file .config sama sekali walau sudah
-          # dikonfirmasi ADA saat compile via grep di step ini): akar
-          # masalahnya adalah `actions/upload-artifact` (via @actions/glob
-          # di baliknya) SECARA DEFAULT tidak menyertakan file yang namanya
-          # diawali titik ("dotfile"/hidden file di konvensi Unix) - bukan
-          # bug workflow kita di sisi compile, tapi keterbatasan tool
-          # upload GitHub sendiri. Solusinya: copy .config ke nama file
-          # TANPA titik di depan supaya pasti ikut ter-upload, lalu
-          # referensikan nama BARU itu di step "Upload paket" di bawah
-          # (bukan lagi kernel/out/.config langsung).
+          # PERBAIKAN (lihat catatan di header file - bug upload-artifact
+          # dotfile): copy .config ke nama file tanpa titik-di-depan supaya
+          # pasti ikut ter-upload oleh actions/upload-artifact.
           cp out/.config out/resolved-config.txt
           echo "OK: out/.config disalin ke out/resolved-config.txt (nama tanpa titik-di-depan) supaya lolos filter hidden-file upload-artifact"
           echo ""
