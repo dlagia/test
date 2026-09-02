@@ -85,63 +85,6 @@
 # nama file TANPA titik di depan (resolved-config.txt) sebelum upload, lalu
 # referensikan nama baru itu - bukan Droidspaces-related, ini bug umum yang
 # berlaku untuk workflow mana pun yang mencoba upload file dotfile.
-#
-# PENAMBAHAN 2 September 2026: Droidspaces (github.com/ravindu644/Droidspaces-OSS)
-# - container runtime LXC-like userspace (statically-linked, musl, ~400KB per
-# arch). Droidspaces BUKAN modul kernel yang perlu ditanam/dikompilasi seperti
-# NoMount/Re:Kernel/Baseband-guard - ia berjalan murni di userspace memakai
-# fasilitas kernel generik (namespaces, cgroups, seccomp, overlayfs, netfilter)
-# yang SUDAH ADA di kernel manapun sejak 3.10+. Karena itu integrasinya HANYA
-# berupa: (1) fragment CONFIG_* di defconfig sesuai
-# Documentation/Kernel-Configuration.md resmi utk kernel non-GKI (kernel ini,
-# 4.14, masuk kategori non-GKI: 3.18/4.4/4.9/4.14/4.19), dan (2) dua patch
-# kecil dari Documentation/resources/kernel-patches/non-GKI/ upstream.
-#
-# VERIFIKASI LANGSUNG (bukan asumsi) yang sudah dilakukan sebelum menambahkan
-# step ini - kernel dlagia/android_kernel_xiaomi_rosemary@rosemary-13 DI-CLONE
-# SUNGGUHAN dan dicek satu-satu:
-#   - net/netfilter/xt_qtaguid.c: TIDAK ADA di source kernel ini sama sekali
-#     (kemungkinan sudah digantikan BPF traffic-accounting ala Xiaomi/AOSP
-#     baru). Akibatnya patch upstream "01.fix_kernel_panic_in_xt_qtaguid.patch"
-#     TIDAK RELEVAN utk kernel ini - step di bawah SENGAJA di-desain untuk
-#     SKIP (bukan gagal keras) patch yang file targetnya tidak ada, supaya
-#     tidak memaksakan patch yang tidak berlaku dan tidak diam-diam korup
-#     apapun.
-#   - kernel/cgroup/cgroup.c: fungsi cgroup_add_file() ADA, dengan konteks
-#     (spin_unlock_irq(&cgroup_file_kn_lock) diikuti "return 0; }") PERSIS
-#     sama dengan yang diasumsikan patch upstream
-#     "02...cgroup file prefix handling...patch". `git apply --check` diuji
-#     SUNGGUHAN terhadap source asli dan BERHASIL (hunk diterapkan dengan
-#     offset ~199 baris - itu NORMAL utk context-based patch krn source ini
-#     punya baris tambahan di atasnya dibanding source asli pembuat patch,
-#     BUKAN tanda ketidakcocokan). Simbol CGRP_ROOT_NOPREFIX, CFTYPE_NO_PREFIX,
-#     dan signature kernfs_create_link(parent, name, target) semuanya ADA
-#     dan cocok di kernel ini.
-#   - Semua symbol Kconfig WAJIB (fatal) dari dokumentasi non-GKI resmi
-#     (NAMESPACES, PID_NS, UTS_NS, IPC_NS, CGROUPS, CGROUP_DEVICE, DEVTMPFS,
-#     NET_NS, VETH, BRIDGE, SECCOMP, SYSVIPC, POSIX_MQUEUE, OVERLAY_FS) SUDAH
-#     dikonfirmasi ADA di Kconfig kernel ini (arch/arm64/Kconfig, init/Kconfig,
-#     drivers/base/Kconfig, drivers/net/Kconfig, net/bridge/Kconfig,
-#     fs/overlayfs/Kconfig) - tidak ada yang "hilang" yang akan membuat
-#     resolved-config check di step "Compile kernel" gagal secara keliru.
-#   - CONFIG_ANDROID_PARANOID_NETWORK (direkomendasikan didisable oleh docs
-#     Droidspaces utk internet non-GKI) TIDAK ADA sama sekali di Kconfig
-#     kernel ini - baris ini di defconfig akan diabaikan oleh
-#     `make defconfig` (bukan error, bukan bug, cuma no-op) karena kernel
-#     ini sudah tidak memakai gating jaringan model lama itu.
-#   - Droidspaces TIDAK menambahkan Kconfig driver sendiri (tidak ada
-#     "config DROIDSPACES" di manapun) - beda dgn NOMOUNT/REKERNEL/BBG di
-#     atas yg masing2 punya Kconfig entry sendiri. Jadi TIDAK ADA baris
-#     "CONFIG_DROIDSPACES=y" yang perlu (atau boleh) ditambahkan - menambah
-#     baris seperti itu justru BUG (symbol yang tidak pernah ada, silent
-#     no-op yang menyesatkan pembaca defconfig).
-#   - Binary/APK Droidspaces sendiri TIDAK dikompilasi maupun dibundel oleh
-#     workflow ini (beda dgn NoMount yang WAJIB membundel `nm` CLI karena
-#     ada protokol kernel<->userspace yang harus commit-locked sama persis -
-#     Droidspaces tidak punya keterikatan versi seperti itu; ia cuma butuh
-#     kernel dgn CONFIG yang tepat, lalu user pasang APK/binary Droidspaces
-#     versi apa pun secara terpisah dari GitHub Releases resmi mereka).
-#
 # ============================================================
 
 on:
@@ -558,111 +501,6 @@ jobs:
             sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' security/Kconfig
           grep -n 'baseband_guard' security/Kconfig || echo "baseband_guard: tidak ada blok config LSM di kernel ini - WAJAR untuk non-GKI, hook tetap aktif otomatis lewat security_initcall()"
 
-      - name: Integrasikan Droidspaces (ravindu644/Droidspaces-OSS) - dukungan kernel utk container runtime
-        working-directory: kernel
-        run: |
-          # Droidspaces itu binary userspace terpisah (bukan modul kernel), jadi
-          # yang perlu ditanam di sini HANYA dua hal sesuai
-          # Documentation/Kernel-Configuration.md resmi utk kernel non-GKI:
-          #   1) fragment CONFIG_* (ditambahkan di step "Aktifkan KSU di defconfig")
-          #   2) patch kecil dari Documentation/resources/kernel-patches/non-GKI/
-          # Lihat catatan verifikasi lengkap di header file workflow ini.
-          #
-          # Step ini mengambil direktori patch non-GKI secara LIVE dari repo
-          # upstream via `git sparse-checkout` (BUKAN hardcode 2 nama file,
-          # dan BUKAN GitHub REST API - API publik gampang kena rate-limit
-          # tak terduga di runner bersama; sparse-checkout cuma menarik git
-          # protocol biasa yang sama persis dipakai step2 lain di file ini,
-          # jadi tidak menambah titik-gagal baru). Dengan begitu kalau
-          # upstream nambah/hapus/ubah nama patch non-GKI di kemudian hari,
-          # workflow ini otomatis ikut, BUKAN diam-diam ketinggalan zaman
-          # krn nama file di-hardcode.
-          #
-          # Tiap patch yang ditemukan HANYA diterapkan kalau file target yang
-          # disebut di header-nya (baris "+++ b/...") BENAR-BENAR ADA di
-          # source kernel ini - kalau tidak ada, di-skip dengan log jelas
-          # (bukan error, karena artinya patch itu memang tidak relevan utk
-          # kernel ini - contoh nyata yang sudah diverifikasi manual:
-          # net/netfilter/xt_qtaguid.c TIDAK ADA di kernel dlagia/rosemary-13,
-          # jadi "01.fix_kernel_panic_in_xt_qtaguid.patch" akan ter-skip
-          # otomatis). Kalau file targetnya ADA tapi git apply --check tetap
-          # gagal, itu BARU dianggap error keras (source kernel berubah
-          # drastis sejak diverifikasi manusia) - TIDAK dipaksakan apply.
-
-          rm -rf /tmp/ds-src
-          git clone --filter=blob:none --no-checkout --depth=1 \
-            https://github.com/ravindu644/Droidspaces-OSS.git /tmp/ds-src
-          (
-            cd /tmp/ds-src
-            git sparse-checkout init --cone
-            git sparse-checkout set Documentation/resources/kernel-patches/non-GKI
-            git checkout
-          )
-
-          PATCH_DIR="/tmp/ds-src/Documentation/resources/kernel-patches/non-GKI"
-          test -d "$PATCH_DIR" || {
-            echo "ERROR: direktori patch non-GKI Droidspaces tidak ditemukan setelah sparse-checkout"
-            exit 1
-          }
-
-          echo "== Isi direktori patch non-GKI upstream =="
-          ls -la "$PATCH_DIR"
-          PATCH_COUNT=$(find "$PATCH_DIR" -maxdepth 1 -name '*.patch' | wc -l)
-          [ "$PATCH_COUNT" -ge 1 ] || {
-            echo "ERROR: tidak ada file .patch ditemukan di direktori non-GKI upstream"
-            exit 1
-          }
-
-          echo ""
-          echo "== Terapkan patch (hanya yang file targetnya ada di kernel ini) =="
-          APPLIED=0
-          SKIPPED=0
-          for p in "$PATCH_DIR"/*.patch; do
-            [ -e "$p" ] || continue
-            base="$(basename "$p")"
-            echo ""
-            echo "---- $base ----"
-
-            TARGET_FILES=$(grep -E '^\+\+\+ b/' "$p" | sed 's/^+++ b\///' | awk '{print $1}')
-            if [ -z "$TARGET_FILES" ]; then
-              echo "ERROR: tidak bisa menemukan baris '+++ b/...' di $base - format patch tidak dikenali"
-              exit 1
-            fi
-
-            MISSING=0
-            for tf in $TARGET_FILES; do
-              if [ -f "$tf" ]; then
-                echo "OK: file target '$tf' ada di kernel ini"
-              else
-                echo "SKIP: file target '$tf' TIDAK ADA di source kernel ini - patch ini tidak relevan utk kernel ini, dilewati (bukan error)."
-                MISSING=1
-              fi
-            done
-
-            if [ "$MISSING" = "1" ]; then
-              SKIPPED=$((SKIPPED+1))
-              continue
-            fi
-
-            if ! git apply --check "$p" > /tmp/ds_apply_check.log 2>&1; then
-              echo "ERROR: $base GAGAL diverifikasi git apply --check, PADAHAL file targetnya ada."
-              echo "Artinya source kernel ini sudah berbeda dari yang terakhir diverifikasi manual - JANGAN dipaksakan."
-              cat /tmp/ds_apply_check.log
-              exit 1
-            fi
-
-            git apply "$p"
-            echo "OK: $base berhasil diterapkan ke kernel."
-            APPLIED=$((APPLIED+1))
-          done
-
-          echo ""
-          echo "Ringkasan Droidspaces patch: $APPLIED diterapkan, $SKIPPED dilewati (tidak relevan utk kernel ini)."
-          [ "$APPLIED" -ge 1 ] || {
-            echo "ERROR: tidak satupun patch Droidspaces berhasil diterapkan - source kernel mungkin sudah berubah drastis, perlu re-verifikasi manual."
-            exit 1
-          }
-
       - name: Pra-compile - perbaikan build source MTK (verified reusable)
         working-directory: kernel
         run: |
@@ -710,87 +548,8 @@ jobs:
             echo ""
             echo "CONFIG_BBG=y"
             echo ""
-            echo "# ---- Droidspaces (ravindu644/Droidspaces-OSS) - non-GKI kernel 4.14 ----"
-            echo "# Sesuai Documentation/Kernel-Configuration.md resmi, bagian"
-            echo "# 'Configuring Non-GKI Kernels (Legacy Kernels)' -> Step 1: Mandatory Configuration."
-            echo "# Semua symbol di bawah SUDAH dikonfirmasi ada di Kconfig kernel ini (lihat header file)."
-            echo ""
-            echo "# IPC mechanisms"
-            echo "CONFIG_SYSCTL=y"
-            echo "CONFIG_SYSVIPC=y"
-            echo "CONFIG_POSIX_MQUEUE=y"
-            echo ""
-            echo "# Core namespace support"
-            echo "CONFIG_NAMESPACES=y"
-            echo "CONFIG_PID_NS=y"
-            echo "CONFIG_UTS_NS=y"
-            echo "CONFIG_IPC_NS=y"
-            echo ""
-            echo "# Seccomp support"
-            echo "CONFIG_SECCOMP=y"
-            echo "CONFIG_SECCOMP_FILTER=y"
-            echo ""
-            echo "# Control groups support"
-            echo "CONFIG_CGROUPS=y"
-            echo "CONFIG_CGROUP_DEVICE=y"
-            echo "CONFIG_CGROUP_PIDS=y"
-            echo "CONFIG_MEMCG=y"
-            echo "CONFIG_CGROUP_SCHED=y"
-            echo "CONFIG_FAIR_GROUP_SCHED=y"
-            echo "CONFIG_CGROUP_FREEZER=y"
-            echo "CONFIG_CGROUP_NET_PRIO=y"
-            echo ""
-            echo "# Device filesystem support"
-            echo "CONFIG_DEVTMPFS=y"
-            echo ""
-            echo "# Overlay filesystem support (mode volatile Droidspaces)"
-            echo "CONFIG_OVERLAY_FS=y"
-            echo ""
-            echo "# xattr + posix acl di tmpfs (dukungan distro NixOS di dalam container)"
-            echo "CONFIG_TMPFS_POSIX_ACL=y"
-            echo "CONFIG_TMPFS_XATTR=y"
-            echo ""
-            echo "# Firmware loading support"
-            echo "CONFIG_FW_LOADER=y"
-            echo "CONFIG_FW_LOADER_USER_HELPER=y"
-            echo "CONFIG_FW_LOADER_COMPRESS=y"
-            echo ""
-            echo "# Isolasi jaringan Droidspaces - mode NAT/none"
-            echo "CONFIG_NET_NS=y"
-            echo "CONFIG_VETH=y"
-            echo "CONFIG_BRIDGE=y"
-            echo "CONFIG_NETFILTER=y"
-            echo "CONFIG_BRIDGE_NETFILTER=y"
-            echo "CONFIG_NETFILTER_ADVANCED=y"
-            echo "CONFIG_NF_CONNTRACK=y"
-            echo "CONFIG_IP_NF_IPTABLES=y"
-            echo "CONFIG_IP_NF_FILTER=y"
-            echo "CONFIG_NF_NAT=y"
-            echo "CONFIG_NF_TABLES=y"
-            echo "CONFIG_IP_NF_TARGET_MASQUERADE=y"
-            echo "CONFIG_NETFILTER_XT_TARGET_MASQUERADE=y"
-            echo "CONFIG_NETFILTER_XT_TARGET_TCPMSS=y"
-            echo "CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y"
-            echo "CONFIG_NF_CONNTRACK_NETLINK=y"
-            echo "CONFIG_NF_NAT_REDIRECT=y"
-            echo "CONFIG_IP_ADVANCED_ROUTER=y"
-            echo "CONFIG_IP_MULTIPLE_TABLES=y"
-            echo ""
-            echo "# legacy compat"
-            echo "CONFIG_NF_CONNTRACK_IPV4=y"
-            echo "CONFIG_NF_NAT_IPV4=y"
-            echo "CONFIG_IP_NF_NAT=y"
-            echo ""
-            echo "# Disable ini di kernel lawas supaya internet jalan di dalam container."
-            echo "# CATATAN: symbol ini TIDAK ADA di Kconfig kernel dlagia/rosemary-13 (sudah"
-            echo "# dikonfirmasi via grep langsung ke source) - baris ini akan diabaikan begitu"
-            echo "# saja oleh 'make defconfig' (no-op), BUKAN error, BUKAN bug. Dibiarkan tetap"
-            echo "# ada di sini supaya defconfig ini tetap portable kalau suatu saat basis kernel"
-            echo "# diganti ke kernel lain yang masih punya symbol ini."
-            echo "CONFIG_ANDROID_PARANOID_NETWORK=n"
-            echo ""
           } >> "$DEF"
-          tail -70 "$DEF"
+          tail -25 "$DEF"
 
       - name: Ambil toolchain proton-clang (dipakai penulis kernel ini di b.sh)
         run: |
@@ -837,35 +596,6 @@ jobs:
           grep -q '^CONFIG_BBG=y$' out/.config || { echo "ERROR: CONFIG_BBG tidak resolve ke y (cek CONFIG_SECURITY=y - CONFIG_BBG depends on itu)"; exit 1; }
 
           echo "ReSukiSU Manual Hook + auto-hook: CONFIG OK"
-
-          echo ""
-          echo "==================== RESOLVED Droidspaces CONFIG (non-GKI mandatory) ===================="
-          grep -E '^CONFIG_(NAMESPACES|PID_NS|UTS_NS|IPC_NS|CGROUP_DEVICE|DEVTMPFS|SECCOMP|SECCOMP_FILTER|CGROUPS|SYSVIPC|POSIX_MQUEUE|OVERLAY_FS|NET_NS|VETH|BRIDGE)=y$' out/.config || true
-
-          # Symbol FATAL sesuai tabel "What to Do If Something Is Missing" resmi
-          # Droidspaces - kalau salah satu ini tidak resolve, container TIDAK
-          # akan bisa start sama sekali, jadi ini harus gagal keras (bukan warning).
-          for sym in CONFIG_NAMESPACES CONFIG_PID_NS CONFIG_UTS_NS CONFIG_IPC_NS \
-                     CONFIG_CGROUP_DEVICE CONFIG_DEVTMPFS CONFIG_SECCOMP \
-                     CONFIG_CGROUPS CONFIG_SYSVIPC CONFIG_POSIX_MQUEUE; do
-            grep -q "^${sym}=y$" out/.config || {
-              echo "ERROR: $sym tidak resolve ke y - fatal utk Droidspaces (Namespaces/Cgroup/IPC wajib)"
-              exit 1
-            }
-          done
-          echo "OK: seluruh symbol fatal Droidspaces resolve ke y"
-
-          # Symbol opsional (NAT mode, volatile mode) - kalau hilang cukup
-          # diperingatkan, container tetap bisa start dgn fitur terbatas.
-          for sym in CONFIG_NET_NS CONFIG_VETH CONFIG_BRIDGE CONFIG_OVERLAY_FS; do
-            grep -q "^${sym}=y$" out/.config || echo "PERINGATAN: $sym tidak resolve ke y - fitur opsional Droidspaces terkait akan tidak tersedia (bukan fatal)"
-          done
-
-          if grep -q '^CONFIG_ANDROID_PARANOID_NETWORK' out/.config; then
-            grep '^CONFIG_ANDROID_PARANOID_NETWORK' out/.config
-          else
-            echo "INFO: CONFIG_ANDROID_PARANOID_NETWORK tidak ada di Kconfig kernel ini (sudah diverifikasi manual sebelumnya) - baris di defconfig diabaikan begitu saja, ini WAJAR."
-          fi
 
           set -o pipefail
           if ! make -k O=out -j"$(nproc)" \
@@ -952,7 +682,7 @@ jobs:
 
           cp "${{ steps.kimg.outputs.path }}" "AnyKernel3/${{ steps.kimg.outputs.name }}"
 
-          ZIP="rosemary-ksu-nomount-rekernel-bbg-droidspaces-$(date +%Y%m%d-%H%M%S).zip"
+          ZIP="rosemary-ksu-nomount-rekernel-bbg-$(date +%Y%m%d-%H%M%S).zip"
 
           ( cd AnyKernel3 && zip -r9 "../$ZIP" . -x '.git*' )
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
