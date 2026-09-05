@@ -57,6 +57,14 @@ jobs:
           export KERNEL_VERSION="${VERSION}.${PATCHLEVEL}"
           echo "Kernel version detected: $KERNEL_VERSION"
 
+          # Repo kernel ini SUDAH membawa file *.rej sendiri (mis.
+          # drivers/misc/mediatek/lcm/mt65xx_lcm_list.c.rej) yang ter-commit dan
+          # tidak ada hubungannya dgn SUSFS. Dicatat dulu supaya tidak dikira
+          # kegagalan patch.
+          find . -name '*.rej' -printf '%P\n' 2>/dev/null | sort > /tmp/rej_before.txt
+          echo "== Reject bawaan repo (diabaikan): $(wc -l < /tmp/rej_before.txt) file =="
+          cat /tmp/rej_before.txt || true
+
           echo "[+] Mengunduh integrate_ksu_susfs.sh dari dlagia/Build-Kernel_scripts..."
           curl -fLSs "https://raw.githubusercontent.com/dlagia/Build-Kernel_scripts/main/scripts/integrate_ksu_susfs.sh" -o integrate_ksu_susfs.sh
           chmod +x integrate_ksu_susfs.sh
@@ -72,23 +80,39 @@ jobs:
           # Script dlagia menelan kegagalan patch (patch ... || true) lalu
           # memindahkan .rej ke patch_rejects/ dan tetap lanjut. Kalau tidak
           # diaudit, build gagal jauh di belakang dgn error yang membingungkan.
-          REJ=$( { find patch_rejects -name '*.rej' 2>/dev/null; find . -path ./patch_rejects -prune -o -name '*.rej' -print 2>/dev/null; } | sed 's#^\./##; s#^patch_rejects/##' | sort -u )
+          # Script dlagia memindahkan semua *.rej ke patch_rejects/ (termasuk yg
+          # bawaan repo), jadi kumpulkan dari dua tempat lalu kurangi daftar
+          # bawaan tadi. Sisanya = reject yang benar-benar dari patch SUSFS.
+          { find patch_rejects -name '*.rej' -printf '%P\n' 2>/dev/null; \
+            find . -path ./patch_rejects -prune -o -name '*.rej' -printf '%P\n' 2>/dev/null; } \
+            | sort -u > /tmp/rej_after.txt
+          REJ=$(comm -13 /tmp/rej_before.txt /tmp/rej_after.txt)
+
           if [ -n "$REJ" ]; then
-            echo "File dengan hunk gagal:"
+            echo "Reject baru dari patch SUSFS:"
             echo "$REJ"
           else
-            echo "Tidak ada reject."
+            echo "Tidak ada reject baru dari patch SUSFS."
           fi
 
+          # fs/proc/task_mmu.c.rej memang diharapkan gagal (hunk #1/#5/#6) dan
+          # ditangani step berikutnya. Selain itu, berhenti.
           UNEXPECTED=$(echo "$REJ" | grep -v '^fs/proc/task_mmu\.c\.rej$' | grep -v '^$' || true)
           if [ -n "$UNEXPECTED" ]; then
             echo ""
-            echo "ERROR: ada reject di file selain fs/proc/task_mmu.c yang sudah ditangani:"
+            echo "ERROR: ada reject SUSFS di file yang belum ditangani:"
             echo "$UNEXPECTED"
             echo "Isi reject:"
-            for f in $UNEXPECTED; do echo "----- $f"; cat "patch_rejects/$f" 2>/dev/null || cat "$f" 2>/dev/null; done
+            for f in $UNEXPECTED; do
+              echo "----- $f"
+              cat "patch_rejects/$f" 2>/dev/null || cat "$f" 2>/dev/null || true
+            done
             exit 1
           fi
+
+          echo "$REJ" | grep -q '^fs/proc/task_mmu\.c\.rej$' \
+            && echo "OK: hanya fs/proc/task_mmu.c yang reject (sudah diantisipasi)" \
+            || echo "CATATAN: task_mmu.c tidak reject - patch upstream mungkin sudah diperbaiki"
 
           echo ""
           echo "== PERBAIKAN OTOMATIS: bug deteksi versi utk security/selinux/hooks.c (kernel 4.14) =="
