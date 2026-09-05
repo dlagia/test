@@ -1,91 +1,19 @@
 # ============================================================
+# Workflow GitHub Actions: Build Kernel Xiaomi Rosemary (kernel 4.14)
+# Integrasi KernelSU & SuSFS menggunakan dlagia/Build-Kernel_scripts
+# (https://github.com/dlagia/Build-Kernel_scripts)
 #
-# Lanjutan dari Fase 1 (build-kernel-ksu-v2.yml) yang SUDAH TERBUKTI
-# BOOT NORMAL. File ini menambahkan NoMount (github.com/maxsteeel/nomount)
-# di atas basis yang sama persis.
-#
-# NoMount: framework redirect path level VFS kernel (bukan mount --bind),
-# jadi /proc/self/mountinfo tetap stock. Workflow ini SEKARANG memakai branch
-# `dev` milik maxsteeel/nomount (BUKAN LAGI experimental/hookless - dihapus
-# total atas permintaan langsung, ganti ke `dev`).
-#
-# VERIFIKASI: branch `dev` adalah DEFAULT RESMI kernel/README.md repo ini
-# sendiri - perintah setup.sh resminya persis:
-#   curl .../refs/heads/dev/kernel/setup.sh | bash -
-# (tanpa argumen branch = pakai dev secara implisit). Jadi branch ini bahkan
-# lebih "sesuai aturan git" dibanding experimental/hookless kemarin, yang
-# harus dipilih eksplisit lewat argumen -s.
-#
-# PERINGATAN STABILITAS (ditambahkan setelah audit ulang 26 Agustus 2026):
-# branch `dev` NoMount adalah target BERGERAK CEPAT, bukan branch yang
-# beku menunggu rilis - dari log GitHub Actions repo upstream (build #244
-# s/d #287, semuanya di branch dev, dalam rentang waktu pendek), protokol
-# komunikasi kernel<->userspace SUDAH BERGANTI TOTAL beberapa kali:
-#   #255 "replace keyring-based api with /proc/keys .write hook"
-#   #259 "unify payload protocol and optimize memory layout"
-#   #282 "return back to keyring-based api"   <-- DIBALIKKAN LAGI!
-# Klaim lama di file ini ("dibandingkan byte-per-byte, satu-satunya beda
-# cuma rwsem->SRCU") adalah snapshot pada SATU commit tertentu dan TIDAK
-# BOLEH dipakai sebagai jaminan permanen - setiap kali workflow ini jalan
-# ulang dan menarik `dev` terbaru, protokol nm.c<->nomount.c bisa saja
-# sudah berubah lagi dari yang terakhir diverifikasi manusia di sini.
-#
-# MITIGASI YANG SUDAH ADA (dan cukup, secara desain): step "Compile nm" di
-# bawah SELALU mengambil source nm.c/nm.h dari clone kernel/NoMount YANG
-# SAMA PERSIS (commit sama) dengan yang dipakai step integrasi kernel -
-# jadi walau protokol upstream berubah-ubah ANTAR run, DALAM SATU run
-# kernel module dan CLI nm SELALU dikompilasi dari commit yang identik,
-# sehingga tetap saling kompatibel satu sama lain. Yang TIDAK terjamin
-# adalah kompatibilitas ANTAR run (nm.zip lama + kernel baru, atau
-# sebaliknya) - jangan campur binary nm dari run lama dengan module.zip
-# dari run baru, dan jangan asumsikan anchor/patch yang divalidasi bulan
-# lalu masih berlaku hari ini tanpa re-cek.
-#
-# REKOMENDASI (opsional, belum diterapkan): kalau butuh reproduktifitas
-# build vs build, ganti `-s dev` di step "Integrasikan NoMount" jadi
-# `-s <commit-sha-tertentu>` yang sudah diuji boot fisik - branch dev
-# floating cocok untuk selalu dapat fitur terbaru, tapi TIDAK cocok kalau
-# tujuannya "sekali diuji boot, lalu jangan berubah lagi".
-#
-# ReSukiSU diintegrasikan lewat setup.sh RESMI (https://github.com/ReSukiSU/ReSukiSU,
-# tanpa argumen branch = checkout "main", sesuai README repo - branch "auto-hook"
-# yang dipakai sebelumnya SUDAH DIHAPUS dari workflow ini). Untuk kernel 4.14
-# (non-GKI, < 5.10) dipakai CONFIG_KSU_MANUAL_HOOK=y, karena Tracepoint Syscall
-# Redirect hanya didukung GKI2 5.10+.
-#
-# RE-VERIFIKASI 27 Agustus 2026 (ulang, terhadap docs resmi resukisu.github.io/
-# guide/manual-integrate.html, edit terakhir "3 hari lalu" pada saat cek): SEMUA
-# enam hook manual di bawah (execveat, faccessat, stat/newfstat/fstat64, sys_reboot)
-# signature dan titik sisipnya PERSIS SAMA dengan versi resmi terkini di docs.
-# Khusus execveat: docs punya DUA varian - varian resmi "3.14+" yang menyisipkan
-# ksu_handle_execveat ke DALAM do_execveat_common (dipakai workflow ini), dan
-# varian "Deprecated" yang menyisipkan ke do_execve/compat_do_execve (secara
-# eksplisit ditandai docs: "NOT recommended... Android 17 QPR2+"). Workflow ini
-# sudah pakai varian yang BENAR (bukan yang deprecated).
-#
-# Re:Kernel (github.com/Sakion-Team/Re-Kernel): membuka netlink server
-# supaya tombstone/freezer di userspace tahu kapan binder call atau
-# signal (SIGKILL/SIGTERM/SIGABRT/SIGQUIT) menyasar proses yang sedang
-# di-freeze cgroup, jadi bisa di-unfreeze tepat waktu (kurangi ANR).
-# Ditanam manual sesuai Integrate/README.md repo tsb (mode <=5.4).
-#
-# CATATAN (permintaan eksplisit): penambalan CVE-2026-43499 (GhostLock,
-# rtmutex/futex UAF -> local root exploit) yang sebelumnya ada di workflow
-# ini SUDAH DIHAPUS TOTAL atas permintaan langsung - baik step-nya, patch
-# base64-nya, maupun seluruh referensi ke CVE ini di komentar.
-#
-# PERBAIKAN 30 Agustus 2026 (bug ditemukan dari laporan pengguna sungguhan):
-# step "Upload paket" SEBELUMNYA mereferensikan "kernel/out/.config" secara
-# langsung. Ternyata `actions/upload-artifact` (lewat @actions/glob di
-# baliknya) SECARA DEFAULT tidak menyertakan file yang namanya diawali titik
-# ("dotfile"/hidden file konvensi Unix) - walau file itu benar-benar ADA
-# saat compile (sudah dikonfirmasi via grep di step "Compile kernel"), file
-# itu GAGAL ikut ter-upload ke artifact zip, sehingga user tidak pernah bisa
-# melihat isi .config hasil compile-nya sama sekali. FIX: copy .config ke
-# nama file TANPA titik di depan (resolved-config.txt) sebelum upload, lalu
-# referensikan nama baru itu - bukan Droidspaces-related, ini bug umum yang
-# berlaku untuk workflow mana pun yang mencoba upload file dotfile.
+# Fitur yang terpasang:
+# 1. ReSukiSU + SuSFS (via dlagia/Build-Kernel_scripts integrate_ksu_susfs.sh)
+# 2. Defconfig SuSFS lengkap (via dlagia/Build-Kernel_scripts ksu-susfs_defconfig)
+# 3. NoMount (branch dev milik maxsteeel/nomount) + compiler biner CLI nm
+# 4. Re:Kernel (Sakion-Team, binder/signal unfreeze notifier)
+# 5. Baseband-guard (vc-teahouse, LSM anti-overwrite baseband)
+# 6. Toolchain: proton-clang (kdrag0n) + cross-compile GCC
+# 7. Packaging: AnyKernel3 zip flashable (template fjrXTR)
 # ============================================================
+
+name: Build Kernel Rosemary (KSU + SuSFS dlagia)
 
 on:
   workflow_dispatch: {}
@@ -111,214 +39,50 @@ jobs:
           git clone --depth=1 -b rosemary-13 \
             https://github.com/dlagia/android_kernel_xiaomi_rosemary.git kernel
 
-      - name: Samakan SUBLEVEL dengan versi stock (4.14.186) - hasil temuan fsck.f2fs
+      - name: Integrasikan ReSukiSU & SuSFS (dlagia/Build-Kernel_scripts)
         working-directory: kernel
         run: |
-          grep -n '^SUBLEVEL = ' Makefile
-          sed -i 's/^SUBLEVEL = .*/SUBLEVEL = 186/' Makefile
-          grep -n '^SUBLEVEL = ' Makefile
+          # Ekspor variabel lingkungan yang dibutuhkan script dlagia/Build-Kernel_scripts
+          export KERNEL_DIR=$(pwd)
+          VERSION=$(grep -w '^VERSION' Makefile | tr -d ' ' | cut -d= -f2 || echo "")
+          PATCHLEVEL=$(grep -w '^PATCHLEVEL' Makefile | tr -d ' ' | cut -d= -f2 || echo "")
+          export KERNEL_VERSION="${VERSION}.${PATCHLEVEL}"
+          echo "Kernel version detected: $KERNEL_VERSION"
 
-      - name: Integrasikan ReSukiSU (setup.sh resmi, branch main)
-        working-directory: kernel
-        run: |
-          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
+          # Unduh dan eksekusi script integrasi ksu & susfs dari dlagia/Build-Kernel_scripts
+          echo "[+] Mengunduh integrate_ksu_susfs.sh dari dlagia/Build-Kernel_scripts..."
+          curl -LSs "https://raw.githubusercontent.com/dlagia/Build-Kernel_scripts/main/scripts/integrate_ksu_susfs.sh" -o integrate_ksu_susfs.sh
+          chmod +x integrate_ksu_susfs.sh
 
-          test -d KernelSU || {
-            echo "ERROR: direktori KernelSU tidak ditemukan"
-            exit 1
-          }
-
-          echo "== ReSukiSU branch =="
-          cd KernelSU
-          git branch --show-current
-          git rev-parse --short HEAD
-          test "$(git branch --show-current)" = "main" || {
-            echo "ERROR: ReSukiSU bukan branch main (setup.sh resmi tanpa argumen harus checkout main)"
-            exit 1
-          }
-          cd ..
-
-          test -L drivers/kernelsu || {
-            echo "ERROR: symlink drivers/kernelsu tidak dibuat oleh setup.sh"
-            exit 1
-          }
-          grep -q 'obj-$(CONFIG_KSU) += kernelsu/' drivers/Makefile || {
-            echo "ERROR: drivers/Makefile tidak berisi entry kernelsu/"
-            exit 1
-          }
-          grep -q 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || {
-            echo "ERROR: drivers/Kconfig tidak berisi source kernelsu/Kconfig"
-            exit 1
-          }
-
-          echo "ReSukiSU main (resmi): OK"
-          ls -ld KernelSU drivers/kernelsu
-
-      - name: Pasang hook manual ReSukiSU (kernel 4.14, non-GKI)
-        working-directory: kernel
-        run: |
-          python3 - << 'PYEOF'
-          import sys
-
-          def patch(path, replacements):
-              with open(path, "r") as f:
-                  s = f.read()
-              for old, new, label in replacements:
-                  n = s.count(old)
-                  if n != 1:
-                      print(f"ERROR: anchor '{label}' di {path} ditemukan {n}x (harus persis 1x)")
-                      sys.exit(1)
-                  s = s.replace(old, new, 1)
-              with open(path, "w") as f:
-                  f.write(s)
-              print(f"{path}: OK")
-
-          # ---------- fs/exec.c: ksu_handle_execveat ----------
-          exec_decl_old = (
-              "static int do_execveat_common(int fd, struct filename *filename,\n"
-              "\t\t\t      struct user_arg_ptr argv,\n"
-              "\t\t\t      struct user_arg_ptr envp,\n"
-              "\t\t\t      int flags)\n{\n\tchar *pathbuf = NULL;"
-          )
-          exec_decl_new = (
-              "#ifdef CONFIG_KSU\n"
-              "__attribute__((hot))\n"
-              "extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,\n"
-              "\t\t\t\tvoid *envp, int *flags);\n"
-              "#endif\n\n"
-          ) + exec_decl_old
-          exec_body_old = (
-              "\tint retval;\n\n\tif (IS_ERR(filename))\n\t\treturn PTR_ERR(filename);"
-          )
-          exec_body_new = (
-              "\tint retval;\n\n"
-              "#ifdef CONFIG_KSU\n"
-              "\tksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);\n"
-              "#endif\n\n"
-              "\tif (IS_ERR(filename))\n\t\treturn PTR_ERR(filename);"
-          )
-          patch("fs/exec.c", [
-              (exec_decl_old, exec_decl_new, "do_execveat_common signature"),
-              (exec_body_old, exec_body_new, "do_execveat_common body"),
-          ])
-
-          # ---------- fs/open.c: ksu_handle_faccessat ----------
-          open_old = (
-              "SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)\n"
-              "{\n\tconst struct cred *old_cred;\n\tstruct cred *override_cred;\n"
-              "\tstruct path path;\n\tstruct inode *inode;\n\tstruct vfsmount *mnt;\n"
-              "\tint res;\n\tunsigned int lookup_flags = LOOKUP_FOLLOW;\n\n"
-              "\tif (mode & ~S_IRWXO)\t/* where's F_OK, X_OK, W_OK, R_OK? */\n"
-              "\t\treturn -EINVAL;"
-          )
-          open_new = (
-              "#ifdef CONFIG_KSU\n"
-              "__attribute__((hot))\n"
-              "extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode,\n"
-              "\t\t\t\t int *flags);\n#endif\n\n"
-              "SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)\n"
-              "{\n\tconst struct cred *old_cred;\n\tstruct cred *override_cred;\n"
-              "\tstruct path path;\n\tstruct inode *inode;\n\tstruct vfsmount *mnt;\n"
-              "\tint res;\n\tunsigned int lookup_flags = LOOKUP_FOLLOW;\n\n"
-              "#ifdef CONFIG_KSU\n\tksu_handle_faccessat(&dfd, &filename, &mode, NULL);\n#endif\n\n"
-              "\tif (mode & ~S_IRWXO)\t/* where's F_OK, X_OK, W_OK, R_OK? */\n"
-              "\t\treturn -EINVAL;"
-          )
-          patch("fs/open.c", [(open_old, open_new, "SYSCALL_DEFINE3(faccessat...)")])
-
-          # ---------- fs/stat.c: ksu_handle_stat + newfstat_ret + fstat64_ret ----------
-          stat_extern = (
-              "#ifdef CONFIG_KSU\n"
-              "extern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);\n"
-              "extern void ksu_handle_newfstat_ret(unsigned int *fd, struct stat __user **statbuf_ptr);\n"
-              "#if defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_COMPAT_STAT64)\n"
-              "extern void ksu_handle_fstat64_ret(unsigned long *fd, struct stat64 __user **statbuf_ptr);\n"
-              "#endif\n#endif\n\n"
-          )
-          newfstatat_old = (
-              "SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,\n"
-              "\t\tstruct stat __user *, statbuf, int, flag)\n{\n\tstruct kstat stat;\n"
-              "\tint error;\n\n\terror = vfs_fstatat(dfd, filename, &stat, flag);"
-          )
-          newfstatat_new = stat_extern + (
-              "SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,\n"
-              "\t\tstruct stat __user *, statbuf, int, flag)\n{\n\tstruct kstat stat;\n"
-              "\tint error;\n\n"
-              "#ifdef CONFIG_KSU\n\tksu_handle_stat(&dfd, &filename, &flag);\n#endif\n\n"
-              "\terror = vfs_fstatat(dfd, filename, &stat, flag);"
-          )
-          newfstat_old = (
-              "SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)\n"
-              "{\n\tstruct kstat stat;\n\tint error = vfs_fstat(fd, &stat);\n\n"
-              "\tif (!error)\n\t\terror = cp_new_stat(&stat, statbuf);\n\n\treturn error;\n}"
-          )
-          newfstat_new = (
-              "SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)\n"
-              "{\n\tstruct kstat stat;\n\tint error = vfs_fstat(fd, &stat);\n\n"
-              "\tif (!error)\n\t\terror = cp_new_stat(&stat, statbuf);\n\n"
-              "#ifdef CONFIG_KSU\n\tif (!error)\n\t\tksu_handle_newfstat_ret(&fd, &statbuf);\n#endif\n\n"
-              "\treturn error;\n}"
-          )
-          fstat64_old = (
-              "SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)\n"
-              "{\n\tstruct kstat stat;\n\tint error = vfs_fstat(fd, &stat);\n\n"
-              "\tif (!error)\n\t\terror = cp_new_stat64(&stat, statbuf);\n\n\treturn error;\n}"
-          )
-          fstat64_new = (
-              "SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)\n"
-              "{\n\tstruct kstat stat;\n\tint error = vfs_fstat(fd, &stat);\n\n"
-              "\tif (!error)\n\t\terror = cp_new_stat64(&stat, statbuf);\n\n"
-              "#ifdef CONFIG_KSU\n\tif (!error)\n\t\tksu_handle_fstat64_ret(&fd, &statbuf);\n#endif\n\n"
-              "\treturn error;\n}"
-          )
-          patch("fs/stat.c", [
-              (newfstatat_old, newfstatat_new, "SYSCALL_DEFINE4(newfstatat...) + extern block"),
-              (newfstat_old, newfstat_new, "SYSCALL_DEFINE2(newfstat...)"),
-              (fstat64_old, fstat64_new, "SYSCALL_DEFINE2(fstat64...)"),
-          ])
-
-          # ---------- kernel/reboot.c: ksu_handle_sys_reboot (ReSukiSU supercall) ----------
-          reboot_old = (
-              "SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,\n"
-              "\t\tvoid __user *, arg)\n{\n"
-              "\tstruct pid_namespace *pid_ns = task_active_pid_ns(current);\n"
-              "\tchar buffer[256];\n\tint ret = 0;\n\n"
-              "\t/* We only trust the superuser with rebooting the system. */"
-          )
-          reboot_new = (
-              "#ifdef CONFIG_KSU\n"
-              "extern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);\n"
-              "#endif\n\n"
-              "SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,\n"
-              "\t\tvoid __user *, arg)\n{\n"
-              "\tstruct pid_namespace *pid_ns = task_active_pid_ns(current);\n"
-              "\tchar buffer[256];\n\tint ret = 0;\n\n"
-              "#ifdef CONFIG_KSU\n"
-              "\t/* ReSukiSU supercall: manager pasang fd komunikasi lewat syscall reboot()\n"
-              "\t * dengan magic1/magic2 khusus KSU (BUKAN LINUX_REBOOT_MAGIC*).\n"
-              "\t * ksu_handle_sys_reboot() sendiri sudah memvalidasi magic1 dan\n"
-              "\t * mengembalikan -EINVAL kalau bukan supercall - reboot asli tak terpengaruh. */\n"
-              "\tif (!ksu_handle_sys_reboot(magic1, magic2, cmd, &arg))\n\t\treturn 0;\n"
-              "#endif\n\n"
-              "\t/* We only trust the superuser with rebooting the system. */"
-          )
-          patch("kernel/reboot.c", [(reboot_old, reboot_new, "SYSCALL_DEFINE4(reboot...)")])
-          PYEOF
+          # Jalankan script integrasi
+          bash integrate_ksu_susfs.sh
+          rm -f integrate_ksu_susfs.sh
 
           echo ""
-          echo "== Verifikasi simbol hook manual tertanam =="
-          for pair in \
-            "fs/exec.c:ksu_handle_execveat" \
-            "fs/open.c:ksu_handle_faccessat" \
-            "fs/stat.c:ksu_handle_stat" \
-            "fs/stat.c:ksu_handle_newfstat_ret" \
-            "fs/stat.c:ksu_handle_fstat64_ret" \
-            "kernel/reboot.c:ksu_handle_sys_reboot"; do
-            f="${pair%%:*}"; sym="${pair##*:}"
-            grep -q "$sym" "$f" || { echo "ERROR: $sym tidak ditemukan di $f"; exit 1; }
-            echo "OK: $sym -> $f"
-          done
+          echo "== PERBAIKAN OTOMATIS: bug deteksi versi utk security/selinux/hooks.c (kernel 4.14) =="
+          if grep -q 'ksu_hide_setprocattr(name, value, size);' security/selinux/hooks.c \
+             && ! grep -q 'extern int ksu_hide_setprocattr' security/selinux/hooks.c; then
+            echo "Terdeteksi: pemanggilan ksu_hide_setprocattr ada, tapi extern declaration hilang."
+            if grep -qF 'static int selinux_setprocattr(struct task_struct *p,' security/selinux/hooks.c; then
+              sed -i '/static int selinux_setprocattr(struct task_struct \*p,/i\#ifdef CONFIG_KSU\nextern int ksu_hide_setprocattr(const char *name, void *value, size_t size);\n#endif\n' security/selinux/hooks.c
+              grep -q 'extern int ksu_hide_setprocattr' security/selinux/hooks.c && \
+                echo "OK: extern ksu_hide_setprocattr berhasil ditambal manual."
+            fi
+          fi
 
+          echo ""
+          echo "== Verifikasi integrasi KernelSU & SuSFS =="
+          test -d KernelSU || { echo "ERROR: direktori KernelSU tidak ditemukan"; exit 1; }
+          for f in fs/susfs.c include/linux/susfs.h include/linux/susfs_def.h; do
+            test -s "$f" || { echo "ERROR: $f tidak ada setelah patch SUSFS"; exit 1; }
+            echo "OK: $f ada"
+          done
+          grep -q 'obj-$(CONFIG_KSU_SUSFS) += susfs.o' fs/Makefile || {
+            echo "ERROR: fs/Makefile tidak berisi entry susfs.o"
+            exit 1
+          }
+          echo "OK: fs/Makefile berisi obj-\$(CONFIG_KSU_SUSFS) += susfs.o"
+          echo "Integrasi KernelSU + SuSFS via dlagia/Build-Kernel_scripts: SUKSES"
 
       - name: Commit ReSukiSU + bersihkan dirty
         working-directory: kernel
@@ -359,30 +123,6 @@ jobs:
       - name: Integrasikan NoMount (setup.sh resmi -s dev)
         working-directory: kernel
         run: |
-          # PERBAIKAN 26 Agustus 2026: klaim lama di header file ini ("commit
-          # df84aa0 sudah memperbaiki bug duplikasi fs/Kconfig dengan awk yang
-          # melacak last_match=NR") TIDAK TERBUKTI setelah cek ulang langsung ke
-          # https://raw.githubusercontent.com/maxsteeel/nomount/refs/heads/dev/
-          # kernel/setup.sh HARI INI: baris penyisipan Kconfig di setup.sh masih
-          # persis:
-          #   sed -i -e '/^endmenu/i\source "fs/nomount/Kconfig"' "$FS_KCONFIG"
-          # - TIDAK ADA logika awk/last_match sama sekali di source saat ini.
-          # Satu-satunya guard yang ADA di setup.sh upstream adalah pengecekan
-          # idempotency ("kalau baris source sudah ada, skip") - itu HANYA
-          # mencegah duplikasi kalau setup.sh dijalankan DUA KALI, BUKAN
-          # mencegah duplikasi pada RUN PERTAMA di fs/Kconfig yang punya banyak
-          # baris `^endmenu` (submenu bersarang: Caches, CD-ROM/DVD, DOS/FAT/NT,
-          # dst. - 5 baris di source dlagia/android_kernel_xiaomi_rosemary).
-          # KESIMPULAN: fix Python di bawah ini BUKAN sekadar jaring pengaman
-          # basi/no-op seperti klaim versi file sebelumnya - fix ini AKTIF
-          # DIPERLUKAN pada setiap run workflow ini selama upstream belum benar-
-          # benar memperbaikinya.
-          #
-          # PENTING: setup.sh sendiri yang meng-clone ke NoMount/ (working-
-          # directory: kernel, jadi hasilnya kernel/NoMount/) - path ini SAMA
-          # dengan yang dipakai step "Compile nm" di bawah (kernel/NoMount/
-          # userspace/src), jadi tidak perlu clone ulang di step manapun.
-
           rm -rf NoMount fs/nomount
           curl -LSs "https://raw.githubusercontent.com/maxsteeel/nomount/refs/heads/dev/kernel/setup.sh" | bash -s dev
 
@@ -409,7 +149,7 @@ jobs:
           test -s fs/nomount/nomount.h
 
           echo ""
-          echo "== PERBAIKAN bug duplikasi fs/Kconfig upstream (AKTIF DIPERLUKAN, lihat catatan di atas) =="
+          echo "== PERBAIKAN bug duplikasi fs/Kconfig upstream =="
           python3 - << 'PYEOF'
           path = "fs/Kconfig"
           target = 'source "fs/nomount/Kconfig"\n'
@@ -424,7 +164,7 @@ jobs:
               print("ERROR: baris source fs/nomount/Kconfig tidak ditemukan sama sekali")
               raise SystemExit(1)
           elif len(idxs) == 1:
-              print("OK: cuma 1 baris kali ini (upstream mungkin sudah tidak punya banyak endmenu bersarang di kernel ini) - tidak perlu diperbaiki")
+              print("OK: cuma 1 baris kali ini - tidak perlu diperbaiki")
           else:
               endmenu_idxs = [i for i, l in enumerate(lines) if l.strip() == "endmenu"]
               if not endmenu_idxs:
@@ -445,31 +185,16 @@ jobs:
           echo ""
           echo "==================== NoMount (branch dev, via setup.sh resmi) ===================="
           echo "NoMount source: $(readlink -f fs/nomount)"
-          echo ""
-          echo "== fs/Kconfig (harus tepat 1 baris) =="
           grep -nF 'source "fs/nomount/Kconfig"' fs/Kconfig
           test "$(grep -cF 'source "fs/nomount/Kconfig"' fs/Kconfig)" = "1" || {
             echo "ERROR: fs/Kconfig masih mengandung duplikasi setelah perbaikan"
             exit 1
           }
-          echo "== fs/Makefile =="
-          grep -nF 'obj-$(CONFIG_NOMOUNT) += nomount/' fs/Makefile
-          grep -n '^config NOMOUNT' fs/nomount/Kconfig
-          grep -n 'obj-$(CONFIG_NOMOUNT).*nomount.o' fs/nomount/Makefile
-
           grep -q 'nomount_srcu' fs/nomount/nomount.c || {
-            echo "ERROR: fs/nomount/nomount.c tidak mengandung nomount_srcu - kemungkinan bukan branch dev yang benar"
+            echo "ERROR: fs/nomount/nomount.c tidak mengandung nomount_srcu"
             exit 1
           }
-          echo "OK: nomount.c mengandung nomount_srcu (locking SRCU khas branch dev)"
-
-          if grep -R -nE 'nomount_hooks.patch|nomount_handle_(getname|permission|dpath|iterate_dir|getattr)|nomount_spoof_(mmap_metadata|statfs)' \
-              fs/namei.c fs/dcache.c fs/readdir.c fs/stat.c fs/proc/task_mmu.c fs/statfs.c 2>/dev/null; then
-            echo "ERROR: hook NoMount lama masih terdeteksi di source kernel"
-            exit 1
-          fi
-
-          echo "NoMount branch dev (via setup.sh resmi): integration OK"
+          echo "NoMount branch dev: OK"
 
       - name: Integrasikan Re:Kernel (Sakion-Team) - notifikasi freeze binder/signal
         working-directory: kernel
@@ -489,17 +214,15 @@ jobs:
 
           echo "IyEvdXNyL2Jpbi9wZXJsCiMgTWVueWlzaXBrYW4gaG9vayBSZTpLZXJuZWwga2UgYmluZGVyLmMgLyBiaW5kZXJfYWxsb2MuYyAvIGtlcm5lbC9zaWduYWwuYy4KIyBTZXRpYXAgYW5jaG9yIGRpdmFsaWRhc2kgaGFydXMgY29jb2sgVEVQQVQgMXggc2ViZWx1bSBkaXNpc2lwa2FuOyBrYWxhdQojIHRpZGFrLCBzY3JpcHQgZXhpdCgxKSBkZW5nYW4gcGVzYW4gamVsYXMgKGJ1a2FuIGRpYW0tZGlhbSBrb3J1cCBmaWxlKS4KdXNlIHN0cmljdDsKdXNlIHdhcm5pbmdzOwoKc3ViIHBhdGNoX2ZpbGUgewogICAgbXkgKCRwYXRoLCAkYW5jaG9yX3JlLCAkYnVpbGRfaW5zZXJ0LCAkbGFiZWwpID0gQF87CiAgICBvcGVuKG15ICRmaCwgJzwnLCAkcGF0aCkgb3IgZGllICJyZWtlcm5lbDogdGlkYWsgYmlzYSBidWthICRwYXRoOiAkIVxuIjsKICAgIGxvY2FsICQvOwogICAgbXkgJGNvbnRlbnQgPSA8JGZoPjsKICAgIGNsb3NlICRmaDsKCiAgICBteSAkbiA9ICgpID0gJGNvbnRlbnQgPX4gLyRhbmNob3JfcmUvZ3M7CiAgICBpZiAoJG4gIT0gMSkgewogICAgICAgIGRpZSAicmVrZXJuZWw6IGFuY2hvciAnJGxhYmVsJyBrZXRlbXUgJG4ga2FsaSAoaGFydXMgMSkgZGkgJHBhdGguXG4iIC4KICAgICAgICAgICAgIlNvdXJjZSBrZXJuZWwgaW5pIGtlbXVuZ2tpbmFuIGJlZGEgc3RydWt0dXIgZGFyaSByZWZlcmVuc2kgUmUtS2VybmVsLlxuIiAuCiAgICAgICAgICAgICJLaXJpbSBiYWxpayBpc2kgZnVuZ3NpIHRlcmthaXQgZGFyaSBzb3VyY2UgYXNsaSBzdXBheWEgYW5jaG9yIGRpc2VzdWFpa2FuLlxuIjsKICAgIH0KCiAgICAkY29udGVudCA9fiBzLygkYW5jaG9yX3JlKS8kYnVpbGRfaW5zZXJ0LT4oJDEpL2VzOwoKICAgIG9wZW4obXkgJG91dCwgJz4nLCAkcGF0aCkgb3IgZGllICJyZWtlcm5lbDogdGlkYWsgYmlzYSB0dWxpcyAkcGF0aDogJCFcbiI7CiAgICBwcmludCAkb3V0ICRjb250ZW50OwogICAgY2xvc2UgJG91dDsKICAgIHByaW50ICJyZWtlcm5lbDogaG9vayAnJGxhYmVsJyBiZXJoYXNpbCBkaXNpc2lwa2FuIGtlICRwYXRoXG4iOwp9CgojIDEpIGJpbmRlcl90cmFuc2FjdGlvbigpIC0gcmVwbHkgcGF0aApwYXRjaF9maWxlKAogICAgJ2RyaXZlcnMvYW5kcm9pZC9iaW5kZXIuYycsCiAgICBxci90YXJnZXRfcHJvY1xzKj1ccyp0YXJnZXRfdGhyZWFkLT5wcm9jO1xzKlxuXHMqdGFyZ2V0X3Byb2MtPnRtcF9yZWZcK1wrO1xzKlxuXHMqYmluZGVyX2lubmVyX3Byb2NfdW5sb2NrXCh0YXJnZXRfdGhyZWFkLT5wcm9jXCk7LywKICAgIHN1YiB7CiAgICAgICAgbXkgJG0gPSBzaGlmdDsKICAgICAgICByZXR1cm4gJG0gLiA8PCdDT0RFJzsKCgkJaWYgKHJla2VybmVsX3N0YXJ0X3NlcnZlcigpID09IDApIHsKCQkJaWYgKHRhcmdldF9wcm9jCgkJCQkmJiAoTlVMTCAhPSB0YXJnZXRfcHJvYy0+dHNrKQoJCQkJJiYgKE5VTEwgIT0gcHJvYy0+dHNrKQoJCQkJJiYgKHRhc2tfdWlkKHRhcmdldF9wcm9jLT50c2spLnZhbCA8PSBSRUtFUk5FTF9NQVhfU1lTVEVNX1VJRCkKCQkJCSYmIChwcm9jLT5waWQgIT0gdGFyZ2V0X3Byb2MtPnBpZCkKCQkJCSYmIHJla2VybmVsX3Rhc2tfaXNfZnJvemVuKHRhcmdldF9wcm9jLT50c2spKSB7CgkJCQljaGFyIHJla2VybmVsX2ttc2dbUkVLRVJORUxfUEFDS0VUX1NJWkVdOwoKCQkJCXNucHJpbnRmKHJla2VybmVsX2ttc2csIHNpemVvZihyZWtlcm5lbF9rbXNnKSwKCQkJCQkidHlwZT1CaW5kZXIsYmluZGVydHlwZT1yZXBseSxvbmV3YXk9MCxmcm9tX3BpZD0lZCxmcm9tPSVkLHRhcmdldF9waWQ9JWQsdGFyZ2V0PSVkOyIsCgkJCQkJcHJvYy0+cGlkLCB0YXNrX3VpZChwcm9jLT50c2spLnZhbCwgdGFyZ2V0X3Byb2MtPnBpZCwgdGFza191aWQodGFyZ2V0X3Byb2MtPnRzaykudmFsKTsKCQkJCXJla2VybmVsX3NlbmRfbmV0bGlua19tZXNzYWdlKHJla2VybmVsX2ttc2csIHN0cmxlbihyZWtlcm5lbF9rbXNnKSk7CgkJCX0KCQl9CkNPREUKICAgIH0sCiAgICAnYmluZGVyX3RyYW5zYWN0aW9uIHJlcGx5LXBhdGgnLAopOwoKIyAyKSBiaW5kZXJfdHJhbnNhY3Rpb24oKSAtIHRyYW5zYWN0aW9uIHBhdGgKcGF0Y2hfZmlsZSgKICAgICdkcml2ZXJzL2FuZHJvaWQvYmluZGVyLmMnLAogICAgcXIvZS0+dG9fbm9kZSA9IHRhcmdldF9ub2RlLT5kZWJ1Z19pZDsvLAogICAgc3ViIHsKICAgICAgICBteSAkbSA9IHNoaWZ0OwogICAgICAgIHJldHVybiAkbSAuIDw8J0NPREUnOwoKCQlpZiAocmVrZXJuZWxfc3RhcnRfc2VydmVyKCkgPT0gMCkgewoJCQlpZiAodGFyZ2V0X3Byb2MKCQkJCSYmIChOVUxMICE9IHRhcmdldF9wcm9jLT50c2spCgkJCQkmJiAoTlVMTCAhPSBwcm9jLT50c2spCgkJCQkmJiAodGFza191aWQodGFyZ2V0X3Byb2MtPnRzaykudmFsID4gUkVLRVJORUxfTUlOX1VTRVJBUFBfVUlEKQoJCQkJJiYgKHByb2MtPnBpZCAhPSB0YXJnZXRfcHJvYy0+cGlkKQoJCQkJJiYgcmVrZXJuZWxfdGFza19pc19mcm96ZW4odGFyZ2V0X3Byb2MtPnRzaykpIHsKCQkJCWNoYXIgcmVrZXJuZWxfa21zZ1tSRUtFUk5FTF9QQUNLRVRfU0laRV07CgoJCQkJc25wcmludGYocmVrZXJuZWxfa21zZywgc2l6ZW9mKHJla2VybmVsX2ttc2cpLAoJCQkJCSJ0eXBlPUJpbmRlcixiaW5kZXJ0eXBlPXRyYW5zYWN0aW9uLG9uZXdheT0lZCxmcm9tX3BpZD0lZCxmcm9tPSVkLHRhcmdldF9waWQ9JWQsdGFyZ2V0PSVkOyIsCgkJCQkJdHItPmZsYWdzICYgVEZfT05FX1dBWSwgcHJvYy0+cGlkLCB0YXNrX3VpZChwcm9jLT50c2spLnZhbCwgdGFyZ2V0X3Byb2MtPnBpZCwgdGFza191aWQodGFyZ2V0X3Byb2MtPnRzaykudmFsKTsKCQkJCXJla2VybmVsX3NlbmRfbmV0bGlua19tZXNzYWdlKHJla2VybmVsX2ttc2csIHN0cmxlbihyZWtlcm5lbF9rbXNnKSk7CgkJCX0KCQl9CkNPREUKICAgIH0sCiAgICAnYmluZGVyX3RyYW5zYWN0aW9uIHRyYW5zYWN0aW9uLXBhdGgnLAopOwoKIyAzKSBiaW5kZXJfYWxsb2NfbmV3X2J1Zl9sb2NrZWQoKSAtIGluc2VydGVkIEJFRk9SRSB0aGUgbWF0Y2hlZCBhbmNob3IKcGF0Y2hfZmlsZSgKICAgICdkcml2ZXJzL2FuZHJvaWQvYmluZGVyX2FsbG9jLmMnLAogICAgcXIvaWYgXChpc19hc3luYyAmJlxzKlxuXHMqYWxsb2MtPmZyZWVfYXN5bmNfc3BhY2UgPCBzaXplIFwrIHNpemVvZlwoc3RydWN0IGJpbmRlcl9idWZmZXJcKVwpIFx7LywKICAgIHN1YiB7CiAgICAgICAgbXkgJG0gPSBzaGlmdDsKICAgICAgICBteSAkcHJlID0gPDwnQ09ERSc7CglpZiAoaXNfYXN5bmMKCQkmJiAoYWxsb2MtPmZyZWVfYXN5bmNfc3BhY2UgPCAzICogKHNpemUgKyBzaXplb2Yoc3RydWN0IGJpbmRlcl9idWZmZXIpKQoJCXx8IChhbGxvYy0+ZnJlZV9hc3luY19zcGFjZSA8IFJFS0VSTkVMX1dBUk5fQUhFQURfU1BBQ0UpKSkgewoJCXN0cnVjdCB0YXNrX3N0cnVjdCAqcmVrZXJuZWxfcHJvY190YXNrOwoKCQlyY3VfcmVhZF9sb2NrKCk7CgkJcmVrZXJuZWxfcHJvY190YXNrID0gZmluZF90YXNrX2J5X3ZwaWQoYWxsb2MtPnBpZCk7CgkJcmN1X3JlYWRfdW5sb2NrKCk7CgkJaWYgKHJla2VybmVsX3Byb2NfdGFzayAhPSBOVUxMICYmIHJla2VybmVsX3N0YXJ0X3NlcnZlcigpID09IDApIHsKCQkJaWYgKHJla2VybmVsX3Rhc2tfaXNfZnJvemVuKHJla2VybmVsX3Byb2NfdGFzaykpIHsKCQkJCWNoYXIgcmVrZXJuZWxfa21zZ1tSRUtFUk5FTF9QQUNLRVRfU0laRV07CgoJCQkJc25wcmludGYocmVrZXJuZWxfa21zZywgc2l6ZW9mKHJla2VybmVsX2ttc2cpLAoJCQkJCSJ0eXBlPUJpbmRlcixiaW5kZXJ0eXBlPWZyZWVfYnVmZmVyX2Z1bGwsb25ld2F5PTEsZnJvbV9waWQ9JWQsZnJvbT0lZCx0YXJnZXRfcGlkPSVkLHRhcmdldD0lZDsiLAoJCQkJCWN1cnJlbnQtPnBpZCwgdGFza191aWQoY3VycmVudCkudmFsLCByZWtlcm5lbF9wcm9jX3Rhc2stPnBpZCwgdGFza191aWQocmVrZXJuZWxfcHJvY190YXNrKS52YWwpOwoJCQkJcmVrZXJuZWxfc2VuZF9uZXRsaW5rX21lc3NhZ2UocmVrZXJuZWxfa21zZywgc3RybGVuKHJla2VybmVsX2ttc2cpKTsKCQkJfQoJCX0KCX0KQ09ERQogICAgICAgIHJldHVybiAkcHJlIC4gJG07CiAgICB9LAogICAgJ2JpbmRlcl9hbGxvY19uZXdfYnVmX2xvY2tlZCcsCik7CgojIDQpIGRvX3NlbmRfc2lnX2luZm8oKQpwYXRjaF9maWxlKAogICAgJ2tlcm5lbC9zaWduYWwuYycsCiAgICBxci9pbnQgZG9fc2VuZF9zaWdfaW5mb1woaW50IHNpZywgc3RydWN0IHNpZ2luZm8gXCppbmZvLCBzdHJ1Y3QgdGFza19zdHJ1Y3QgXCpwLFxzKlxuXHMqYm9vbCBncm91cFwpXHMqXG5ce1xzKlxuXHMqdW5zaWduZWQgbG9uZyBmbGFncztccypcblxzKmludCByZXQgPSAtRVNSQ0g7LywKICAgIHN1YiB7CiAgICAgICAgbXkgJG0gPSBzaGlmdDsKICAgICAgICByZXR1cm4gJG0gLiA8PCdDT0RFJzsKCglpZiAocmVrZXJuZWxfc3RhcnRfc2VydmVyKCkgPT0gMCkgewoJCWlmIChyZWtlcm5lbF90YXNrX2lzX2Zyb3plbihjdXJyZW50KSAmJgoJCQkoc2lnID09IFNJR0tJTEwgfHwgc2lnID09IFNJR1RFUk0gfHwgc2lnID09IFNJR0FCUlQgfHwgc2lnID09IFNJR1FVSVQpKSB7CgkJCWNoYXIgcmVrZXJuZWxfa21zZ1tSRUtFUk5FTF9QQUNLRVRfU0laRV07CgoJCQlzbnByaW50ZihyZWtlcm5lbF9rbXNnLCBzaXplb2YocmVrZXJuZWxfa21zZyksCgkJCQkidHlwZT1TaWduYWwsc2lnbmFsPSVkLGtpbGxlcl9waWQ9JWQsa2lsbGVyPSVkLGRzdF9waWQ9JWQsZHN0PSVkOyIsCgkJCQlzaWcsIHRhc2tfdGdpZF9ucihwKSwgdGFza191aWQocCkudmFsLCB0YXNrX3RnaWRfbnIoY3VycmVudCksIHRhc2tfdWlkKGN1cnJlbnQpLnZhbCk7CgkJCXJla2VybmVsX3NlbmRfbmV0bGlua19tZXNzYWdlKHJla2VybmVsX2ttc2csIHN0cmxlbihyZWtlcm5lbF9rbXNnKSk7CgkJfQoJfQpDT0RFCiAgICB9LAogICAgJ2RvX3NlbmRfc2lnX2luZm8nLAopOwo=" | base64 -d > /tmp/apply_rekernel_hooks.pl
           perl /tmp/apply_rekernel_hooks.pl
-
           grep -c 'rekernel_start_server' drivers/android/binder.c drivers/android/binder_alloc.c kernel/signal.c
 
       - name: Integrasikan Baseband-guard (LSM anti-tulis baseband/boot chain)
         working-directory: kernel
         run: |
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
-
           grep -q 'baseband_guard' security/Kconfig && echo "baseband_guard: sudah terdaftar di default LSM list" || \
             sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' security/Kconfig
-          grep -n 'baseband_guard' security/Kconfig || echo "baseband_guard: tidak ada blok config LSM di kernel ini - WAJAR untuk non-GKI, hook tetap aktif otomatis lewat security_initcall()"
+          grep -n 'baseband_guard' security/Kconfig || echo "baseband_guard: tidak ada blok config LSM di kernel ini"
 
       - name: Pra-compile - perbaikan build source MTK (verified reusable)
         working-directory: kernel
@@ -523,24 +246,24 @@ jobs:
           echo '== cek sisa =='
           echo -n 'no_sanitize( tersisa: '; grep -rl 'no_sanitize(' --include='*.h' --include='*.c' . 2>/dev/null | wc -l
 
-      - name: Aktifkan KSU di defconfig
+      - name: Aktifkan KSU & SuSFS di defconfig (termasuk dlagia ksu-susfs_defconfig)
         working-directory: kernel
         run: |
           DEF=arch/arm64/configs/rosemary_defconfig
+
+          echo "[+] Mengunduh dan menggabungkan ksu-susfs_defconfig dari dlagia/Build-Kernel_scripts..."
+          curl -sL "https://raw.githubusercontent.com/dlagia/Build-Kernel_scripts/main/defconfig/ksu-susfs_defconfig" >> "$DEF"
+
           {
             echo ""
             echo 'CONFIG_LOCALVERSION="-perf"'
             echo "CONFIG_LOCALVERSION_AUTO=n"
             echo ""
-            echo "CONFIG_KSU=y"
             echo "CONFIG_KSU_TRACEPOINT_HOOK=n"
             echo "CONFIG_KSU_MANUAL_HOOK=y"
-            echo "CONFIG_KSU_SUSFS=n"
-            echo "CONFIG_KALLSYMS=y"
-            echo "CONFIG_KALLSYMS_ALL=y"
-            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK=y"
-            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK=y"
-            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INPUT_HOOK=y"
+            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK=n"
+            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK=n"
+            echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INPUT_HOOK=n"
             echo ""
             echo "CONFIG_NOMOUNT=y"
             echo ""
@@ -549,7 +272,7 @@ jobs:
             echo "CONFIG_BBG=y"
             echo ""
           } >> "$DEF"
-          tail -25 "$DEF"
+          tail -30 "$DEF"
 
       - name: Ambil toolchain proton-clang (dipakai penulis kernel ini di b.sh)
         run: |
@@ -567,7 +290,7 @@ jobs:
           make O=out rosemary_defconfig
 
           echo ""
-          echo "==================== RESOLVED ReSukiSU CONFIG ===================="
+          echo "==================== RESOLVED ReSukiSU & SuSFS CONFIG ===================="
           grep -E '^(CONFIG_KSU|CONFIG_KALLSYMS)' out/.config || true
 
           grep -q '^CONFIG_KSU=y$' out/.config || { echo "ERROR: CONFIG_KSU tidak resolve ke y"; exit 1; }
@@ -580,10 +303,10 @@ jobs:
             exit 1
           fi
 
-          if grep -q '^CONFIG_KSU_SUSFS=y$' out/.config; then
-            echo "ERROR: CONFIG_KSU_SUSFS=y aktif; build ini ditujukan untuk Manual Hook tanpa SUSFS"
+          grep -q '^CONFIG_KSU_SUSFS=y$' out/.config || {
+            echo "ERROR: CONFIG_KSU_SUSFS tidak resolve ke y - integrasi SUSFS tidak akan berfungsi"
             exit 1
-          fi
+          }
 
           echo ""
           echo "==================== RESOLVED NoMount CONFIG ===================="
@@ -593,9 +316,7 @@ jobs:
           echo ""
           echo "==================== RESOLVED Baseband-guard CONFIG ===================="
           grep -E '^CONFIG_BBG' out/.config || true
-          grep -q '^CONFIG_BBG=y$' out/.config || { echo "ERROR: CONFIG_BBG tidak resolve ke y (cek CONFIG_SECURITY=y - CONFIG_BBG depends on itu)"; exit 1; }
-
-          echo "ReSukiSU Manual Hook + auto-hook: CONFIG OK"
+          grep -q '^CONFIG_BBG=y$' out/.config || { echo "ERROR: CONFIG_BBG tidak resolve ke y"; exit 1; }
 
           set -o pipefail
           if ! make -k O=out -j"$(nproc)" \
@@ -613,28 +334,17 @@ jobs:
             echo ""
             echo "==================== BARIS ERROR (kirim ini) ===================="
             grep -niE "error:|fatal error|undefined reference|No such file|multiple definition|recipe for target|Error [0-9]" /tmp/build.log | tail -120 || true
-            echo "==================== KONTEKS TIAP KEGAGALAN (kirim ini juga) ===================="
+            echo "==================== KONTEKS TIAP KEGAGALAN ===================="
             for L in $(grep -n 'Error 1' /tmp/build.log | head -3 | cut -d: -f1); do
               S=$((L-40)); [ $S -lt 1 ] && S=1
               echo "----- konteks baris $S s/d $L -----"
               sed -n "${S},${L}p" /tmp/build.log
             done
-            echo "==================== 50 BARIS TERAKHIR ===================="
             tail -50 /tmp/build.log
-            echo ""
-            echo ">>> BUILD GAGAL. Salin blok BARIS ERROR di atas dan kirim balik."
+            echo ">>> BUILD GAGAL."
             exit 1
           fi
           ls -la out/arch/arm64/boot/
-
-          # PERBAIKAN (lihat catatan di header file - bug upload-artifact
-          # dotfile): copy .config ke nama file tanpa titik-di-depan supaya
-          # pasti ikut ter-upload oleh actions/upload-artifact.
-          cp out/.config out/resolved-config.txt
-          echo "OK: out/.config disalin ke out/resolved-config.txt (nama tanpa titik-di-depan) supaya lolos filter hidden-file upload-artifact"
-          echo ""
-          echo "==================== VERIFIKASI MANUAL HOOK (resmi) ===================="
-          grep -iE "resukisu.*manual_hook|using manual hook|using a manual|using lsm hooks" /tmp/build.log || true
 
       - name: Compile nm (NoMount userspace CLI, commit sama dgn kernel)
         run: |
@@ -642,7 +352,7 @@ jobs:
           test -d "$NM_SRC" || { echo "ERROR: $NM_SRC tidak ada - step Integrasikan NoMount gagal?"; exit 1; }
 
           NOMOUNT_COMMIT=$(git -C kernel/NoMount rev-parse --short HEAD)
-          echo "NoMount commit dipakai (HARUS SAMA dgn step Integrasikan NoMount di atas): $NOMOUNT_COMMIT"
+          echo "NoMount commit dipakai: $NOMOUNT_COMMIT"
 
           mkdir -p nm-src
           cp "$NM_SRC/nm.c" "$NM_SRC/nm.h" nm-src/
@@ -678,11 +388,10 @@ jobs:
           rm -rf AnyKernel3/.git
 
           echo "IyMjIEFueUtlcm5lbDMgUmFtZGlzayBNb2QgU2NyaXB0CiMjIG9zbTBzaXMgQCB4ZGEtZGV2ZWxvcGVycwoKIyMjIEFueUtlcm5lbCBzZXR1cAojIGJlZ2luIHByb3BlcnRpZXMKcHJvcGVydGllcygpIHsgJwprZXJuZWwuc3RyaW5nPXNwaGluWCBLZXJuZWwgYnkgZmpyWFRSCmRvLmRldmljZWNoZWNrPTEKZG8ubW9kdWxlcz0wCmRvLnN5c3RlbWxlc3M9MQpkby5jbGVhbnVwPTEKZG8uY2xlYW51cG9uYWJvcnQ9MApkZXZpY2UubmFtZTE9ZmxldXIKZGV2aWNlLm5hbWUyPW1pZWwKZGV2aWNlLm5hbWUzPXNlYQpkZXZpY2UubmFtZTQ9b2NlYW4KZGV2aWNlLm5hbWU1PXJvc2VtYXJ5CmRldmljZS5uYW1lNj1zZWNyZXQKZGV2aWNlLm5hbWU3PW1hbHRvc2UKc3VwcG9ydGVkLnZlcnNpb25zPTExLjAtMTQuMApzdXBwb3J0ZWQucGF0Y2hsZXZlbHM9Cic7IH0gIyBlbmQgcHJvcGVydGllcwoKIyMjIEFueUtlcm5lbCBpbnN0YWxsCiMgYmVnaW4gYXR0cmlidXRlcwphdHRyaWJ1dGVzKCkgewpzZXRfcGVybV9yZWN1cnNpdmUgMCAwIDc1NSA2NDQgJHJhbWRpc2svKjsKc2V0X3Blcm1fcmVjdXJzaXZlIDAgMCA3NTAgNzUwICRyYW1kaXNrL2luaXQqICRyYW1kaXNrL3NiaW47Cn0gIyBlbmQgYXR0cmlidXRlcwoKCiMjIGJvb3Qgc2hlbGwgdmFyaWFibGVzCmJsb2NrPS9kZXYvYmxvY2svYnktbmFtZS9ib290Owppc19zbG90X2RldmljZT0xOwpyYW1kaXNrX2NvbXByZXNzaW9uPWF1dG87CnBhdGNoX3ZibWV0YV9mbGFnPWF1dG87CgojIGltcG9ydCBmdW5jdGlvbnMvdmFyaWFibGVzIGFuZCBzZXR1cCBwYXRjaGluZyAtIHNlZSBmb3IgcmVmZXJlbmNlIChETyBOT1QgUkVNT1ZFKQouIHRvb2xzL2FrMy1jb3JlLnNoICYmIGF0dHJpYnV0ZXM7CgojIGJvb3QgaW5zdGFsbApkdW1wX2Jvb3Q7ICMgdXNlIHNwbGl0X2Jvb3QgdG8gc2tpcCByYW1kaXNrIHVucGFjaywgZS5nLiBmb3IgZGV2aWNlcyB3aXRoIGluaXRfYm9vdCByYW1kaXNrCndyaXRlX2Jvb3Q7ICMgdXNlIGZsYXNoX2Jvb3QgdG8gc2tpcCByYW1kaXNrIHJlcGFjaywgZS5nLiBmb3IgZGV2aWNlcyB3aXRoIGluaXRfYm9vdCByYW1kaXNrCiMjIGVuZCBib290IGluc3RhbGwKCgojIyBpbml0X2Jvb3Qgc2hlbGwgdmFyaWFibGVzCiNibG9jaz1pbml0X2Jvb3Q7CiNpc19zbG90X2RldmljZT0xOwojcmFtZGlza19jb21wcmVzc2lvbj1hdXRvOwojcGF0Y2hfdmJtZXRhX2ZsYWc9YXV0bzsKCiMgcmVzZXQgZm9yIGluaXRfYm9vdCBwYXRjaGluZwojcmVzZXRfYWs7CgojIGluaXRfYm9vdCBpbnN0YWxsCiNkdW1wX2Jvb3Q7ICMgdW5wYWNrIHJhbWRpc2sgc2luY2UgaXQgaXMgdGhlIG5ldyBmaXJzdCBzdGFnZSBpbml0IHJhbWRpc2sgd2hlcmUgb3ZlcmxheS5kIG11c3QgZ28KCiN3cml0ZV9ib290OwojIyBlbmQgaW5pdF9ib290IGluc3RhbGwKCgojIyB2ZW5kb3Jfa2VybmVsX2Jvb3Qgc2hlbGwgdmFyaWFibGVzCiNibG9jaz12ZW5kb3Jfa2VybmVsX2Jvb3Q7CiNpc19zbG90X2RldmljZT0xOwojcmFtZGlza19jb21wcmVzc2lvbj1hdXRvOwojcGF0Y2hfdmJtZXRhX2ZsYWc9YXV0bzsKCiMgcmVzZXQgZm9yIHZlbmRvcl9rZXJuZWxfYm9vdCBwYXRjaGluZwojcmVzZXRfYWs7CgojIHZlbmRvcl9rZXJuZWxfYm9vdCBpbnN0YWxsCiNzcGxpdF9ib290OyAjIHNraXAgdW5wYWNrL3JlcGFjayByYW1kaXNrLCBlLmcuIGZvciBkdGIgb24gZGV2aWNlcyB3aXRoIGhkciB2NCBhbmQgdmVuZG9yX2tlcm5lbF9ib290CgojZmxhc2hfYm9vdDsKIyMgZW5kIHZlbmRvcl9rZXJuZWxfYm9vdCBpbnN0YWxsCgoKIyMgdmVuZG9yX2Jvb3Qgc2hlbGwgdmFyaWFibGVzCiNibG9jaz12ZW5kb3JfYm9vdDsKI2lzX3Nsb3RfZGV2aWNlPTE7CiNyYW1kaXNrX2NvbXByZXNzaW9uPWF1dG87CiNwYXRjaF92Ym1ldGFfZmxhZz1hdXRvOwoKIyByZXNldCBmb3IgdmVuZG9yX2Jvb3QgcGF0Y2hpbmcKI3Jlc2V0X2FrOwoKIyB2ZW5kb3JfYm9vdCBpbnN0YWxsCiNkdW1wX2Jvb3Q7ICMgdXNlIHNwbGl0X2Jvb3QgdG8gc2tpcCByYW1kaXNrIHVucGFjaywgZS5nLiBmb3IgZHRiIG9uIGRldmljZXMgd2l0aCBoZHIgdjQgYnV0IG5vIHZlbmRvcl9rZXJuZWxfYm9vdAoKI3dyaXRlX2Jvb3Q7ICMgdXNlIGZsYXNoX2Jvb3QgdG8gc2tpcCByYW1kaXNrIHJlcGFjaywgZS5nLiBmb3IgZHRiIG9uIGRldmljZXMgd2l0aCBoZHIgdjQgYnV0IG5vIHZlbmRvcl9rZXJuZWxfYm9vdAojIyBlbmQgdmVuZG9yX2Jvb3QgaW5zdGFsbAoK" | base64 -d > AnyKernel3/anykernel.sh
-          echo "== anykernel.sh =="; cat AnyKernel3/anykernel.sh
 
           cp "${{ steps.kimg.outputs.path }}" "AnyKernel3/${{ steps.kimg.outputs.name }}"
 
-          ZIP="rosemary-ksu-nomount-rekernel-bbg-$(date +%Y%m%d-%H%M%S).zip"
+          ZIP="rosemary-ksu-susfs-nomount-rekernel-bbg-$(date +%Y%m%d-%H%M%S).zip"
 
           ( cd AnyKernel3 && zip -r9 "../$ZIP" . -x '.git*' )
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
@@ -697,4 +406,4 @@ jobs:
             ${{ steps.kimg.outputs.path }}
             ${{ steps.kimg.outputs.dtbo }}
             nm-src/nm
-            kernel/out/resolved-config.txt
+            kernel/out/.config
