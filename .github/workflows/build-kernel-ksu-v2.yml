@@ -30,6 +30,38 @@
 #   hanya dibuat pada jalur patch SELinux pra-5.1 (kernel 4.14 masuk sini).
 # - Commit tiap komponen dicatat ke ringkasan run untuk reproduksi.
 # - concurrency: run lama otomatis dibatalkan kalau tersalip run baru.
+#
+# PENYEMPURNAAN (revisi audit ke-3, 2026-09-07):
+# - Empat sumber yang sebelumnya di-fetch dari branch bergerak (main/dev) kini
+#   di-pin ke commit SHA spesifik, supaya kalau upstream mengubah isi script
+#   (bukan cuma driver yang diintegrasikan), build ini tidak berubah perilaku
+#   atau gagal diam-diam di run berikutnya:
+#     dlagia/Build-Kernel_scripts@main -> 10f1480b39418e885d4402e78a5ec7721d5040d3
+#     maxsteeel/nomount@dev            -> 0c4b2dbd113b267b673cd7925cd80736658d7a62
+#     vc-teahouse/Baseband-guard@main  -> a54e0dc6cf0aff4dd87fec49644a02d2eb612905
+#   Catatan: pin ini hanya membekukan VERSI SCRIPT/DEFCONFIG yang diunduh, bukan
+#   kode driver yang nanti di-clone SENDIRI oleh script tsb (KernelSU/SuSFS,
+#   NoMount, Baseband-guard tetap mengambil versi terbaru sesuai logika masing-
+#   masing script) - sama seperti filosofi pin branch AnyKernel3 di atas.
+#   Untuk memperbarui pin: cek commit terbaru tiap repo lalu ganti SHA di atas
+#   dan di step terkait, atau minta di-refresh lagi.
+#
+# PENYEMPURNAAN (revisi audit ke-4, 2026-09-08):
+# - KBUILD_BUILD_TIMESTAMP tidak lagi di-hardcode ke tanggal tetap (Mon Jul 1
+#   2024); sekarang diisi $(date -u) saat step "Compile kernel" berjalan,
+#   supaya banner versi kernel mencerminkan waktu build sebenarnya.
+# - Blok KERNEL_VERSION/VERSION/PATCHLEVEL di step ReSukiSU & SuSFS dihapus -
+#   nilainya dihitung tapi tidak pernah dipakai di step manapun.
+# - Dicocokkan ulang terhadap repo resmi https://github.com/Sakion-Team/Re-Kernel
+#   (folder Integrate/README.md): 3 titik hook manual yang di-embed di sini
+#   (binder_transaction, binder_alloc_new_buf_locked, do_send_sig_info) memang
+#   persis sama dengan panduan integrasi manual resminya untuk kernel <=5.4.
+#   README itu juga mencatat known issue: sebagian backport cgroup freezer v2
+#   butuh #include <linux/sched/jobctl.h> di rekernel.h supaya JOBCTL_TRAP_FREEZE
+#   dikenali - include ini sudah ditambahkan ke drivers/rekernel/rekernel.h.
+#   Re:Kernel tetap berupa blob statis (bukan git clone) karena upstream tidak
+#   menyediakan setup.sh; tool otomatisnya ("Kernel Modifier") berbasis Java 17+
+#   dan tidak cocok dijalankan sebagai curl|bash di CI.
 # ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
@@ -68,10 +100,6 @@ jobs:
         working-directory: kernel
         run: |
           export KERNEL_DIR=$(pwd)
-          VERSION=$(grep -w '^VERSION' Makefile | tr -d ' ' | cut -d= -f2 || echo "")
-          PATCHLEVEL=$(grep -w '^PATCHLEVEL' Makefile | tr -d ' ' | cut -d= -f2 || echo "")
-          export KERNEL_VERSION="${VERSION}.${PATCHLEVEL}"
-          echo "Kernel version detected: $KERNEL_VERSION"
 
           # Repo kernel ini SUDAH membawa file *.rej sendiri (mis.
           # drivers/misc/mediatek/lcm/mt65xx_lcm_list.c.rej) yang ter-commit dan
@@ -81,8 +109,10 @@ jobs:
           echo "== Reject bawaan repo (diabaikan): $(wc -l < /tmp/rej_before.txt) file =="
           cat /tmp/rej_before.txt || true
 
-          echo "[+] Mengunduh integrate_ksu_susfs.sh dari dlagia/Build-Kernel_scripts..."
-          curl -fLSs "https://raw.githubusercontent.com/dlagia/Build-Kernel_scripts/main/scripts/integrate_ksu_susfs.sh" -o integrate_ksu_susfs.sh
+          # Dipin ke commit tertentu (bukan 'main') supaya perubahan script upstream
+          # tidak diam-diam mengubah cara integrasi KSU/SuSFS di run berikutnya.
+          echo "[+] Mengunduh integrate_ksu_susfs.sh dari dlagia/Build-Kernel_scripts (pinned commit)..."
+          curl -fLSs "https://raw.githubusercontent.com/dlagia/Build-Kernel_scripts/10f1480b39418e885d4402e78a5ec7721d5040d3/scripts/integrate_ksu_susfs.sh" -o integrate_ksu_susfs.sh
           chmod +x integrate_ksu_susfs.sh
 
           # </dev/null: script punya prompt interaktif "read -t 10" utk penanganan
@@ -228,7 +258,10 @@ jobs:
         working-directory: kernel
         run: |
           rm -rf NoMount fs/nomount
-          curl -LSs "https://raw.githubusercontent.com/maxsteeel/nomount/refs/heads/dev/kernel/setup.sh" | bash -s dev
+          # setup.sh di-pin ke commit tertentu (bukan refs/heads/dev) supaya isi
+          # script itu sendiri stabil; branch driver "dev" tetap dipilih lewat
+          # argumen "-s dev" di bawah, terlepas dari pin ini.
+          curl -LSs "https://raw.githubusercontent.com/maxsteeel/nomount/0c4b2dbd113b267b673cd7925cd80736658d7a62/kernel/setup.sh" | bash -s dev
 
           test -d NoMount || {
             echo "ERROR: direktori NoMount tidak ditemukan setelah setup.sh"
@@ -306,7 +339,7 @@ jobs:
         run: |
           rm -rf drivers/rekernel
           mkdir -p drivers/rekernel
-          echo "I2lmbmRlZiBfUkVLRVJORUxfSAojZGVmaW5lIF9SRUtFUk5FTF9ICgovKgogKiBIZWFkZXIgaW50ZWdyYXNpIFJlOktlcm5lbCAoaHR0cHM6Ly9naXRodWIuY29tL1Nha2lvbi1UZWFtL1JlLUtlcm5lbCkKICogdW50dWsga2VybmVsIG5vbi1HS0kvUUdLSSAoPD0gNS40KSwgc2VzdWFpIHBhbmR1YW4gcmVzbWkgZGkgZm9sZGVyCiAqIEludGVncmF0ZS9SRUFETUUubWQgcmVwbyB0ZXJzZWJ1dC4gTWVtYnVrYSBuZXRsaW5rIHNlcnZlciBhZ2FyCiAqIHVzZXJzcGFjZSB0b21ic3RvbmUgaGFuZGxlciAobWlzLiBhcHAgZnJlZXplci9PT00gbWFuYWdlcikgYmlzYQogKiBtZW5lcmltYSBub3RpZmlrYXNpIHNhYXQgYmluZGVyIGNhbGwgYXRhdSBzaWduYWwgbWVueWFzYXIgcHJvc2VzCiAqIHlhbmcgc2VkYW5nIGRpYmVrdWthbiAoZnJvemVuKSBvbGVoIGNncm91cCBmcmVlemVyLCBzZWhpbmdnYSBwcm9zZXMKICogdHNiIGJpc2EgZGktdW5mcmVlemUgdGVwYXQgd2FrdHUgYWxpaC1hbGloIEFOUi9mb3JjZS1jbG9zZS4KICovCgojaW5jbHVkZSA8bGludXgvdHlwZXMuaD4KI2luY2x1ZGUgPGxpbnV4L3NjaGVkLmg+CiNpbmNsdWRlIDxsaW51eC9zY2hlZC90YXNrLmg+CiNpbmNsdWRlIDxsaW51eC9jcmVkLmg+CiNpbmNsdWRlIDxsaW51eC9zdHJpbmcuaD4KI2luY2x1ZGUgPGxpbnV4L2ZyZWV6ZXIuaD4KCiNkZWZpbmUgUkVLRVJORUxfTkVUTElOS19NSU4gICAgICAyMgojZGVmaW5lIFJFS0VSTkVMX05FVExJTktfTUFYICAgICAgMjYKI2RlZmluZSBSRUtFUk5FTF9VU0VSX1BPUlQgICAgICAgIDEwMAojZGVmaW5lIFJFS0VSTkVMX1BBQ0tFVF9TSVpFICAgICAgMTI4CiNkZWZpbmUgUkVLRVJORUxfTUlOX1VTRVJBUFBfVUlEICAoMTAwMDApCiNkZWZpbmUgUkVLRVJORUxfTUFYX1NZU1RFTV9VSUQgICAoMjAwMCkKI2RlZmluZSBSRUtFUk5FTF9SRVNFUlZFX09SREVSICAgIDE3CiNkZWZpbmUgUkVLRVJORUxfV0FSTl9BSEVBRF9TUEFDRSAoMSA8PCBSRUtFUk5FTF9SRVNFUlZFX09SREVSKQoKaW50IHJla2VybmVsX3N0YXJ0X3NlcnZlcih2b2lkKTsKaW50IHJla2VybmVsX3NlbmRfbmV0bGlua19tZXNzYWdlKGNoYXIgKm1zZywgdWludDE2X3QgbGVuKTsKCnN0YXRpYyBpbmxpbmUgYm9vbCByZWtlcm5lbF90YXNrX2lzX2Zyb3plbihzdHJ1Y3QgdGFza19zdHJ1Y3QgKnRhc2spCnsKCXJldHVybiBmcm96ZW4odGFzay0+Z3JvdXBfbGVhZGVyKSB8fCBmcmVlemluZyh0YXNrLT5ncm91cF9sZWFkZXIpOwp9CgojZW5kaWYgLyogX1JFS0VSTkVMX0ggKi8K" | base64 -d > drivers/rekernel/rekernel.h
+          echo "I2lmbmRlZiBfUkVLRVJORUxfSAojZGVmaW5lIF9SRUtFUk5FTF9ICgovKgogKiBIZWFkZXIgaW50ZWdyYXNpIFJlOktlcm5lbCAoaHR0cHM6Ly9naXRodWIuY29tL1Nha2lvbi1UZWFtL1JlLUtlcm5lbCkKICogdW50dWsga2VybmVsIG5vbi1HS0kvUUdLSSAoPD0gNS40KSwgc2VzdWFpIHBhbmR1YW4gcmVzbWkgZGkgZm9sZGVyCiAqIEludGVncmF0ZS9SRUFETUUubWQgcmVwbyB0ZXJzZWJ1dC4gTWVtYnVrYSBuZXRsaW5rIHNlcnZlciBhZ2FyCiAqIHVzZXJzcGFjZSB0b21ic3RvbmUgaGFuZGxlciAobWlzLiBhcHAgZnJlZXplci9PT00gbWFuYWdlcikgYmlzYQogKiBtZW5lcmltYSBub3RpZmlrYXNpIHNhYXQgYmluZGVyIGNhbGwgYXRhdSBzaWduYWwgbWVueWFzYXIgcHJvc2VzCiAqIHlhbmcgc2VkYW5nIGRpYmVrdWthbiAoZnJvemVuKSBvbGVoIGNncm91cCBmcmVlemVyLCBzZWhpbmdnYSBwcm9zZXMKICogdHNiIGJpc2EgZGktdW5mcmVlemUgdGVwYXQgd2FrdHUgYWxpaC1hbGloIEFOUi9mb3JjZS1jbG9zZS4KICovCgojaW5jbHVkZSA8bGludXgvdHlwZXMuaD4KI2luY2x1ZGUgPGxpbnV4L3NjaGVkLmg+CiNpbmNsdWRlIDxsaW51eC9zY2hlZC90YXNrLmg+CiNpbmNsdWRlIDxsaW51eC9zY2hlZC9qb2JjdGwuaD4KI2luY2x1ZGUgPGxpbnV4L2NyZWQuaD4KI2luY2x1ZGUgPGxpbnV4L3N0cmluZy5oPgojaW5jbHVkZSA8bGludXgvZnJlZXplci5oPgoKI2RlZmluZSBSRUtFUk5FTF9ORVRMSU5LX01JTiAgICAgIDIyCiNkZWZpbmUgUkVLRVJORUxfTkVUTElOS19NQVggICAgICAyNgojZGVmaW5lIFJFS0VSTkVMX1VTRVJfUE9SVCAgICAgICAgMTAwCiNkZWZpbmUgUkVLRVJORUxfUEFDS0VUX1NJWkUgICAgICAxMjgKI2RlZmluZSBSRUtFUk5FTF9NSU5fVVNFUkFQUF9VSUQgICgxMDAwMCkKI2RlZmluZSBSRUtFUk5FTF9NQVhfU1lTVEVNX1VJRCAgICgyMDAwKQojZGVmaW5lIFJFS0VSTkVMX1JFU0VSVkVfT1JERVIgICAgMTcKI2RlZmluZSBSRUtFUk5FTF9XQVJOX0FIRUFEX1NQQUNFICgxIDw8IFJFS0VSTkVMX1JFU0VSVkVfT1JERVIpCgppbnQgcmVrZXJuZWxfc3RhcnRfc2VydmVyKHZvaWQpOwppbnQgcmVrZXJuZWxfc2VuZF9uZXRsaW5rX21lc3NhZ2UoY2hhciAqbXNnLCB1aW50MTZfdCBsZW4pOwoKc3RhdGljIGlubGluZSBib29sIHJla2VybmVsX3Rhc2tfaXNfZnJvemVuKHN0cnVjdCB0YXNrX3N0cnVjdCAqdGFzaykKewoJcmV0dXJuIGZyb3plbih0YXNrLT5ncm91cF9sZWFkZXIpIHx8IGZyZWV6aW5nKHRhc2stPmdyb3VwX2xlYWRlcik7Cn0KCiNlbmRpZiAvKiBfUkVLRVJORUxfSCAqLw==" | base64 -d > drivers/rekernel/rekernel.h
           echo "LyoKICogZHJpdmVycy9yZWtlcm5lbC9yZWtlcm5lbC5jCiAqCiAqIEludGVncmFzaSBSZTpLZXJuZWwgKGh0dHBzOi8vZ2l0aHViLmNvbS9TYWtpb24tVGVhbS9SZS1LZXJuZWwpIHVudHVrCiAqIGtlcm5lbCBub24tR0tJL1FHS0kgKDw9IDUuNCkuIFNlbXVhIGZ1bmdzaSBzdGF0aXMgZGliZXJpIHByZWZpeCByZWtlcm5lbF8KICogZGFuIGRpdGFydWggZGkgc2F0dSB0cmFuc2xhdGlvbiB1bml0IChidWthbiBkaXNhbGluIGtlIHRpZ2EgZmlsZSBwZW1hbmdnaWwpCiAqIHN1cGF5YSB0aWRhayBhZGEgbXVsdGlwbGUtZGVmaW5pdGlvbjsgaGFueWEgZHVhIGZ1bmdzaSB5YW5nIGRpZXhwb3J0IGxld2F0CiAqIHJla2VybmVsLmgga2UgZHJpdmVycy9hbmRyb2lkL2JpbmRlci5jLCBkcml2ZXJzL2FuZHJvaWQvYmluZGVyX2FsbG9jLmMsCiAqIGRhbiBrZXJuZWwvc2lnbmFsLmMuCiAqLwoKI2luY2x1ZGUgPGxpbnV4L2luaXQuaD4KI2luY2x1ZGUgPGxpbnV4L21vZHVsZS5oPgojaW5jbHVkZSA8bGludXgvdHlwZXMuaD4KI2luY2x1ZGUgPG5ldC9zb2NrLmg+CiNpbmNsdWRlIDxsaW51eC9uZXRsaW5rLmg+CiNpbmNsdWRlIDxsaW51eC9wcm9jX2ZzLmg+CiNpbmNsdWRlIDxsaW51eC9zZXFfZmlsZS5oPgojaW5jbHVkZSAicmVrZXJuZWwuaCIKCnN0YXRpYyBzdHJ1Y3Qgc29jayAqcmVrZXJuZWxfbmV0bGluazsKZXh0ZXJuIHN0cnVjdCBuZXQgaW5pdF9uZXQ7CnN0YXRpYyBpbnQgcmVrZXJuZWxfbmV0bGlua191bml0ID0gUkVLRVJORUxfTkVUTElOS19NSU47CgpzdGF0aWMgaW50IHJla2VybmVsX25ldGxpbmtfc2VuZChjaGFyICptc2csIHVpbnQxNl90IGxlbikKewoJc3RydWN0IHNrX2J1ZmYgKnNrYnVmZmVyOwoJc3RydWN0IG5sbXNnaGRyICpubGhkcjsKCglpZiAoIXJla2VybmVsX25ldGxpbmspCgkJcmV0dXJuIC0xOwoKCXNrYnVmZmVyID0gbmxtc2dfbmV3KGxlbiwgR0ZQX0FUT01JQyk7CglpZiAoIXNrYnVmZmVyKSB7CgkJcHJfZXJyKCJyZWtlcm5lbDogbmxtc2dfbmV3IGZhaWx1cmUuXG4iKTsKCQlyZXR1cm4gLTE7Cgl9CgoJbmxoZHIgPSBubG1zZ19wdXQoc2tidWZmZXIsIDAsIDAsIHJla2VybmVsX25ldGxpbmtfdW5pdCwgbGVuLCAwKTsKCWlmICghbmxoZHIpIHsKCQlwcl9lcnIoInJla2VybmVsOiBubG1zZ19wdXQgZmFpbHVyZS5cbiIpOwoJCW5sbXNnX2ZyZWUoc2tidWZmZXIpOwoJCXJldHVybiAtMTsKCX0KCgltZW1jcHkobmxtc2dfZGF0YShubGhkciksIG1zZywgbGVuKTsKCXJldHVybiBuZXRsaW5rX3VuaWNhc3QocmVrZXJuZWxfbmV0bGluaywgc2tidWZmZXIsIFJFS0VSTkVMX1VTRVJfUE9SVCwgTVNHX0RPTlRXQUlUKTsKfQoKaW50IHJla2VybmVsX3NlbmRfbmV0bGlua19tZXNzYWdlKGNoYXIgKm1zZywgdWludDE2X3QgbGVuKQp7CglyZXR1cm4gcmVrZXJuZWxfbmV0bGlua19zZW5kKG1zZywgbGVuKTsKfQoKc3RhdGljIHZvaWQgcmVrZXJuZWxfbmV0bGlua19yY3ZfbXNnKHN0cnVjdCBza19idWZmICpza2J1ZmZlcikKewoJLyogVGlkYWsgYnV0dWggYXBhIHB1biBkYXJpIHVzZXJzcGFjZSwgY3VrdXAgZGlhYmFpa2FuLiAqLwp9CgpzdGF0aWMgc3RydWN0IG5ldGxpbmtfa2VybmVsX2NmZyByZWtlcm5lbF9jZmcgPSB7CgkuaW5wdXQgPSByZWtlcm5lbF9uZXRsaW5rX3Jjdl9tc2csCn07CgpzdGF0aWMgaW50IHJla2VybmVsX3VuaXRfc2hvdyhzdHJ1Y3Qgc2VxX2ZpbGUgKm0sIHZvaWQgKnYpCnsKCXNlcV9wcmludGYobSwgIiVkXG4iLCByZWtlcm5lbF9uZXRsaW5rX3VuaXQpOwoJcmV0dXJuIDA7Cn0KCnN0YXRpYyBpbnQgcmVrZXJuZWxfdW5pdF9vcGVuKHN0cnVjdCBpbm9kZSAqaW5vZGUsIHN0cnVjdCBmaWxlICpmaWxlKQp7CglyZXR1cm4gc2luZ2xlX29wZW4oZmlsZSwgcmVrZXJuZWxfdW5pdF9zaG93LCBOVUxMKTsKfQoKc3RhdGljIGNvbnN0IHN0cnVjdCBmaWxlX29wZXJhdGlvbnMgcmVrZXJuZWxfdW5pdF9mb3BzID0gewoJLm9wZW4gICAgPSByZWtlcm5lbF91bml0X29wZW4sCgkucmVhZCAgICA9IHNlcV9yZWFkLAoJLmxsc2VlayAgPSBzZXFfbHNlZWssCgkucmVsZWFzZSA9IHNpbmdsZV9yZWxlYXNlLAoJLm93bmVyICAgPSBUSElTX01PRFVMRSwKfTsKCnN0YXRpYyBzdHJ1Y3QgcHJvY19kaXJfZW50cnkgKnJla2VybmVsX2RpciwgKnJla2VybmVsX3VuaXRfZW50cnk7CgppbnQgcmVrZXJuZWxfc3RhcnRfc2VydmVyKHZvaWQpCnsKCWlmIChyZWtlcm5lbF9uZXRsaW5rICE9IE5VTEwpCgkJcmV0dXJuIDA7CgoJZm9yIChyZWtlcm5lbF9uZXRsaW5rX3VuaXQgPSBSRUtFUk5FTF9ORVRMSU5LX01JTjsKCSAgICAgcmVrZXJuZWxfbmV0bGlua191bml0IDwgUkVLRVJORUxfTkVUTElOS19NQVg7IHJla2VybmVsX25ldGxpbmtfdW5pdCsrKSB7CgkJcmVrZXJuZWxfbmV0bGluayA9IChzdHJ1Y3Qgc29jayAqKW5ldGxpbmtfa2VybmVsX2NyZWF0ZSgmaW5pdF9uZXQsCgkJCQkJcmVrZXJuZWxfbmV0bGlua191bml0LCAmcmVrZXJuZWxfY2ZnKTsKCQlpZiAocmVrZXJuZWxfbmV0bGluayAhPSBOVUxMKQoJCQlicmVhazsKCX0KCglpZiAocmVrZXJuZWxfbmV0bGluayA9PSBOVUxMKSB7CgkJcHJfZXJyKCJyZWtlcm5lbDogZmFpbGVkIHRvIGNyZWF0ZSBSZTpLZXJuZWwgc2VydmVyIVxuIik7CgkJcmV0dXJuIC0xOwoJfQoKCXByX2luZm8oInJla2VybmVsOiBjcmVhdGVkIFJlOktlcm5lbCBzZXJ2ZXIhIE5FVExJTksgVU5JVDogJWRcbiIsIHJla2VybmVsX25ldGxpbmtfdW5pdCk7CgoJcmVrZXJuZWxfZGlyID0gcHJvY19ta2RpcigicmVrZXJuZWwiLCBOVUxMKTsKCWlmICghcmVrZXJuZWxfZGlyKSB7CgkJcHJfZXJyKCJyZWtlcm5lbDogY3JlYXRlIC9wcm9jL3Jla2VybmVsIGZhaWxlZCFcbiIpOwoJfSBlbHNlIHsKCQljaGFyIGJ1ZmZbMzJdOwoKCQlzbnByaW50ZihidWZmLCBzaXplb2YoYnVmZiksICIlZCIsIHJla2VybmVsX25ldGxpbmtfdW5pdCk7CgkJcmVrZXJuZWxfdW5pdF9lbnRyeSA9IHByb2NfY3JlYXRlKGJ1ZmYsIDA2NDQsIHJla2VybmVsX2RpciwgJnJla2VybmVsX3VuaXRfZm9wcyk7CgkJaWYgKCFyZWtlcm5lbF91bml0X2VudHJ5KQoJCQlwcl9lcnIoInJla2VybmVsOiBjcmVhdGUgcmVrZXJuZWwgdW5pdCBmYWlsZWQhXG4iKTsKCX0KCglyZXR1cm4gMDsKfQoKLyoKICogU2VydmVyIGRpbnlhbGFrYW4gc2VrYWxpIGRpIGxhdGVfaW5pdGNhbGwgc3VwYXlhIHBlbWFuZ2dpbGFuIGRhcmkgamFsdXIKICogcGFuYXMgKGJpbmRlci9zaWduYWwpIGN1bWEgamFkaSBwZW5nZWNla2FuIHBvaW50ZXIgTlVMTCwgYnVrYW4KICogbmV0bGlua19rZXJuZWxfY3JlYXRlKCkgeWFuZyBtZW5nYWxva2FzaSBtZW1vcmkgZGFuIGJpc2EgdGlkdXIuCiAqLwpzdGF0aWMgaW50IF9faW5pdCByZWtlcm5lbF9pbml0KHZvaWQpCnsKCXJla2VybmVsX3N0YXJ0X3NlcnZlcigpOwoJcmV0dXJuIDA7Cn0KbGF0ZV9pbml0Y2FsbChyZWtlcm5lbF9pbml0KTsK" | base64 -d > drivers/rekernel/rekernel.c
           echo "b2JqLSQoQ09ORklHX1JFS0VSTkVMKSArPSByZWtlcm5lbC5vCg==" | base64 -d > drivers/rekernel/Makefile
           echo "Y29uZmlnIFJFS0VSTkVMCglib29sICJSZTpLZXJuZWwgYmluZGVyL3NpZ25hbCBmcmVlemUgbm90aWZpZXIiCglkZWZhdWx0IHkKCWhlbHAKCSAgUmU6S2VybmVsIChTYWtpb24tVGVhbSkgbWVtYnVrYSBuZXRsaW5rIHNlcnZlciBkaSBrZXJuZWwgc3VwYXlhCgkgIHRvbWJzdG9uZS9mcmVlemVyIGhhbmRsZXIgZGkgdXNlcnNwYWNlIG1lbmRhcGF0IG5vdGlmaWthc2kgc2FhdAoJICBiaW5kZXIgY2FsbCBhdGF1IHNpZ25hbCAoU0lHS0lMTC9TSUdURVJNL1NJR0FCUlQvU0lHUVVJVCkgbWVueWFzYXIKCSAgcHJvc2VzIHlhbmcgc2VkYW5nIGRpYmVrdWthbiAoZnJvemVuKSwgc2VoaW5nZ2EgcHJvc2VzIHRzYiBiaXNhCgkgIGRpLXVuZnJlZXplIHRlcGF0IHdha3R1IGFsaWgtYWxpaCBBTlIvZm9yY2UtY2xvc2UuCg==" | base64 -d > drivers/rekernel/Kconfig
@@ -342,7 +375,9 @@ jobs:
       - name: Integrasikan Baseband-guard (LSM anti-tulis baseband/boot chain)
         working-directory: kernel
         run: |
-          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
+          # Dipin ke commit tertentu (bukan 'main') dgn alasan yang sama seperti
+          # integrate_ksu_susfs.sh di atas.
+          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/a54e0dc6cf0aff4dd87fec49644a02d2eb612905/setup.sh | bash
           grep -q 'baseband_guard' security/Kconfig && echo "baseband_guard: sudah terdaftar di default LSM list" || \
             sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' security/Kconfig
           grep -n 'baseband_guard' security/Kconfig || echo "baseband_guard: tidak ada blok config LSM di kernel ini"
@@ -398,8 +433,8 @@ jobs:
         run: |
           DEF=arch/arm64/configs/rosemary_defconfig
 
-          echo "[+] Mengunduh dan menggabungkan ksu-susfs_defconfig dari dlagia/Build-Kernel_scripts..."
-          curl -fsSL "https://raw.githubusercontent.com/dlagia/Build-Kernel_scripts/main/defconfig/ksu-susfs_defconfig" >> "$DEF"
+          echo "[+] Mengunduh dan menggabungkan ksu-susfs_defconfig dari dlagia/Build-Kernel_scripts (pinned commit)..."
+          curl -fsSL "https://raw.githubusercontent.com/dlagia/Build-Kernel_scripts/10f1480b39418e885d4402e78a5ec7721d5040d3/defconfig/ksu-susfs_defconfig" >> "$DEF"
 
           {
             echo ""
@@ -451,7 +486,7 @@ jobs:
           export SUBARCH=arm64
           export KBUILD_BUILD_USER=build
           export KBUILD_BUILD_HOST=kernel
-          export KBUILD_BUILD_TIMESTAMP="Mon Jul  1 17:32:55 CST 2024"
+          export KBUILD_BUILD_TIMESTAMP="$(date -u)"
 
           # ccache mempercepat run berikutnya secara signifikan. Kalau binernya
           # tidak ada, jatuh balik ke clang polos supaya build tetap jalan.
@@ -611,6 +646,7 @@ jobs:
             echo "| ReSukiSU | \`${KSU_SHA:-?}\` |"
             echo "| NoMount (dev) | \`${NOMOUNT_SHA:-?}\` |"
             echo "| Baseband-guard | \`${BBG_SHA:-?}\` |"
+            echo "| Re:Kernel | _embedded statis di YAML, bukan git clone - tidak ada commit SHA_ |"
             echo ""
             echo "Paket: \`${ZIP:-belum terbentuk}\`"
           } >> "$GITHUB_STEP_SUMMARY"
