@@ -20,6 +20,16 @@
 #   ke drivers/rekernel/rekernel.c. Sekarang satu blok saja.
 # - rekernel.c: nlmsg_put() hilang sehingga nlhdr dipakai tanpa diinisialisasi.
 # - #include rekernel.h dulu disisipkan di baris 1 sehingga bentrok dgn pr_fmt.
+#
+# PENYEMPURNAAN (revisi audit ke-2):
+# - Cache proton-clang + ccache: run berulang jauh lebih cepat, dgn fallback
+#   clone/clang polos kalau cache rusak atau ccache tidak ada.
+# - AnyKernel3 di-pin ke branch mt6781. Branch DEFAULT repo itu 'ruby', jadi
+#   sebelumnya isi paket bisa berubah diam-diam.
+# - Verifikasi Baseband-guard eksplisit, termasuk symlink bbg_tracing.h yang
+#   hanya dibuat pada jalur patch SELinux pra-5.1 (kernel 4.14 masuk sini).
+# - Commit tiap komponen dicatat ke ringkasan run untuk reproduksi.
+# - concurrency: run lama otomatis dibatalkan kalau tersalip run baru.
 # ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
@@ -28,6 +38,10 @@ on:
   workflow_dispatch: {}
   push:
     branches: [ main, master ]
+
+concurrency:
+  group: build-rosemary-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -47,6 +61,8 @@ jobs:
         run: |
           git clone --depth=1 -b rosemary-13 \
             https://github.com/dlagia/android_kernel_xiaomi_rosemary.git kernel
+          echo "KERNEL_SHA=$(git -C kernel rev-parse --short HEAD)" >> "$GITHUB_ENV"
+          echo "Kernel source commit: $(git -C kernel rev-parse HEAD)"
 
       - name: Integrasikan ReSukiSU & SuSFS (dlagia/Build-Kernel_scripts)
         working-directory: kernel
@@ -156,6 +172,8 @@ jobs:
             echo "OK: $sym ada di $file"
           done
 
+          echo "KSU_SHA=$(git -C KernelSU rev-parse --short HEAD)" >> "$GITHUB_ENV"
+          echo "ReSukiSU commit: $(git -C KernelSU rev-parse HEAD)"
           echo "Integrasi KernelSU + SuSFS via dlagia/Build-Kernel_scripts: SUKSES"
 
       - name: Perbaiki hasil patch SUSFS di fs/proc/task_mmu.c
@@ -280,6 +298,7 @@ jobs:
             echo "ERROR: fs/nomount/nomount.c tidak mengandung nomount_srcu"
             exit 1
           }
+          echo "NOMOUNT_SHA=$(git -C NoMount rev-parse --short HEAD)" >> "$GITHUB_ENV"
           echo "NoMount branch dev: OK"
 
       - name: Integrasikan Re:Kernel (Sakion-Team) - notifikasi freeze binder/signal
@@ -327,6 +346,26 @@ jobs:
           grep -q 'baseband_guard' security/Kconfig && echo "baseband_guard: sudah terdaftar di default LSM list" || \
             sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' security/Kconfig
           grep -n 'baseband_guard' security/Kconfig || echo "baseband_guard: tidak ada blok config LSM di kernel ini"
+
+          echo ""
+          echo "== Verifikasi integrasi Baseband-guard =="
+          # setup.sh memakai tanda hubung (baseband-guard), bukan garis bawah.
+          test -L security/baseband-guard || { echo "ERROR: symlink security/baseband-guard tidak dibuat"; exit 1; }
+          grep -q 'baseband-guard/' security/Makefile || { echo "ERROR: security/Makefile tidak berisi entry baseband-guard"; exit 1; }
+          grep -q 'security/baseband-guard/Kconfig' security/Kconfig || { echo "ERROR: security/Kconfig tidak source baseband-guard"; exit 1; }
+          # Kernel 4.14 belum punya DEFINE_LSM, jadi setup.sh menempuh jalur patch
+          # SELinux dan membuat symlink bbg_tracing.h. Kalau hilang, build gagal jauh
+          # di belakang dgn error include yang membingungkan.
+          if ! grep -q '#define DEFINE_LSM(lsm)' include/linux/lsm_hooks.h; then
+            test -L security/selinux/include/bbg_tracing.h || {
+              echo "ERROR: bbg_tracing.h tidak dibuat padahal kernel ini butuh jalur patch SELinux"
+              exit 1
+            }
+            echo "OK: jalur patch SELinux pra-5.1 terpasang (bbg_tracing.h ada)"
+          fi
+          echo "BBG_SHA=$(git -C Baseband-guard rev-parse --short HEAD)" >> "$GITHUB_ENV"
+          echo "Baseband-guard commit: $(git -C Baseband-guard rev-parse HEAD)"
+          echo "Baseband-guard: OK"
 
       - name: Pra-compile - perbaikan build source MTK (verified reusable)
         working-directory: kernel
@@ -376,9 +415,33 @@ jobs:
           } >> "$DEF"
           tail -30 "$DEF"
 
+      - name: Cache toolchain proton-clang
+        id: tc-cache
+        uses: actions/cache@v4
+        with:
+          path: clang-proton
+          key: proton-clang-master-v1
+
       - name: Ambil toolchain proton-clang (dipakai penulis kernel ini di b.sh)
         run: |
-          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang-proton
+          # Cache dipakai kalau utuh; kalau tidak, clone ulang. Jangan pernah
+          # lanjut dgn toolchain setengah jadi - error-nya akan menyesatkan.
+          if [ -x clang-proton/bin/clang ]; then
+            echo "Toolchain dari cache."
+          else
+            echo "Cache kosong/rusak, clone ulang."
+            rm -rf clang-proton
+            git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang-proton
+          fi
+          clang-proton/bin/clang --version | head -2
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-rosemary-${{ github.run_id }}
+          restore-keys: |
+            ccache-rosemary-
 
       - name: Compile kernel
         working-directory: kernel
@@ -389,6 +452,23 @@ jobs:
           export KBUILD_BUILD_USER=build
           export KBUILD_BUILD_HOST=kernel
           export KBUILD_BUILD_TIMESTAMP="Mon Jul  1 17:32:55 CST 2024"
+
+          # ccache mempercepat run berikutnya secara signifikan. Kalau binernya
+          # tidak ada, jatuh balik ke clang polos supaya build tetap jalan.
+          if command -v ccache >/dev/null 2>&1; then
+            export CCACHE_DIR="$HOME/.ccache"
+            export CCACHE_MAXSIZE=2G
+            export CCACHE_COMPILERCHECK=content
+            export CCACHE_NOHASHDIR=true
+            ccache -M "$CCACHE_MAXSIZE" >/dev/null
+            ccache -z >/dev/null
+            CC_CMD="ccache clang"
+            echo "ccache aktif."
+          else
+            CC_CMD="clang"
+            echo "ccache tidak tersedia, pakai clang polos."
+          fi
+
           make O=out rosemary_defconfig
 
           echo ""
@@ -437,7 +517,7 @@ jobs:
           set -o pipefail
           if ! make -k O=out -j"$(nproc)" \
                 ARCH=arm64 \
-                CC=clang \
+                CC="$CC_CMD" \
                 AR=llvm-ar \
                 NM=llvm-nm \
                 OBJCOPY=llvm-objcopy \
@@ -461,6 +541,7 @@ jobs:
             exit 1
           fi
           ls -la out/arch/arm64/boot/
+          command -v ccache >/dev/null 2>&1 && ccache -s | head -8 || true
 
       - name: Compile nm (NoMount userspace CLI, commit sama dgn kernel)
         run: |
@@ -500,7 +581,12 @@ jobs:
 
       - name: Rakit paket AnyKernel3 (template asli fjrXTR)
         run: |
-          git clone --depth=1 https://github.com/fjrXTR/AnyKernel3.git AnyKernel3
+          # PENTING: branch default repo ini adalah 'ruby', bukan 'master'. Tanpa -b
+          # isi paket ikut berubah diam-diam kalau pemilik repo ganti default.
+          # mt6781 = SoC rosemary. tools/ak3-core.sh identik di kedua branch.
+          git clone --depth=1 -b mt6781 https://github.com/fjrXTR/AnyKernel3.git AnyKernel3
+          echo "AnyKernel3 commit: $(git -C AnyKernel3 rev-parse HEAD)"
+          test -f AnyKernel3/tools/ak3-core.sh || { echo "ERROR: tools/ak3-core.sh tidak ada di AnyKernel3"; exit 1; }
           rm -rf AnyKernel3/.git
 
           echo "IyMjIEFueUtlcm5lbDMgUmFtZGlzayBNb2QgU2NyaXB0CiMjIG9zbTBzaXMgQCB4ZGEtZGV2ZWxvcGVycwoKIyMjIEFueUtlcm5lbCBzZXR1cAojIGJlZ2luIHByb3BlcnRpZXMKcHJvcGVydGllcygpIHsgJwprZXJuZWwuc3RyaW5nPXNwaGluWCBLZXJuZWwgYnkgZmpyWFRSCmRvLmRldmljZWNoZWNrPTEKZG8ubW9kdWxlcz0wCmRvLnN5c3RlbWxlc3M9MQpkby5jbGVhbnVwPTEKZG8uY2xlYW51cG9uYWJvcnQ9MApkZXZpY2UubmFtZTE9ZmxldXIKZGV2aWNlLm5hbWUyPW1pZWwKZGV2aWNlLm5hbWUzPXNlYQpkZXZpY2UubmFtZTQ9b2NlYW4KZGV2aWNlLm5hbWU1PXJvc2VtYXJ5CmRldmljZS5uYW1lNj1zZWNyZXQKZGV2aWNlLm5hbWU3PW1hbHRvc2UKc3VwcG9ydGVkLnZlcnNpb25zPTExLjAtMTQuMApzdXBwb3J0ZWQucGF0Y2hsZXZlbHM9Cic7IH0gIyBlbmQgcHJvcGVydGllcwoKIyMjIEFueUtlcm5lbCBpbnN0YWxsCiMgYmVnaW4gYXR0cmlidXRlcwphdHRyaWJ1dGVzKCkgewpzZXRfcGVybV9yZWN1cnNpdmUgMCAwIDc1NSA2NDQgJHJhbWRpc2svKjsKc2V0X3Blcm1fcmVjdXJzaXZlIDAgMCA3NTAgNzUwICRyYW1kaXNrL2luaXQqICRyYW1kaXNrL3NiaW47Cn0gIyBlbmQgYXR0cmlidXRlcwoKCiMjIGJvb3Qgc2hlbGwgdmFyaWFibGVzCmJsb2NrPS9kZXYvYmxvY2svYnktbmFtZS9ib290Owppc19zbG90X2RldmljZT0xOwpyYW1kaXNrX2NvbXByZXNzaW9uPWF1dG87CnBhdGNoX3ZibWV0YV9mbGFnPWF1dG87CgojIGltcG9ydCBmdW5jdGlvbnMvdmFyaWFibGVzIGFuZCBzZXR1cCBwYXRjaGluZyAtIHNlZSBmb3IgcmVmZXJlbmNlIChETyBOT1QgUkVNT1ZFKQouIHRvb2xzL2FrMy1jb3JlLnNoICYmIGF0dHJpYnV0ZXM7CgojIGJvb3QgaW5zdGFsbApkdW1wX2Jvb3Q7ICMgdXNlIHNwbGl0X2Jvb3QgdG8gc2tpcCByYW1kaXNrIHVucGFjaywgZS5nLiBmb3IgZGV2aWNlcyB3aXRoIGluaXRfYm9vdCByYW1kaXNrCndyaXRlX2Jvb3Q7ICMgdXNlIGZsYXNoX2Jvb3QgdG8gc2tpcCByYW1kaXNrIHJlcGFjaywgZS5nLiBmb3IgZGV2aWNlcyB3aXRoIGluaXRfYm9vdCByYW1kaXNrCiMjIGVuZCBib290IGluc3RhbGwK" | base64 -d > AnyKernel3/anykernel.sh
@@ -512,6 +598,22 @@ jobs:
           ( cd AnyKernel3 && zip -r9 "../$ZIP" . -x '.git*' )
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
           unzip -l "$ZIP" | head -20
+
+      - name: Ringkasan build
+        if: always()
+        run: |
+          {
+            echo "## Build kernel Rosemary"
+            echo ""
+            echo "| Komponen | Commit |"
+            echo "|---|---|"
+            echo "| Kernel (rosemary-13) | \`${KERNEL_SHA:-?}\` |"
+            echo "| ReSukiSU | \`${KSU_SHA:-?}\` |"
+            echo "| NoMount (dev) | \`${NOMOUNT_SHA:-?}\` |"
+            echo "| Baseband-guard | \`${BBG_SHA:-?}\` |"
+            echo ""
+            echo "Paket: \`${ZIP:-belum terbentuk}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload paket + kernel mentah + dtbo + nm CLI
         uses: actions/upload-artifact@v4
