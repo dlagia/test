@@ -50,8 +50,11 @@
 # - KBUILD_BUILD_TIMESTAMP tidak lagi di-hardcode ke tanggal tetap (Mon Jul 1
 #   2024); sekarang diisi $(date -u) saat step "Compile kernel" berjalan,
 #   supaya banner versi kernel mencerminkan waktu build sebenarnya.
-# - Blok KERNEL_VERSION/VERSION/PATCHLEVEL di step ReSukiSU & SuSFS dihapus -
-#   nilainya dihitung tapi tidak pernah dipakai di step manapun.
+# - (KOREKSI) Sempat menghapus blok KERNEL_VERSION/VERSION/PATCHLEVEL karena
+#   dikira dead code (tidak dipakai di script ini). Ternyata SALAH: variabel
+#   ini dibaca oleh integrate_ksu_susfs.sh (diwariskan via export, bukan
+#   argumen) dan script itu jalan dengan "set -u", jadi build langsung gagal
+#   dengan "KERNEL_VERSION: unbound variable". Sudah dikembalikan.
 # - Dicocokkan ulang terhadap repo resmi https://github.com/Sakion-Team/Re-Kernel
 #   (folder Integrate/README.md): 3 titik hook manual yang di-embed di sini
 #   (binder_transaction, binder_alloc_new_buf_locked, do_send_sig_info) memang
@@ -100,6 +103,10 @@ jobs:
         working-directory: kernel
         run: |
           export KERNEL_DIR=$(pwd)
+          VERSION=$(grep -w '^VERSION' Makefile | tr -d ' ' | cut -d= -f2 || echo "")
+          PATCHLEVEL=$(grep -w '^PATCHLEVEL' Makefile | tr -d ' ' | cut -d= -f2 || echo "")
+          export KERNEL_VERSION="${VERSION}.${PATCHLEVEL}"
+          echo "Kernel version detected: $KERNEL_VERSION"
 
           # Repo kernel ini SUDAH membawa file *.rej sendiri (mis.
           # drivers/misc/mediatek/lcm/mt65xx_lcm_list.c.rej) yang ter-commit dan
