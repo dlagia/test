@@ -65,6 +65,32 @@
 #   Re:Kernel tetap berupa blob statis (bukan git clone) karena upstream tidak
 #   menyediakan setup.sh; tool otomatisnya ("Kernel Modifier") berbasis Java 17+
 #   dan tidak cocok dijalankan sebagai curl|bash di CI.
+#
+# PENYEMPURNAAN (revisi audit ke-5, 2026-09-08):
+# - Cek ulang commit terbaru semua sumber terhadap pin yang dipakai:
+#     dlagia/Build-Kernel_scripts@10f1480  -> MASIH commit terbaru (fix unbound
+#       variable, 2026-08-10). Tidak ada perubahan.
+#     vc-teahouse/Baseband-guard@a54e0dc   -> MASIH commit terbaru (2026-07-26).
+#       Tidak ada perubahan.
+#     maxsteeel/nomount@dev                -> ada commit lebih baru (f7f7caaf,
+#       "replace RBTree with Adaptive Radix Tree", 2026-09-08) TAPI cuma menyentuh
+#       kernel/src/nomount.{c,h}; kernel/setup.sh IDENTIK dgn pin 0c4b2db. Pin
+#       setup.sh sengaja DIPERTAHANKAN (membekukan versi script). Kode driver ART
+#       yang baru itu tetap ikut terambil otomatis lewat argumen "-s dev" saat
+#       setup.sh clone repo - sesuai filosofi pin di revisi ke-3.
+#     actions/cache@v6 & actions/upload-artifact@v7 -> tag major masih valid
+#       (rilis terkini v6.1.0 & v7.0.1). Tidak diubah.
+# - Diverifikasi ulang bahwa integrate_ksu_susfs.sh (pin 10f1480) jalan dgn
+#   "set -euo pipefail" dan HANYA membaca env KERNEL_DIR + KERNEL_VERSION; kedua-
+#   duanya sudah di-export di step integrasi. VERSION/PATCHLEVEL cuma variabel
+#   shell lokal untuk menyusun KERNEL_VERSION, jadi tidak perlu di-export -
+#   tidak ada lagi risiko "unbound variable".
+# - BUG DEPENDENCY: step Compile mengoper CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+#   (dipakai kernel arm64 utk vDSO 32-bit kalau CONFIG_COMPAT_VDSO=y), tapi paket
+#   gcc-arm-linux-gnueabi belum ikut diinstal (hanya gcc-aarch64-linux-gnu). Kini
+#   ditambahkan ke step "Pasang dependency build". Kalau COMPAT_VDSO mati paket
+#   ini tidak terpakai (tidak ada efek samping); kalau hidup, mencegah kegagalan
+#   "arm-linux-gnueabi-gcc: command not found" jauh di tengah build.
 # ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
@@ -90,7 +116,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             bc bison build-essential ccache cpio curl flex git kmod \
             libelf-dev libssl-dev zip zlib1g-dev xxd python3 \
-            libtinfo5 libncurses5 gcc-aarch64-linux-gnu
+            libtinfo5 libncurses5 gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
 
       - name: Clone source kernel (dlagia/android_kernel_xiaomi_rosemary @ rosemary-13)
         run: |
