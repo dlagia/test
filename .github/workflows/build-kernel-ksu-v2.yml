@@ -7,27 +7,19 @@
 # 1. ReSukiSU + SuSFS (via dlagia/Build-Kernel_scripts integrate_ksu_susfs.sh)
 # 2. Defconfig SuSFS lengkap (via dlagia/Build-Kernel_scripts ksu-susfs_defconfig)
 # 3. NoMount (branch dev milik maxsteeel/nomount) + compiler biner CLI nm
-# 4. Re:Kernel (Sakion-Team, binder/signal unfreeze notifier)
-# 5. Baseband-guard (vc-teahouse, LSM anti-overwrite baseband)
-# 6. Toolchain: proton-clang (kdrag0n) + cross-compile GCC
-# 7. Packaging: AnyKernel3 zip flashable (template fjrXTR)
+# 4. Toolchain: proton-clang (kdrag0n) + cross-compile GCC
+# 5. Packaging: AnyKernel3 zip flashable (template fjrXTR)
 #
 # CATATAN PERBAIKAN (versi ini):
 # - fs/proc/task_mmu.c: patch SUSFS 4.14 upstream tidak cocok dengan source
 #   rosemary-13 (sudah di-backport gaya 4.19+). 3 hunk gagal dan 1 hunk salah
 #   mendarat. Diperbaiki otomatis oleh step "Perbaiki hasil patch SUSFS".
-# - Step Re:Kernel dulu terduplikasi 6x dan blok ulangannya menulis script Perl
-#   ke drivers/rekernel/rekernel.c. Sekarang satu blok saja.
-# - rekernel.c: nlmsg_put() hilang sehingga nlhdr dipakai tanpa diinisialisasi.
-# - #include rekernel.h dulu disisipkan di baris 1 sehingga bentrok dgn pr_fmt.
 #
 # PENYEMPURNAAN (revisi audit ke-2):
 # - Cache proton-clang + ccache: run berulang jauh lebih cepat, dgn fallback
 #   clone/clang polos kalau cache rusak atau ccache tidak ada.
 # - AnyKernel3 di-pin ke branch mt6781. Branch DEFAULT repo itu 'ruby', jadi
 #   sebelumnya isi paket bisa berubah diam-diam.
-# - Verifikasi Baseband-guard eksplisit, termasuk symlink bbg_tracing.h yang
-#   hanya dibuat pada jalur patch SELinux pra-5.1 (kernel 4.14 masuk sini).
 # - Commit tiap komponen dicatat ke ringkasan run untuk reproduksi.
 # - concurrency: run lama otomatis dibatalkan kalau tersalip run baru.
 #
@@ -38,11 +30,10 @@
 #   atau gagal diam-diam di run berikutnya:
 #     dlagia/Build-Kernel_scripts@main -> 10f1480b39418e885d4402e78a5ec7721d5040d3
 #     maxsteeel/nomount@dev            -> 0c4b2dbd113b267b673cd7925cd80736658d7a62
-#     vc-teahouse/Baseband-guard@main  -> a54e0dc6cf0aff4dd87fec49644a02d2eb612905
 #   Catatan: pin ini hanya membekukan VERSI SCRIPT/DEFCONFIG yang diunduh, bukan
-#   kode driver yang nanti di-clone SENDIRI oleh script tsb (KernelSU/SuSFS,
-#   NoMount, Baseband-guard tetap mengambil versi terbaru sesuai logika masing-
-#   masing script) - sama seperti filosofi pin branch AnyKernel3 di atas.
+#   kode driver yang nanti di-clone SENDIRI oleh script tsb (KernelSU/SuSFS dan
+#   NoMount tetap mengambil versi terbaru sesuai logika masing-masing script) -
+#   sama seperti filosofi pin branch AnyKernel3 di atas.
 #   Untuk memperbarui pin: cek commit terbaru tiap repo lalu ganti SHA di atas
 #   dan di step terkait, atau minta di-refresh lagi.
 #
@@ -55,23 +46,11 @@
 #   ini dibaca oleh integrate_ksu_susfs.sh (diwariskan via export, bukan
 #   argumen) dan script itu jalan dengan "set -u", jadi build langsung gagal
 #   dengan "KERNEL_VERSION: unbound variable". Sudah dikembalikan.
-# - Dicocokkan ulang terhadap repo resmi https://github.com/Sakion-Team/Re-Kernel
-#   (folder Integrate/README.md): 3 titik hook manual yang di-embed di sini
-#   (binder_transaction, binder_alloc_new_buf_locked, do_send_sig_info) memang
-#   persis sama dengan panduan integrasi manual resminya untuk kernel <=5.4.
-#   README itu juga mencatat known issue: sebagian backport cgroup freezer v2
-#   butuh #include <linux/sched/jobctl.h> di rekernel.h supaya JOBCTL_TRAP_FREEZE
-#   dikenali - include ini sudah ditambahkan ke drivers/rekernel/rekernel.h.
-#   Re:Kernel tetap berupa blob statis (bukan git clone) karena upstream tidak
-#   menyediakan setup.sh; tool otomatisnya ("Kernel Modifier") berbasis Java 17+
-#   dan tidak cocok dijalankan sebagai curl|bash di CI.
 #
 # PENYEMPURNAAN (revisi audit ke-5, 2026-09-08):
 # - Cek ulang commit terbaru semua sumber terhadap pin yang dipakai:
 #     dlagia/Build-Kernel_scripts@10f1480  -> MASIH commit terbaru (fix unbound
 #       variable, 2026-08-10). Tidak ada perubahan.
-#     vc-teahouse/Baseband-guard@a54e0dc   -> MASIH commit terbaru (2026-07-26).
-#       Tidak ada perubahan.
 #     maxsteeel/nomount@dev                -> ada commit lebih baru (f7f7caaf,
 #       "replace RBTree with Adaptive Radix Tree", 2026-09-08) TAPI cuma menyentuh
 #       kernel/src/nomount.{c,h}; kernel/setup.sh IDENTIK dgn pin 0c4b2db. Pin
@@ -124,26 +103,18 @@
 #    cek "return 0;" lolos diam-diam - persis kegagalan yang mau dicegah.
 #    Diganti find() + validasi urutan eksplisit.
 # D. Kegagalan unduh tertelan pipeline. `curl -LSs URL | bash -s dev` (NoMount)
-#    dan `wget -O- URL | bash` (Baseband-guard) berjalan tanpa `set -o pipefail`
-#    dan tanpa curl `-f`, jadi HTTP 404/500 tidak membuat step gagal di titik
-#    kejadian. Ditambahkan pipefail + `curl -fLSs` + cek exit wget eksplisit.
+#    berjalan tanpa `set -o pipefail` dan tanpa curl `-f`, jadi HTTP 404/500
+#    tidak membuat step gagal di titik kejadian. Ditambahkan pipefail +
+#    `curl -fLSs`.
 # E. Entry NoMount di fs/Makefile tidak pernah diverifikasi. setup.sh melewati
 #    penambahan kalau `grep -q "nomount" fs/Makefile` sudah true karena sebab
 #    lain; akibatnya CONFIG_NOMOUNT=y tapi objeknya tidak pernah dikompilasi.
 #    Sekarang dicek eksplisit.
-# F. CONFIG_CGROUP_FREEZER tidak diverifikasi. Re:Kernel mendeteksi proses beku
-#    lewat frozen()/freezing(); keduanya baru mencerminkan pembekuan APLIKASI
-#    kalau CGROUP_FREEZER=y (kalau hanya PM_SLEEP, FREEZER=y tapi cuma untuk
-#    suspend, dan Re:Kernel tidak pernah melapor). rosemary_defconfig tidak
-#    menyetelnya dan init/Kconfig tidak men-default-kannya ke y. Ditambah
-#    PERINGATAN non-fatal di ringkasan config (bukan error: kalau memang mati,
-#    build tetap sah, cuma fitur Re:Kernel jadi mubazir).
-# G. /tmp/build.log hilang saat build gagal. Ditambah step upload artifact
+# F. /tmp/build.log hilang saat build gagal. Ditambah step upload artifact
 #    ber-`if: failure()` supaya log lengkap bisa diunduh.
 #
 # CEK PEMBARUAN UPSTREAM (per 2026-09-10):
 #   dlagia/Build-Kernel_scripts@10f1480 -> MASIH HEAD main (2026-08-10). Tetap.
-#   vc-teahouse/Baseband-guard@a54e0dc  -> MASIH HEAD main (2026-07-26). Tetap.
 #   maxsteeel/nomount@0c4b2db (setup.sh) -> HEAD dev kini 4463f16c (2026-09-09),
 #     tapi kernel/setup.sh terakhir berubah 2026-08-24 (26417ca5) dan isinya
 #     BYTE-IDENTIK dengan yang di pin. Jadi pin setup.sh tetap valid; 11 commit
@@ -157,21 +128,6 @@
 #     tag major masih ada dan valid. Tetap.
 #   fjrXTR/AnyKernel3@mt6781 -> a9fe54fa, tidak berubah sejak 2023. Tetap.
 #   kdrag0n/proton-clang@master -> 9fb011b1, tidak berubah sejak 2021. Tetap.
-#   Sakion-Team/Re-Kernel -> KOREKSI CATATAN revisi ke-4. Upstream SEKARANG
-#     menyediakan otomatisasi: Integrate/patches.sh + Integrate/rekernel/
-#     {rekernel.c,rekernel.h,Kconfig,Makefile} (jalur versi 11.6, 2026-09-07).
-#     TETAPI sengaja TIDAK dipakai di sini: rekernel.h upstream yang baru
-#     memakai frozen_task_group() = jobctl_frozen() || cgroup_freezing(), dan
-#     jobctl_frozen() butuh JOBCTL_TRAP_FREEZE yang hanya ada di kernel dengan
-#     backport cgroup freezer v2 (mainline 5.15+). rosemary-13 adalah 4.14
-#     standar tanpa backport itu, jadi sumber upstream yang baru TIDAK AKAN
-#     COMPILE di sini. Blob statis di bawah (pakai frozen()/freezing() pada
-#     group_leader, jalur cgroup freezer v1) tetap yang benar untuk 4.14.
-#     Catatan tambahan: contoh do_send_sig_info() di Integrate/README.md
-#     upstream memeriksa line_is_frozen(current) lalu melaporkan killer=p /
-#     dst=current - tertukar. Versi di bawah memeriksa p (target yang dibekukan)
-#     dan melaporkan killer=current / dst=p, yang sesuai maksud fiturnya, jadi
-#     sengaja dipertahankan.
 #
 # PENYEMPURNAAN (revisi audit ke-7, 2026-09-10) - fokus: STUCK DI LOGO.
 #   Gejala: kernel ter-build & ter-flash sukses tapi macet di logo Redmi (crash
@@ -210,11 +166,9 @@
 #      (166f7b7c, 2026-09-06). setup.sh menerima <commit> sbagai argumen, jadi
 #      `bash -s <sha>` meng-checkout commit itu (detached HEAD); verifikasi
 #      diganti dari cek nama-branch ke cek SHA.
-#   2. Tiga add-on (NoMount / Re:Kernel / Baseband-guard) kini bisa DIMATIKAN
-#      lewat input workflow_dispatch untuk BISECT: build KSU+SUSFS murni dulu,
-#      lalu nyalakan satu per satu sampai ketemu yang bikin macet. Step integrasi
-#      di-guard `if:`, dan fragment defconfig + cek config saat compile ikut
-#      kondisional supaya tidak ada CONFIG_* menunjuk driver yang tak diintegrasi.
+#   2. Tiga add-on kini bisa DIMATIKAN lewat input workflow_dispatch untuk
+#      BISECT. (Toggle ini SUDAH DICABUT lagi di revisi ke-11 - penyebabnya
+#      ketemu, kernel terbukti boot, dan scaffolding bisect-nya jadi residu.)
 #   3. Ringkasan run diberi perintah ambil log crash asli (pstore console-ramoops
 #      / last_kmsg) - itu satu-satunya cara memastikan penyebab tanpa menebak.
 #
@@ -298,25 +252,48 @@
 #   pinned 58568ef1fc: dua kali jalan menghasilkan file identik, keseimbangan brace
 #   dan #ifdef/#endif keempat file terverifikasi, dan ketiga puluh error di log
 #   tercakup seluruhnya.
+#
+# PENYEMPURNAAN (revisi ke-11, 2026-09-10) - kernel BOOT NORMAL; rampingkan.
+#   Hasil revisi ke-10 sudah ter-flash dan booting normal, jadi fase bisect
+#   selesai. Atas permintaan pemilik build:
+#   1. NoMount SELALU AKTIF. Input `build_nomount`, env BUILD_NOMOUNT, dan
+#      semua cabang `if:` / `if [ "$BUILD_NOMOUNT" = "true" ]` dicabut. NoMount
+#      kini satu-satunya add-on, jadi tidak ada lagi yang perlu di-toggle.
+#   2. Re:Kernel (Sakion-Team) dan Baseband-guard (vc-teahouse) DICABUT
+#      PERMANEN. Yang dihapus, bukan cuma dimatikan:
+#        - step "Integrasikan Re:Kernel" beserta blob base64 rekernel.h /
+#          rekernel.c / Kconfig / Makefile dan script hook binder+signal;
+#        - step "Integrasikan Baseband-guard" beserta setup.sh, patch LSM
+#          security/Kconfig, dan symlink bbg_tracing.h;
+#        - input workflow_dispatch, env BUILD_REKERNEL / BUILD_BBG;
+#        - fragment defconfig CONFIG_REKERNEL / CONFIG_BBG;
+#        - blok verifikasi config + peringatan CGROUP_FREEZER saat compile;
+#        - baris ringkasan run + BBG_SHA, dan nama zip (kini
+#          rosemary-ksu-susfs-nomount-*.zip).
+#      Konsekuensi teknis yang HILANG bersama mereka (disengaja): hook
+#      Re:Kernel di drivers/android/binder.c, drivers/android/binder_alloc.c
+#      dan kernel/signal.c tidak lagi disisipkan, dan LSM baseband_guard tidak
+#      lagi masuk daftar `CONFIG_LSM`. Ketiga file itu kembali apa adanya dari
+#      rosemary-13 - tidak ada tambalan setengah jadi yang tertinggal.
+#   3. Step baru "Pastikan tidak ada residu Re:Kernel & Baseband-guard"
+#      berjalan setelah integrasi: kalau ada sisa (direktori, symlink, entri
+#      Makefile/Kconfig, atau CONFIG_*) dari repo dasar, cache runner, atau
+#      script lain, sisanya dibersihkan lalu hasilnya di-assert. Hook yang
+#      terlanjur masuk ke tengah fungsi binder/signal sengaja TIDAK dibersihkan
+#      otomatis - build berhenti dengan pesan jelas, karena menyunting fungsi
+#      panas secara buta lebih berbahaya daripada gagal.
+#   4. Lapis kedua di step compile: `.config` hasil resolve di-assert bebas dari
+#      CONFIG_REKERNEL / CONFIG_BBG / CONFIG_BASEBAND_GUARD. Jadi meski ada yang
+#      lolos dari lapis pertama, build tetap berhenti sebelum menghasilkan
+#      kernel yang tidak sesuai.
 # ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
 
 on:
+  # Tidak ada lagi input toggle add-on (revisi ke-11): NoMount selalu ikut,
+  # Re:Kernel & Baseband-guard sudah dicabut permanen.
   workflow_dispatch:
-    inputs:
-      build_nomount:
-        description: "Sertakan NoMount (matikan dulu untuk BISECT stuck-at-logo)"
-        type: boolean
-        default: true
-      build_rekernel:
-        description: "Sertakan Re:Kernel"
-        type: boolean
-        default: true
-      build_baseband_guard:
-        description: "Sertakan Baseband-guard"
-        type: boolean
-        default: true
   push:
     branches: [ main, master ]
 
@@ -328,14 +305,6 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 120
-
-    # Toggle komponen add-on untuk BISECT boot hang (stuck di logo). Trigger
-    # 'push' tidak punya inputs, jadi default-nya 'true' (build lengkap).
-    # workflow_dispatch: boolean input diteruskan sebagai string "true"/"false".
-    env:
-      BUILD_NOMOUNT: ${{ github.event.inputs.build_nomount || 'true' }}
-      BUILD_REKERNEL: ${{ github.event.inputs.build_rekernel || 'true' }}
-      BUILD_BBG: ${{ github.event.inputs.build_baseband_guard || 'true' }}
 
     steps:
       - name: Pasang dependency build
@@ -631,7 +600,6 @@ jobs:
           fi
 
       - name: Integrasikan NoMount (setup.sh resmi, driver di-PIN)
-        if: env.BUILD_NOMOUNT == 'true'
         working-directory: kernel
         run: |
           # ==== PIN DRIVER NoMount (revisi audit ke-7) ====
@@ -750,80 +718,94 @@ jobs:
           echo "NOMOUNT_SHA=$(git -C NoMount rev-parse --short HEAD)" >> "$GITHUB_ENV"
           echo "NoMount branch dev: OK"
 
-      - name: Integrasikan Re:Kernel (Sakion-Team) - notifikasi freeze binder/signal
-        if: env.BUILD_REKERNEL == 'true'
+      - name: Pastikan tidak ada residu Re:Kernel & Baseband-guard
         working-directory: kernel
         run: |
-          rm -rf drivers/rekernel
-          mkdir -p drivers/rekernel
-          echo "I2lmbmRlZiBfUkVLRVJORUxfSAojZGVmaW5lIF9SRUtFUk5FTF9ICgovKgogKiBIZWFkZXIgaW50ZWdyYXNpIFJlOktlcm5lbCAoaHR0cHM6Ly9naXRodWIuY29tL1Nha2lvbi1UZWFtL1JlLUtlcm5lbCkKICogdW50dWsga2VybmVsIG5vbi1HS0kvUUdLSSAoPD0gNS40KSwgc2VzdWFpIHBhbmR1YW4gcmVzbWkgZGkgZm9sZGVyCiAqIEludGVncmF0ZS9SRUFETUUubWQgcmVwbyB0ZXJzZWJ1dC4gTWVtYnVrYSBuZXRsaW5rIHNlcnZlciBhZ2FyCiAqIHVzZXJzcGFjZSB0b21ic3RvbmUgaGFuZGxlciAobWlzLiBhcHAgZnJlZXplci9PT00gbWFuYWdlcikgYmlzYQogKiBtZW5lcmltYSBub3RpZmlrYXNpIHNhYXQgYmluZGVyIGNhbGwgYXRhdSBzaWduYWwgbWVueWFzYXIgcHJvc2VzCiAqIHlhbmcgc2VkYW5nIGRpYmVrdWthbiAoZnJvemVuKSBvbGVoIGNncm91cCBmcmVlemVyLCBzZWhpbmdnYSBwcm9zZXMKICogdHNiIGJpc2EgZGktdW5mcmVlemUgdGVwYXQgd2FrdHUgYWxpaC1hbGloIEFOUi9mb3JjZS1jbG9zZS4KICovCgojaW5jbHVkZSA8bGludXgvdHlwZXMuaD4KI2luY2x1ZGUgPGxpbnV4L3NjaGVkLmg+CiNpbmNsdWRlIDxsaW51eC9zY2hlZC90YXNrLmg+CiNpbmNsdWRlIDxsaW51eC9zY2hlZC9qb2JjdGwuaD4KI2luY2x1ZGUgPGxpbnV4L2NyZWQuaD4KI2luY2x1ZGUgPGxpbnV4L3N0cmluZy5oPgojaW5jbHVkZSA8bGludXgvZnJlZXplci5oPgoKI2RlZmluZSBSRUtFUk5FTF9ORVRMSU5LX01JTiAgICAgIDIyCiNkZWZpbmUgUkVLRVJORUxfTkVUTElOS19NQVggICAgICAyNgojZGVmaW5lIFJFS0VSTkVMX1VTRVJfUE9SVCAgICAgICAgMTAwCiNkZWZpbmUgUkVLRVJORUxfUEFDS0VUX1NJWkUgICAgICAxMjgKI2RlZmluZSBSRUtFUk5FTF9NSU5fVVNFUkFQUF9VSUQgICgxMDAwMCkKI2RlZmluZSBSRUtFUk5FTF9NQVhfU1lTVEVNX1VJRCAgICgyMDAwKQojZGVmaW5lIFJFS0VSTkVMX1JFU0VSVkVfT1JERVIgICAgMTcKI2RlZmluZSBSRUtFUk5FTF9XQVJOX0FIRUFEX1NQQUNFICgxIDw8IFJFS0VSTkVMX1JFU0VSVkVfT1JERVIpCgppbnQgcmVrZXJuZWxfc3RhcnRfc2VydmVyKHZvaWQpOwppbnQgcmVrZXJuZWxfc2VuZF9uZXRsaW5rX21lc3NhZ2UoY2hhciAqbXNnLCB1aW50MTZfdCBsZW4pOwoKc3RhdGljIGlubGluZSBib29sIHJla2VybmVsX3Rhc2tfaXNfZnJvemVuKHN0cnVjdCB0YXNrX3N0cnVjdCAqdGFzaykKewoJcmV0dXJuIGZyb3plbih0YXNrLT5ncm91cF9sZWFkZXIpIHx8IGZyZWV6aW5nKHRhc2stPmdyb3VwX2xlYWRlcik7Cn0KCiNlbmRpZiAvKiBfUkVLRVJORUxfSCAqLw==" | base64 -d > drivers/rekernel/rekernel.h
-          echo "LyoKICogZHJpdmVycy9yZWtlcm5lbC9yZWtlcm5lbC5jCiAqCiAqIEludGVncmFzaSBSZTpLZXJuZWwgKGh0dHBzOi8vZ2l0aHViLmNvbS9TYWtpb24tVGVhbS9SZS1LZXJuZWwpIHVudHVrCiAqIGtlcm5lbCBub24tR0tJL1FHS0kgKDw9IDUuNCkuIFNlbXVhIGZ1bmdzaSBzdGF0aXMgZGliZXJpIHByZWZpeCByZWtlcm5lbF8KICogZGFuIGRpdGFydWggZGkgc2F0dSB0cmFuc2xhdGlvbiB1bml0IChidWthbiBkaXNhbGluIGtlIHRpZ2EgZmlsZSBwZW1hbmdnaWwpCiAqIHN1cGF5YSB0aWRhayBhZGEgbXVsdGlwbGUtZGVmaW5pdGlvbjsgaGFueWEgZHVhIGZ1bmdzaSB5YW5nIGRpZXhwb3J0IGxld2F0CiAqIHJla2VybmVsLmgga2UgZHJpdmVycy9hbmRyb2lkL2JpbmRlci5jLCBkcml2ZXJzL2FuZHJvaWQvYmluZGVyX2FsbG9jLmMsCiAqIGRhbiBrZXJuZWwvc2lnbmFsLmMuCiAqLwoKI2luY2x1ZGUgPGxpbnV4L2luaXQuaD4KI2luY2x1ZGUgPGxpbnV4L21vZHVsZS5oPgojaW5jbHVkZSA8bGludXgvdHlwZXMuaD4KI2luY2x1ZGUgPG5ldC9zb2NrLmg+CiNpbmNsdWRlIDxsaW51eC9uZXRsaW5rLmg+CiNpbmNsdWRlIDxsaW51eC9wcm9jX2ZzLmg+CiNpbmNsdWRlIDxsaW51eC9zZXFfZmlsZS5oPgojaW5jbHVkZSAicmVrZXJuZWwuaCIKCnN0YXRpYyBzdHJ1Y3Qgc29jayAqcmVrZXJuZWxfbmV0bGluazsKZXh0ZXJuIHN0cnVjdCBuZXQgaW5pdF9uZXQ7CnN0YXRpYyBpbnQgcmVrZXJuZWxfbmV0bGlua191bml0ID0gUkVLRVJORUxfTkVUTElOS19NSU47CgpzdGF0aWMgaW50IHJla2VybmVsX25ldGxpbmtfc2VuZChjaGFyICptc2csIHVpbnQxNl90IGxlbikKewoJc3RydWN0IHNrX2J1ZmYgKnNrYnVmZmVyOwoJc3RydWN0IG5sbXNnaGRyICpubGhkcjsKCglpZiAoIXJla2VybmVsX25ldGxpbmspCgkJcmV0dXJuIC0xOwoKCXNrYnVmZmVyID0gbmxtc2dfbmV3KGxlbiwgR0ZQX0FUT01JQyk7CglpZiAoIXNrYnVmZmVyKSB7CgkJcHJfZXJyKCJyZWtlcm5lbDogbmxtc2dfbmV3IGZhaWx1cmUuXG4iKTsKCQlyZXR1cm4gLTE7Cgl9CgoJbmxoZHIgPSBubG1zZ19wdXQoc2tidWZmZXIsIDAsIDAsIHJla2VybmVsX25ldGxpbmtfdW5pdCwgbGVuLCAwKTsKCWlmICghbmxoZHIpIHsKCQlwcl9lcnIoInJla2VybmVsOiBubG1zZ19wdXQgZmFpbHVyZS5cbiIpOwoJCW5sbXNnX2ZyZWUoc2tidWZmZXIpOwoJCXJldHVybiAtMTsKCX0KCgltZW1jcHkobmxtc2dfZGF0YShubGhkciksIG1zZywgbGVuKTsKCXJldHVybiBuZXRsaW5rX3VuaWNhc3QocmVrZXJuZWxfbmV0bGluaywgc2tidWZmZXIsIFJFS0VSTkVMX1VTRVJfUE9SVCwgTVNHX0RPTlRXQUlUKTsKfQoKaW50IHJla2VybmVsX3NlbmRfbmV0bGlua19tZXNzYWdlKGNoYXIgKm1zZywgdWludDE2X3QgbGVuKQp7CglyZXR1cm4gcmVrZXJuZWxfbmV0bGlua19zZW5kKG1zZywgbGVuKTsKfQoKc3RhdGljIHZvaWQgcmVrZXJuZWxfbmV0bGlua19yY3ZfbXNnKHN0cnVjdCBza19idWZmICpza2J1ZmZlcikKewoJLyogVGlkYWsgYnV0dWggYXBhIHB1biBkYXJpIHVzZXJzcGFjZSwgY3VrdXAgZGlhYmFpa2FuLiAqLwp9CgpzdGF0aWMgc3RydWN0IG5ldGxpbmtfa2VybmVsX2NmZyByZWtlcm5lbF9jZmcgPSB7CgkuaW5wdXQgPSByZWtlcm5lbF9uZXRsaW5rX3Jjdl9tc2csCn07CgpzdGF0aWMgaW50IHJla2VybmVsX3VuaXRfc2hvdyhzdHJ1Y3Qgc2VxX2ZpbGUgKm0sIHZvaWQgKnYpCnsKCXNlcV9wcmludGYobSwgIiVkXG4iLCByZWtlcm5lbF9uZXRsaW5rX3VuaXQpOwoJcmV0dXJuIDA7Cn0KCnN0YXRpYyBpbnQgcmVrZXJuZWxfdW5pdF9vcGVuKHN0cnVjdCBpbm9kZSAqaW5vZGUsIHN0cnVjdCBmaWxlICpmaWxlKQp7CglyZXR1cm4gc2luZ2xlX29wZW4oZmlsZSwgcmVrZXJuZWxfdW5pdF9zaG93LCBOVUxMKTsKfQoKc3RhdGljIGNvbnN0IHN0cnVjdCBmaWxlX29wZXJhdGlvbnMgcmVrZXJuZWxfdW5pdF9mb3BzID0gewoJLm9wZW4gICAgPSByZWtlcm5lbF91bml0X29wZW4sCgkucmVhZCAgICA9IHNlcV9yZWFkLAoJLmxsc2VlayAgPSBzZXFfbHNlZWssCgkucmVsZWFzZSA9IHNpbmdsZV9yZWxlYXNlLAoJLm93bmVyICAgPSBUSElTX01PRFVMRSwKfTsKCnN0YXRpYyBzdHJ1Y3QgcHJvY19kaXJfZW50cnkgKnJla2VybmVsX2RpciwgKnJla2VybmVsX3VuaXRfZW50cnk7CgppbnQgcmVrZXJuZWxfc3RhcnRfc2VydmVyKHZvaWQpCnsKCWlmIChyZWtlcm5lbF9uZXRsaW5rICE9IE5VTEwpCgkJcmV0dXJuIDA7CgoJZm9yIChyZWtlcm5lbF9uZXRsaW5rX3VuaXQgPSBSRUtFUk5FTF9ORVRMSU5LX01JTjsKCSAgICAgcmVrZXJuZWxfbmV0bGlua191bml0IDwgUkVLRVJORUxfTkVUTElOS19NQVg7IHJla2VybmVsX25ldGxpbmtfdW5pdCsrKSB7CgkJcmVrZXJuZWxfbmV0bGluayA9IChzdHJ1Y3Qgc29jayAqKW5ldGxpbmtfa2VybmVsX2NyZWF0ZSgmaW5pdF9uZXQsCgkJCQkJcmVrZXJuZWxfbmV0bGlua191bml0LCAmcmVrZXJuZWxfY2ZnKTsKCQlpZiAocmVrZXJuZWxfbmV0bGluayAhPSBOVUxMKQoJCQlicmVhazsKCX0KCglpZiAocmVrZXJuZWxfbmV0bGluayA9PSBOVUxMKSB7CgkJcHJfZXJyKCJyZWtlcm5lbDogZmFpbGVkIHRvIGNyZWF0ZSBSZTpLZXJuZWwgc2VydmVyIVxuIik7CgkJcmV0dXJuIC0xOwoJfQoKCXByX2luZm8oInJla2VybmVsOiBjcmVhdGVkIFJlOktlcm5lbCBzZXJ2ZXIhIE5FVExJTksgVU5JVDogJWRcbiIsIHJla2VybmVsX25ldGxpbmtfdW5pdCk7CgoJcmVrZXJuZWxfZGlyID0gcHJvY19ta2RpcigicmVrZXJuZWwiLCBOVUxMKTsKCWlmICghcmVrZXJuZWxfZGlyKSB7CgkJcHJfZXJyKCJyZWtlcm5lbDogY3JlYXRlIC9wcm9jL3Jla2VybmVsIGZhaWxlZCFcbiIpOwoJfSBlbHNlIHsKCQljaGFyIGJ1ZmZbMzJdOwoKCQlzbnByaW50ZihidWZmLCBzaXplb2YoYnVmZiksICIlZCIsIHJla2VybmVsX25ldGxpbmtfdW5pdCk7CgkJcmVrZXJuZWxfdW5pdF9lbnRyeSA9IHByb2NfY3JlYXRlKGJ1ZmYsIDA2NDQsIHJla2VybmVsX2RpciwgJnJla2VybmVsX3VuaXRfZm9wcyk7CgkJaWYgKCFyZWtlcm5lbF91bml0X2VudHJ5KQoJCQlwcl9lcnIoInJla2VybmVsOiBjcmVhdGUgcmVrZXJuZWwgdW5pdCBmYWlsZWQhXG4iKTsKCX0KCglyZXR1cm4gMDsKfQoKLyoKICogU2VydmVyIGRpbnlhbGFrYW4gc2VrYWxpIGRpIGxhdGVfaW5pdGNhbGwgc3VwYXlhIHBlbWFuZ2dpbGFuIGRhcmkgamFsdXIKICogcGFuYXMgKGJpbmRlci9zaWduYWwpIGN1bWEgamFkaSBwZW5nZWNla2FuIHBvaW50ZXIgTlVMTCwgYnVrYW4KICogbmV0bGlua19rZXJuZWxfY3JlYXRlKCkgeWFuZyBtZW5nYWxva2FzaSBtZW1vcmkgZGFuIGJpc2EgdGlkdXIuCiAqLwpzdGF0aWMgaW50IF9faW5pdCByZWtlcm5lbF9pbml0KHZvaWQpCnsKCXJla2VybmVsX3N0YXJ0X3NlcnZlcigpOwoJcmV0dXJuIDA7Cn0KbGF0ZV9pbml0Y2FsbChyZWtlcm5lbF9pbml0KTsK" | base64 -d > drivers/rekernel/rekernel.c
-          echo "b2JqLSQoQ09ORklHX1JFS0VSTkVMKSArPSByZWtlcm5lbC5vCg==" | base64 -d > drivers/rekernel/Makefile
-          echo "Y29uZmlnIFJFS0VSTkVMCglib29sICJSZTpLZXJuZWwgYmluZGVyL3NpZ25hbCBmcmVlemUgbm90aWZpZXIiCglkZWZhdWx0IHkKCWhlbHAKCSAgUmU6S2VybmVsIChTYWtpb24tVGVhbSkgbWVtYnVrYSBuZXRsaW5rIHNlcnZlciBkaSBrZXJuZWwgc3VwYXlhCgkgIHRvbWJzdG9uZS9mcmVlemVyIGhhbmRsZXIgZGkgdXNlcnNwYWNlIG1lbmRhcGF0IG5vdGlmaWthc2kgc2FhdAoJICBiaW5kZXIgY2FsbCBhdGF1IHNpZ25hbCAoU0lHS0lMTC9TSUdURVJNL1NJR0FCUlQvU0lHUVVJVCkgbWVueWFzYXIKCSAgcHJvc2VzIHlhbmcgc2VkYW5nIGRpYmVrdWthbiAoZnJvemVuKSwgc2VoaW5nZ2EgcHJvc2VzIHRzYiBiaXNhCgkgIGRpLXVuZnJlZXplIHRlcGF0IHdha3R1IGFsaWgtYWxpaCBBTlIvZm9yY2UtY2xvc2UuCg==" | base64 -d > drivers/rekernel/Kconfig
+          # Revisi ke-11: kedua add-on ini dicabut permanen. Step ini yang
+          # menjamin "tidak ada residu": apa pun sisa yang masih menempel di
+          # pohon source - dari repo dasar rosemary-13, dari script integrasi
+          # lain, atau dari cache runner - dibersihkan di sini, lalu hasilnya
+          # di-assert. Kalau suatu saat ada yang menyusupkannya kembali, build
+          # berhenti di titik ini dengan pesan jelas, bukan diam-diam ikut
+          # ter-compile.
+          echo "==================== Pembersihan residu ===================="
 
-          grep -q 'rekernel/' drivers/Makefile || echo 'obj-y += rekernel/' >> drivers/Makefile
-          if ! grep -q 'rekernel/Kconfig' drivers/Kconfig; then
-            # sed '/^endmenu/i' menyisip sebelum SETIAP endmenu; pastikan cuma ada satu.
-            NEM=$(grep -c '^endmenu' drivers/Kconfig)
-            test "$NEM" = "1" || { echo "ERROR: drivers/Kconfig punya $NEM baris endmenu, penyisipan tidak aman"; exit 1; }
-            sed -i '/^endmenu/i source "drivers/rekernel/Kconfig"' drivers/Kconfig
+          # ---------- Re:Kernel ----------
+          if [ -e drivers/rekernel ]; then
+            echo "[bersih] menghapus drivers/rekernel/"
+            rm -rf drivers/rekernel
           fi
-
-          echo "IyEvdXNyL2Jpbi9lbnYgcHl0aG9uMwoiIiJTaXNpcGthbiBpbmNsdWRlICsgaG9vayBSZTpLZXJuZWwga2UgYmluZGVyLmMgLyBiaW5kZXJfYWxsb2MuYyAvIGtlcm5lbC9zaWduYWwuYy4KVGlhcCBhbmNob3IgV0FKSUIgY29jb2sgdGVwYXQgMXg7IGthbGF1IHRpZGFrIHNjcmlwdCBiZXJoZW50aSAoYnVrYW4gZGlhbS1kaWFtIGtvcnVwKS4iIiIKaW1wb3J0IHJlLCBzeXMKCmRlZiBlZGl0KHBhdGgsIGFuY2hvciwgbGFiZWwsIGJlZm9yZT0iIiwgYWZ0ZXI9IiIpOgogICAgIiIiU2lzaXBrYW4gYGJlZm9yZWAgc2ViZWx1bSBkYW4gYGFmdGVyYCBzZXN1ZGFoIHRla3MgeWFuZyBjb2NvazsgdGVrcyBhc2xpIGRpcGVydGFoYW5rYW4uIiIiCiAgICB3aXRoIG9wZW4ocGF0aCwgZW5jb2Rpbmc9J3V0Zi04JywgZXJyb3JzPSdzdXJyb2dhdGVlc2NhcGUnKSBhcyBmOgogICAgICAgIHMgPSBmLnJlYWQoKQogICAgbiA9IGxlbihyZS5maW5kYWxsKGFuY2hvciwgcywgcmUuUykpCiAgICBpZiBuICE9IDE6CiAgICAgICAgc3lzLmV4aXQoInJla2VybmVsOiBhbmNob3IgJyVzJyBrZXRlbXUgJWQga2FsaSAoaGFydXMgMSkgZGkgJXMiICUgKGxhYmVsLCBuLCBwYXRoKSkKICAgIHMgPSByZS5zdWIoYW5jaG9yLCBsYW1iZGEgbTogYmVmb3JlICsgbS5ncm91cCgwKSArIGFmdGVyLCBzLCBjb3VudD0xLCBmbGFncz1yZS5TKQogICAgd2l0aCBvcGVuKHBhdGgsICd3JywgZW5jb2Rpbmc9J3V0Zi04JywgZXJyb3JzPSdzdXJyb2dhdGVlc2NhcGUnKSBhcyBmOgogICAgICAgIGYud3JpdGUocykKICAgIHByaW50KCJyZWtlcm5lbDogJXMgLT4gJXMgT0siICUgKGxhYmVsLCBwYXRoKSkKCiMgLS0tIGluY2x1ZGU6IFNFVEVMQUggYmxvayBpbmNsdWRlIGFzbGksIGJ1a2FuIGRpIGJhcmlzIDEuCiMgICAgIEthbGF1IGRpIGJhcmlzIDEsIHByaW50ay5oIGlrdXQgbGViaWggZHVsdSAtPiAiI2RlZmluZSBwcl9mbXQiIGZpbGUgamFkaSByZWRlZmluaXNpLgplZGl0KCdkcml2ZXJzL2FuZHJvaWQvYmluZGVyLmMnLCByJyNpbmNsdWRlICJiaW5kZXJfaW50ZXJuYWxcLmgiXG4nLCAnaW5jbHVkZSBiaW5kZXIuYycsCiAgICAgYWZ0ZXI9JyNpbmNsdWRlICIuLi9yZWtlcm5lbC9yZWtlcm5lbC5oIlxuJykKZWRpdCgnZHJpdmVycy9hbmRyb2lkL2JpbmRlcl9hbGxvYy5jJywgcicjaW5jbHVkZSAiYmluZGVyX3RyYWNlXC5oIlxuJywgJ2luY2x1ZGUgYmluZGVyX2FsbG9jLmMnLAogICAgIGFmdGVyPScjaW5jbHVkZSAiLi4vcmVrZXJuZWwvcmVrZXJuZWwuaCJcbicpCmVkaXQoJ2tlcm5lbC9zaWduYWwuYycsIHInI2luY2x1ZGUgPGxpbnV4L3NpZ25hbGZkXC5oPlxuJywgJ2luY2x1ZGUgc2lnbmFsLmMnLAogICAgIGFmdGVyPScjaW5jbHVkZSAiLi4vZHJpdmVycy9yZWtlcm5lbC9yZWtlcm5lbC5oIlxuJykKCiMgLS0tIDEpIGJpbmRlcl90cmFuc2FjdGlvbigpOiBqYWx1ciByZXBseQplZGl0KCdkcml2ZXJzL2FuZHJvaWQvYmluZGVyLmMnLAogICAgIHIndGFyZ2V0X3Byb2Nccyo9XHMqdGFyZ2V0X3RocmVhZC0+cHJvYztccypcblxzKnRhcmdldF9wcm9jLT50bXBfcmVmXCtcKztccypcblxzKmJpbmRlcl9pbm5lcl9wcm9jX3VubG9ja1wodGFyZ2V0X3RocmVhZC0+cHJvY1wpOycsCiAgICAgJ2JpbmRlcjogamFsdXIgcmVwbHknLAogICAgIGFmdGVyPScnJwoKXHRcdGlmIChyZWtlcm5lbF9zdGFydF9zZXJ2ZXIoKSA9PSAwKSB7Clx0XHRcdGlmICh0YXJnZXRfcHJvYwpcdFx0XHRcdCYmIChOVUxMICE9IHRhcmdldF9wcm9jLT50c2spClx0XHRcdFx0JiYgKE5VTEwgIT0gcHJvYy0+dHNrKQpcdFx0XHRcdCYmICh0YXNrX3VpZCh0YXJnZXRfcHJvYy0+dHNrKS52YWwgPD0gUkVLRVJORUxfTUFYX1NZU1RFTV9VSUQpClx0XHRcdFx0JiYgKHByb2MtPnBpZCAhPSB0YXJnZXRfcHJvYy0+cGlkKQpcdFx0XHRcdCYmIHJla2VybmVsX3Rhc2tfaXNfZnJvemVuKHRhcmdldF9wcm9jLT50c2spKSB7Clx0XHRcdFx0Y2hhciByZWtlcm5lbF9rbXNnW1JFS0VSTkVMX1BBQ0tFVF9TSVpFXTsKClx0XHRcdFx0c25wcmludGYocmVrZXJuZWxfa21zZywgc2l6ZW9mKHJla2VybmVsX2ttc2cpLApcdFx0XHRcdFx0InR5cGU9QmluZGVyLGJpbmRlcnR5cGU9cmVwbHksb25ld2F5PTAsZnJvbV9waWQ9JWQsZnJvbT0lZCx0YXJnZXRfcGlkPSVkLHRhcmdldD0lZDsiLApcdFx0XHRcdFx0cHJvYy0+cGlkLCB0YXNrX3VpZChwcm9jLT50c2spLnZhbCwgdGFyZ2V0X3Byb2MtPnBpZCwgdGFza191aWQodGFyZ2V0X3Byb2MtPnRzaykudmFsKTsKXHRcdFx0XHRyZWtlcm5lbF9zZW5kX25ldGxpbmtfbWVzc2FnZShyZWtlcm5lbF9rbXNnLCBzdHJsZW4ocmVrZXJuZWxfa21zZykpOwpcdFx0XHR9Clx0XHR9CicnJykKCiMgLS0tIDIpIGJpbmRlcl90cmFuc2FjdGlvbigpOiBqYWx1ciB0cmFuc2FjdGlvbgplZGl0KCdkcml2ZXJzL2FuZHJvaWQvYmluZGVyLmMnLAogICAgIHInZS0+dG9fbm9kZSA9IHRhcmdldF9ub2RlLT5kZWJ1Z19pZDsnLAogICAgICdiaW5kZXI6IGphbHVyIHRyYW5zYWN0aW9uJywKICAgICBhZnRlcj0nJycKClx0XHRpZiAocmVrZXJuZWxfc3RhcnRfc2VydmVyKCkgPT0gMCkgewpcdFx0XHRpZiAodGFyZ2V0X3Byb2MKXHRcdFx0XHQmJiAoTlVMTCAhPSB0YXJnZXRfcHJvYy0+dHNrKQpcdFx0XHRcdCYmIChOVUxMICE9IHByb2MtPnRzaykKXHRcdFx0XHQmJiAodGFza191aWQodGFyZ2V0X3Byb2MtPnRzaykudmFsID4gUkVLRVJORUxfTUlOX1VTRVJBUFBfVUlEKQpcdFx0XHRcdCYmIChwcm9jLT5waWQgIT0gdGFyZ2V0X3Byb2MtPnBpZCkKXHRcdFx0XHQmJiByZWtlcm5lbF90YXNrX2lzX2Zyb3plbih0YXJnZXRfcHJvYy0+dHNrKSkgewpcdFx0XHRcdGNoYXIgcmVrZXJuZWxfa21zZ1tSRUtFUk5FTF9QQUNLRVRfU0laRV07CgpcdFx0XHRcdHNucHJpbnRmKHJla2VybmVsX2ttc2csIHNpemVvZihyZWtlcm5lbF9rbXNnKSwKXHRcdFx0XHRcdCJ0eXBlPUJpbmRlcixiaW5kZXJ0eXBlPXRyYW5zYWN0aW9uLG9uZXdheT0lZCxmcm9tX3BpZD0lZCxmcm9tPSVkLHRhcmdldF9waWQ9JWQsdGFyZ2V0PSVkOyIsClx0XHRcdFx0XHR0ci0+ZmxhZ3MgJiBURl9PTkVfV0FZLCBwcm9jLT5waWQsIHRhc2tfdWlkKHByb2MtPnRzaykudmFsLCB0YXJnZXRfcHJvYy0+cGlkLCB0YXNrX3VpZCh0YXJnZXRfcHJvYy0+dHNrKS52YWwpOwpcdFx0XHRcdHJla2VybmVsX3NlbmRfbmV0bGlua19tZXNzYWdlKHJla2VybmVsX2ttc2csIHN0cmxlbihyZWtlcm5lbF9rbXNnKSk7Clx0XHRcdH0KXHRcdH0KJycnKQoKIyAtLS0gMykgYmluZGVyX2FsbG9jX25ld19idWZfbG9ja2VkKCk6IGRpc2lzaXBrYW4gU0VCRUxVTSBhbmNob3IKZWRpdCgnZHJpdmVycy9hbmRyb2lkL2JpbmRlcl9hbGxvYy5jJywKICAgICByJ2lmIFwoaXNfYXN5bmMgJiZccypcblxzKmFsbG9jLT5mcmVlX2FzeW5jX3NwYWNlIDwgc2l6ZSBcKyBzaXplb2ZcKHN0cnVjdCBiaW5kZXJfYnVmZmVyXClcKSBceycsCiAgICAgJ2JpbmRlcl9hbGxvYzogZnJlZV9hc3luY19zcGFjZScsCiAgICAgYmVmb3JlPScnJ2lmIChpc19hc3luYwpcdFx0JiYgKGFsbG9jLT5mcmVlX2FzeW5jX3NwYWNlIDwgMyAqIChzaXplICsgc2l6ZW9mKHN0cnVjdCBiaW5kZXJfYnVmZmVyKSkKXHRcdHx8IChhbGxvYy0+ZnJlZV9hc3luY19zcGFjZSA8IFJFS0VSTkVMX1dBUk5fQUhFQURfU1BBQ0UpKSkgewpcdFx0c3RydWN0IHRhc2tfc3RydWN0ICpyZWtlcm5lbF9wcm9jX3Rhc2s7CgpcdFx0cmN1X3JlYWRfbG9jaygpOwpcdFx0cmVrZXJuZWxfcHJvY190YXNrID0gZmluZF90YXNrX2J5X3ZwaWQoYWxsb2MtPnBpZCk7Clx0XHRyY3VfcmVhZF91bmxvY2soKTsKXHRcdGlmIChyZWtlcm5lbF9wcm9jX3Rhc2sgIT0gTlVMTCAmJiByZWtlcm5lbF9zdGFydF9zZXJ2ZXIoKSA9PSAwKSB7Clx0XHRcdGlmIChyZWtlcm5lbF90YXNrX2lzX2Zyb3plbihyZWtlcm5lbF9wcm9jX3Rhc2spKSB7Clx0XHRcdFx0Y2hhciByZWtlcm5lbF9rbXNnW1JFS0VSTkVMX1BBQ0tFVF9TSVpFXTsKClx0XHRcdFx0c25wcmludGYocmVrZXJuZWxfa21zZywgc2l6ZW9mKHJla2VybmVsX2ttc2cpLApcdFx0XHRcdFx0InR5cGU9QmluZGVyLGJpbmRlcnR5cGU9ZnJlZV9idWZmZXJfZnVsbCxvbmV3YXk9MSxmcm9tX3BpZD0lZCxmcm9tPSVkLHRhcmdldF9waWQ9JWQsdGFyZ2V0PSVkOyIsClx0XHRcdFx0XHRjdXJyZW50LT5waWQsIHRhc2tfdWlkKGN1cnJlbnQpLnZhbCwgcmVrZXJuZWxfcHJvY190YXNrLT5waWQsIHRhc2tfdWlkKHJla2VybmVsX3Byb2NfdGFzaykudmFsKTsKXHRcdFx0XHRyZWtlcm5lbF9zZW5kX25ldGxpbmtfbWVzc2FnZShyZWtlcm5lbF9rbXNnLCBzdHJsZW4ocmVrZXJuZWxfa21zZykpOwpcdFx0XHR9Clx0XHR9Clx0fQpcdCcnJykKCiMgLS0tIDQpIGtlcm5lbC9zaWduYWwuYzogZG9fc2VuZF9zaWdfaW5mbygpCmVkaXQoJ2tlcm5lbC9zaWduYWwuYycsCiAgICAgcidpbnQgZG9fc2VuZF9zaWdfaW5mb1woaW50IHNpZywgc3RydWN0IHNpZ2luZm8gXCppbmZvLCBzdHJ1Y3QgdGFza19zdHJ1Y3QgXCpwLFxzKlxuJwogICAgIHInXHMqYm9vbCBncm91cFwpXHMqXG5ce1xzKlxuXHMqdW5zaWduZWQgbG9uZyBmbGFncztccypcblxzKmludCByZXQgPSAtRVNSQ0g7JywKICAgICAnc2lnbmFsOiBkb19zZW5kX3NpZ19pbmZvJywKICAgICBhZnRlcj0nJycKClx0aWYgKHJla2VybmVsX3N0YXJ0X3NlcnZlcigpID09IDApIHsKXHRcdGlmIChyZWtlcm5lbF90YXNrX2lzX2Zyb3plbihwKSAmJgpcdFx0XHQoc2lnID09IFNJR0tJTEwgfHwgc2lnID09IFNJR1RFUk0gfHwgc2lnID09IFNJR0FCUlQgfHwgc2lnID09IFNJR1FVSVQpKSB7Clx0XHRcdGNoYXIgcmVrZXJuZWxfa21zZ1tSRUtFUk5FTF9QQUNLRVRfU0laRV07CgpcdFx0XHRzbnByaW50ZihyZWtlcm5lbF9rbXNnLCBzaXplb2YocmVrZXJuZWxfa21zZyksClx0XHRcdFx0InR5cGU9U2lnbmFsLHNpZ25hbD0lZCxraWxsZXJfcGlkPSVkLGtpbGxlcj0lZCxkc3RfcGlkPSVkLGRzdD0lZDsiLApcdFx0XHRcdHNpZywgdGFza190Z2lkX25yKGN1cnJlbnQpLCB0YXNrX3VpZChjdXJyZW50KS52YWwsIHRhc2tfdGdpZF9ucihwKSwgdGFza191aWQocCkudmFsKTsKXHRcdFx0cmVrZXJuZWxfc2VuZF9uZXRsaW5rX21lc3NhZ2UocmVrZXJuZWxfa21zZywgc3RybGVuKHJla2VybmVsX2ttc2cpKTsKXHRcdH0KXHR9Clx0JycnKQoKcHJpbnQoInJla2VybmVsOiBTRU1VQSBob29rIHRlcnBhc2FuZyIpCg==" | base64 -d > /tmp/rekernel_hooks.py
-          python3 /tmp/rekernel_hooks.py
-
-          echo ""
-          echo "==================== VERIFIKASI Re:Kernel ===================="
-          head -1 drivers/rekernel/rekernel.c | grep -q '^/\*' || {
-            echo "ERROR: drivers/rekernel/rekernel.c bukan file C yang valid"
-            exit 1
-          }
-          grep -q 'nlmsg_put' drivers/rekernel/rekernel.c || {
-            echo "ERROR: rekernel.c tidak memanggil nlmsg_put - nlhdr akan dipakai tanpa inisialisasi"
-            exit 1
-          }
-          grep -c 'rekernel_start_server' drivers/android/binder.c drivers/android/binder_alloc.c kernel/signal.c || true
-          for f in drivers/android/binder.c drivers/android/binder_alloc.c kernel/signal.c; do
-            n=$(grep -c 'rekernel/rekernel.h' "$f")
-            test "$n" = "1" || { echo "ERROR: include rekernel.h di $f ada $n kali (harus tepat 1)"; exit 1; }
+          for f in drivers/Makefile drivers/Kconfig; do
+            if grep -q 'rekernel' "$f"; then
+              echo "[bersih] membuang entri rekernel dari $f:"
+              grep -n 'rekernel' "$f"
+              sed -i '/rekernel/d' "$f"
+            fi
           done
-          echo "Re:Kernel: OK"
+          # Hook Re:Kernel disisipkan ke TENGAH fungsi binder/signal. Menghapusnya
+          # dengan sed berarti menyunting jalur panas secara buta - lebih berbahaya
+          # daripada gagal. Jadi di sini cuma dideteksi, tidak dibersihkan.
+          for f in drivers/android/binder.c drivers/android/binder_alloc.c kernel/signal.c; do
+            if grep -q 'rekernel' "$f"; then
+              echo "ERROR: $f masih mengandung hook Re:Kernel:"
+              grep -n 'rekernel' "$f"
+              echo "Hook ini berada di tengah fungsi dan TIDAK dibersihkan otomatis."
+              echo "Perbaiki sumber yang menyisipkannya, lalu jalankan ulang."
+              exit 1
+            fi
+          done
 
-      - name: Integrasikan Baseband-guard (LSM anti-tulis baseband/boot chain)
-        if: env.BUILD_BBG == 'true'
-        working-directory: kernel
-        run: |
-          # pipefail: tanpa ini, kegagalan wget (404/timeout) tertelan karena exit
-          # code pipeline hanya diambil dari `bash` di ujung kanan.
-          set -o pipefail
-          # Dipin ke commit tertentu (bukan 'main') dgn alasan yang sama seperti
-          # integrate_ksu_susfs.sh di atas.
-          # wget default sudah keluar != 0 untuk HTTP >=400 (tidak perlu padanan
-          # curl -f), tapi pipefail-lah yang membuat exit code itu terpakai.
-          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/a54e0dc6cf0aff4dd87fec49644a02d2eb612905/setup.sh | bash
-          grep -q 'baseband_guard' security/Kconfig && echo "baseband_guard: sudah terdaftar di default LSM list" || \
-            sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' security/Kconfig
-          grep -n 'baseband_guard' security/Kconfig || echo "baseband_guard: tidak ada blok config LSM di kernel ini"
+          # ---------- Baseband-guard ----------
+          for p in security/baseband-guard security/baseband_guard \
+                   security/selinux/include/bbg_tracing.h Baseband-guard; do
+            if [ -e "$p" ] || [ -L "$p" ]; then
+              echo "[bersih] menghapus $p"
+              rm -rf "$p"
+            fi
+          done
+          for f in security/Makefile security/Kconfig; do
+            if grep -qE 'baseband.guard|bbg_tracing' "$f"; then
+              echo "[bersih] membereskan $f:"
+              grep -nE 'baseband.guard|bbg_tracing' "$f"
+              # Baris entri (obj-.. / source ..) dibuang seluruhnya, sedangkan
+              # daftar `default "...,baseband_guard"` di config LSM cukup dicabut
+              # token-nya supaya selinux dkk tetap terdaftar.
+              sed -i -E '/^[[:space:]]*(obj-|source)/{ /baseband.guard/d }' "$f"
+              sed -i -E 's/,baseband_guard//g; s/baseband_guard,//g' "$f"
+              sed -i -E '/bbg_tracing/d' "$f"
+            fi
+          done
 
           echo ""
-          echo "== Verifikasi integrasi Baseband-guard =="
-          # setup.sh memakai tanda hubung (baseband-guard), bukan garis bawah.
-          test -L security/baseband-guard || { echo "ERROR: symlink security/baseband-guard tidak dibuat"; exit 1; }
-          grep -q 'baseband-guard/' security/Makefile || { echo "ERROR: security/Makefile tidak berisi entry baseband-guard"; exit 1; }
-          grep -q 'security/baseband-guard/Kconfig' security/Kconfig || { echo "ERROR: security/Kconfig tidak source baseband-guard"; exit 1; }
-          # Kernel 4.14 belum punya DEFINE_LSM, jadi setup.sh menempuh jalur patch
-          # SELinux dan membuat symlink bbg_tracing.h. Kalau hilang, build gagal jauh
-          # di belakang dgn error include yang membingungkan.
-          if ! grep -q '#define DEFINE_LSM(lsm)' include/linux/lsm_hooks.h; then
-            test -L security/selinux/include/bbg_tracing.h || {
-              echo "ERROR: bbg_tracing.h tidak dibuat padahal kernel ini butuh jalur patch SELinux"
-              exit 1
-            }
-            echo "OK: jalur patch SELinux pra-5.1 terpasang (bbg_tracing.h ada)"
+          echo "==================== Assert bersih ===================="
+          RESIDU=0
+          for p in drivers/rekernel security/baseband-guard security/baseband_guard \
+                   security/selinux/include/bbg_tracing.h Baseband-guard; do
+            if [ -e "$p" ] || [ -L "$p" ]; then
+              echo "ERROR: $p masih ada"
+              RESIDU=1
+            fi
+          done
+          for f in drivers/Makefile drivers/Kconfig drivers/android/binder.c \
+                   drivers/android/binder_alloc.c kernel/signal.c; do
+            if grep -q 'rekernel' "$f"; then
+              echo "ERROR: sisa 'rekernel' di $f:"
+              grep -n 'rekernel' "$f"
+              RESIDU=1
+            fi
+          done
+          for f in security/Makefile security/Kconfig; do
+            if grep -qE 'baseband.guard|bbg_tracing' "$f"; then
+              echo "ERROR: sisa baseband-guard di $f:"
+              grep -nE 'baseband.guard|bbg_tracing' "$f"
+              RESIDU=1
+            fi
+          done
+          if [ "$RESIDU" != "0" ]; then
+            echo "Residu add-on yang sudah dicabut masih ada - build dihentikan."
+            exit 1
           fi
-          echo "BBG_SHA=$(git -C Baseband-guard rev-parse --short HEAD)" >> "$GITHUB_ENV"
-          echo "Baseband-guard commit: $(git -C Baseband-guard rev-parse HEAD)"
-          echo "Baseband-guard: OK"
+          echo "OK: tidak ada residu Re:Kernel maupun Baseband-guard di pohon source."
 
       - name: Pra-compile - perbaikan build source MTK (verified reusable)
         working-directory: kernel
@@ -866,26 +848,24 @@ jobs:
             echo ""
           } >> "$DEF"
 
-          # Add-on config hanya di-set =y kalau komponennya memang di-build.
-          # Kalau di-matikan untuk bisect, config-nya sengaja TIDAK ditulis
-          # supaya tidak ada CONFIG_* menunjuk objek/driver yang tak diintegrasi.
-          if [ "$BUILD_NOMOUNT" = "true" ]; then
-            echo "" >> "$DEF"; echo "CONFIG_NOMOUNT=y" >> "$DEF"
-            echo "[defconfig] CONFIG_NOMOUNT=y ditambahkan"
+          # NoMount selalu ikut (revisi ke-11), jadi config-nya tidak kondisional.
+          {
+            echo ""
+            echo "CONFIG_NOMOUNT=y"
+          } >> "$DEF"
+          echo "[defconfig] CONFIG_NOMOUNT=y ditambahkan"
+
+          # Re:Kernel & Baseband-guard sudah dicabut. Kalau CONFIG-nya nyelip dari
+          # rosemary_defconfig atau dari fragment ksu-susfs_defconfig, buang di
+          # sini: CONFIG yang menunjuk driver tak terintegrasi bikin objeknya tidak
+          # pernah ada, dan kegagalannya baru terasa jauh di belakang.
+          RESIDU_RE='^(CONFIG_REKERNEL|CONFIG_BBG|CONFIG_BASEBAND_GUARD)\b|^# CONFIG_(REKERNEL|BBG|BASEBAND_GUARD) '
+          if grep -qE "$RESIDU_RE" "$DEF"; then
+            echo "[defconfig] membuang sisa CONFIG Re:Kernel/Baseband-guard:"
+            grep -nE "$RESIDU_RE" "$DEF"
+            sed -i -E "/$RESIDU_RE/d" "$DEF"
           else
-            echo "[defconfig] NoMount dimatikan (BUILD_NOMOUNT=$BUILD_NOMOUNT) - CONFIG_NOMOUNT tidak ditulis"
-          fi
-          if [ "$BUILD_REKERNEL" = "true" ]; then
-            echo "" >> "$DEF"; echo "CONFIG_REKERNEL=y" >> "$DEF"
-            echo "[defconfig] CONFIG_REKERNEL=y ditambahkan"
-          else
-            echo "[defconfig] Re:Kernel dimatikan (BUILD_REKERNEL=$BUILD_REKERNEL) - CONFIG_REKERNEL tidak ditulis"
-          fi
-          if [ "$BUILD_BBG" = "true" ]; then
-            echo "" >> "$DEF"; echo "CONFIG_BBG=y" >> "$DEF"
-            echo "[defconfig] CONFIG_BBG=y ditambahkan"
-          else
-            echo "[defconfig] Baseband-guard dimatikan (BUILD_BBG=$BUILD_BBG) - CONFIG_BBG tidak ditulis"
+            echo "[defconfig] OK: tidak ada CONFIG Re:Kernel/Baseband-guard"
           fi
           echo "" >> "$DEF"
           tail -30 "$DEF"
@@ -974,58 +954,22 @@ jobs:
             fi
           done
 
-          if [ "$BUILD_NOMOUNT" = "true" ]; then
-            echo ""
-            echo "==================== RESOLVED NoMount CONFIG ===================="
-            grep -E '^CONFIG_NOMOUNT' out/.config || true
-            grep -q '^CONFIG_NOMOUNT=y$' out/.config || { echo "ERROR: CONFIG_NOMOUNT tidak resolve ke y"; exit 1; }
-          else
-            echo ""
-            echo "==================== NoMount DIMATIKAN (bisect) ===================="
-            grep -q '^CONFIG_NOMOUNT=y$' out/.config && { echo "ERROR: NoMount dimatikan tapi CONFIG_NOMOUNT=y bocor di .config"; exit 1; } || echo "OK: CONFIG_NOMOUNT tidak aktif"
-          fi
-
-          if [ "$BUILD_REKERNEL" = "true" ]; then
           echo ""
-          echo "==================== RESOLVED Re:Kernel CONFIG ===================="
-          grep -E '^CONFIG_REKERNEL' out/.config || true
-          grep -q '^CONFIG_REKERNEL=y$' out/.config || { echo "ERROR: CONFIG_REKERNEL tidak resolve ke y"; exit 1; }
-          # PERINGATAN (bukan error). rekernel_task_is_frozen() memakai
-          # frozen()/freezing() dari <linux/freezer.h>. Di 4.14 keduanya membaca
-          # flag PF_FROZEN / freezing_slow_path, yang mencerminkan pembekuan
-          # APLIKASI hanya kalau cgroup freezer v1 aktif. Tanpa CGROUP_FREEZER,
-          # jalur itu praktis cuma dipakai freezer suspend (PM_SLEEP), sehingga
-          # Re:Kernel tidak akan pernah melapor apa pun walau CONFIG_REKERNEL=y.
-          # rosemary_defconfig tidak menyetelnya dan init/Kconfig tidak
-          # men-default-kannya ke y, jadi statusnya dicetak supaya kelihatan.
-          # Sengaja TIDAK exit 1: kernelnya tetap sah, hanya fiturnya mubazir.
-          grep -E '^(CONFIG_CGROUP_FREEZER|CONFIG_FREEZER)\b|^# CONFIG_CGROUP_FREEZER' out/.config || true
-          if grep -q '^CONFIG_CGROUP_FREEZER=y$' out/.config; then
-            echo "OK: CONFIG_CGROUP_FREEZER=y - Re:Kernel bisa mendeteksi proses beku."
-          else
-            echo "PERINGATAN: CONFIG_CGROUP_FREEZER tidak aktif."
-            echo "  Re:Kernel akan ikut ter-compile dan netlink server tetap jalan,"
-            echo "  tapi frozen()/freezing() tidak akan pernah true untuk aplikasi,"
-            echo "  jadi notifikasi freeze binder/signal tidak akan pernah terkirim."
-            echo "  Kalau memang mau dipakai, tambahkan CONFIG_CGROUP_FREEZER=y ke"
-            echo "  fragment defconfig di step 'Siapkan defconfig'."
-          fi
-          else
-            echo ""
-            echo "==================== Re:Kernel DIMATIKAN (bisect) ===================="
-            grep -q '^CONFIG_REKERNEL=y$' out/.config && { echo "ERROR: Re:Kernel dimatikan tapi CONFIG_REKERNEL=y bocor di .config"; exit 1; } || echo "OK: CONFIG_REKERNEL tidak aktif"
-          fi
+          echo "==================== RESOLVED NoMount CONFIG ===================="
+          grep -E '^CONFIG_NOMOUNT' out/.config || true
+          grep -q '^CONFIG_NOMOUNT=y$' out/.config || { echo "ERROR: CONFIG_NOMOUNT tidak resolve ke y"; exit 1; }
 
-          if [ "$BUILD_BBG" = "true" ]; then
-            echo ""
-            echo "==================== RESOLVED Baseband-guard CONFIG ===================="
-            grep -E '^CONFIG_BBG' out/.config || true
-            grep -q '^CONFIG_BBG=y$' out/.config || { echo "ERROR: CONFIG_BBG tidak resolve ke y"; exit 1; }
-          else
-            echo ""
-            echo "==================== Baseband-guard DIMATIKAN (bisect) ===================="
-            grep -q '^CONFIG_BBG=y$' out/.config && { echo "ERROR: Baseband-guard dimatikan tapi CONFIG_BBG=y bocor di .config"; exit 1; } || echo "OK: CONFIG_BBG tidak aktif"
+          # Lapis kedua penjamin "tidak ada residu" (revisi ke-11): apa pun yang
+          # lolos dari step pembersihan, ketahuan di sini setelah Kconfig
+          # me-resolve seluruh dependency - sebelum satu objek pun di-compile.
+          echo ""
+          echo "==================== Assert add-on yang dicabut ===================="
+          if grep -qE '^CONFIG_(REKERNEL|BBG|BASEBAND_GUARD)=' out/.config; then
+            echo "ERROR: config add-on yang sudah dicabut masih aktif di .config:"
+            grep -nE '^CONFIG_(REKERNEL|BBG|BASEBAND_GUARD)=' out/.config
+            exit 1
           fi
+          echo "OK: CONFIG_REKERNEL / CONFIG_BBG / CONFIG_BASEBAND_GUARD tidak ada di .config"
 
           set -o pipefail
           if ! make -k O=out -j"$(nproc)" \
@@ -1057,7 +1001,6 @@ jobs:
           command -v ccache >/dev/null 2>&1 && ccache -s | head -8 || true
 
       - name: Compile nm (NoMount userspace CLI, commit sama dgn kernel)
-        if: env.BUILD_NOMOUNT == 'true'
         run: |
           NM_SRC="kernel/NoMount/userspace/src"
           test -d "$NM_SRC" || { echo "ERROR: $NM_SRC tidak ada - step Integrasikan NoMount gagal?"; exit 1; }
@@ -1107,7 +1050,7 @@ jobs:
 
           cp "${{ steps.kimg.outputs.path }}" "AnyKernel3/${{ steps.kimg.outputs.name }}"
 
-          ZIP="rosemary-ksu-susfs-nomount-rekernel-bbg-$(date +%Y%m%d-%H%M%S).zip"
+          ZIP="rosemary-ksu-susfs-nomount-$(date +%Y%m%d-%H%M%S).zip"
 
           ( cd AnyKernel3 && zip -r9 "../$ZIP" . -x '.git*' )
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
@@ -1119,20 +1062,18 @@ jobs:
           {
             echo "## Build kernel Rosemary"
             echo ""
-            echo "### Add-on aktif di build ini (bisect)"
+            echo "### Add-on"
             echo "| Add-on | Status |"
             echo "|---|---|"
-            echo "| NoMount        | \`${BUILD_NOMOUNT:-true}\` |"
-            echo "| Re:Kernel      | \`${BUILD_REKERNEL:-true}\` |"
-            echo "| Baseband-guard | \`${BUILD_BBG:-true}\` |"
+            echo "| NoMount        | aktif (selalu ikut) |"
+            echo "| Re:Kernel      | dicabut permanen (revisi ke-11) |"
+            echo "| Baseband-guard | dicabut permanen (revisi ke-11) |"
             echo ""
             echo "| Komponen | Commit |"
             echo "|---|---|"
             echo "| Kernel (rosemary-13) | \`${KERNEL_SHA:-?}\` |"
             echo "| ReSukiSU | \`${KSU_SHA:-?}\` |"
-            echo "| NoMount (di-PIN, pre-ART) | \`${NOMOUNT_SHA:-dimatikan/?}\` |"
-            echo "| Baseband-guard | \`${BBG_SHA:-dimatikan/?}\` |"
-            echo "| Re:Kernel | _embedded statis di YAML, bukan git clone - tidak ada commit SHA_ |"
+            echo "| NoMount (di-PIN, pre-ART) | \`${NOMOUNT_SHA:-?}\` |"
             echo ""
             echo "Paket: \`${ZIP:-belum terbentuk}\`"
             echo ""
@@ -1145,12 +1086,14 @@ jobs:
             echo "   # (atau /proc/last_kmsg pada sebagian device)"
             echo '   ```'
             echo "   Kirim crash.txt - di situ kelihatan panic/hook yang menabrak."
-            echo "2. BISECT lewat 'Run workflow': matikan **build_nomount** dulu."
-            echo "   - Boot? berarti NoMount penyebabnya (driver ART / d_revalidate)."
-            echo "   - Masih stuck? nyalakan lagi NoMount, matikan build_rekernel,"
-            echo "     lalu build_baseband_guard, satu per satu."
-            echo "   - Semua add-on OFF tapi tetap stuck = akarnya di inti"
-            echo "     KernelSU+SUSFS (kemungkinan besar SUSFS upstream v2.3.0)."
+            echo "2. Tersisa satu add-on: NoMount, dan jalur kodenya (d_revalidate +"
+            echo "   iterate_dir) aktif sejak filesystem pertama diakses - jadi itu"
+            echo "   tersangka pertama. Untuk mengujinya, hapus sementara step"
+            echo "   **Integrasikan NoMount**, baris \`CONFIG_NOMOUNT=y\` di step"
+            echo "   defconfig, blok verifikasinya di step compile, dan step"
+            echo "   **Compile nm**; lalu build ulang sebagai KSU+SuSFS murni."
+            echo "   - Boot? berarti NoMount penyebabnya."
+            echo "   - Masih stuck? akarnya di inti KernelSU+SUSFS."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload paket + kernel mentah + dtbo + nm CLI
