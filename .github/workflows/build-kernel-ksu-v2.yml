@@ -291,7 +291,7 @@ jobs:
           # drivers/misc/mediatek/lcm/mt65xx_lcm_list.c.rej) yang ter-commit dan
           # tidak ada hubungannya dgn SUSFS. Dicatat dulu supaya tidak dikira
           # kegagalan patch.
-          find . -name '*.rej' -printf '%P\n' 2>/dev/null | sort > /tmp/rej_before.txt
+          find . -path ./.git -prune -o -name '*.rej' -printf '%P\n' 2>/dev/null | sort > /tmp/rej_before.txt
           echo "== Reject bawaan repo (diabaikan): $(wc -l < /tmp/rej_before.txt) file =="
           cat /tmp/rej_before.txt || true
 
@@ -300,6 +300,46 @@ jobs:
           echo "[+] Mengunduh integrate_ksu_susfs.sh dari dlagia/Build-Kernel_scripts (pinned commit)..."
           curl -fLSs "https://raw.githubusercontent.com/dlagia/Build-Kernel_scripts/10f1480b39418e885d4402e78a5ec7721d5040d3/scripts/integrate_ksu_susfs.sh" -o integrate_ksu_susfs.sh
           chmod +x integrate_ksu_susfs.sh
+
+          # ----- PIN SUMBER PATCH SUSFS (revisi ke-9, 2026-09-10) -----
+          # integrate_ksu_susfs.sh mengunduh susfs_inline_hook_patches.sh dan
+          # susfs_patch_to_${KERNEL_VERSION}.patch dari branch 'mainline' milik
+          # JackA1ltman yang TIDAK di-pin. Branch itu berubah dua kali hari ini:
+          #   103d85d2cd (11:57Z) "merged latest commits"  -> patch tercemar diff
+          #                        direktori .git/ DAN kurang satu '}' di section
+          #                        fs/notify/fdinfo.c (blok CONFIG_KSU_SUSFS_SUS_MOUNT)
+          #   58568ef1fc (12:19Z) "fix: susfs patches apply incorrect" -> dua-duanya beres
+          # Build yang gagal (rosemary-build-log.zip) memakai versi 11:57Z. Sumber
+          # dipaku ke commit hasil perbaikan supaya build bisa diulang (reproducible)
+          # dan tidak ikut berubah lagi kalau upstream mengedit branch.
+          SUSFS_PIN="58568ef1fcea20ba73d8f02a914ecf9fc03313d5"
+          sed -i "s|refs/heads/mainline|${SUSFS_PIN}|g" integrate_ksu_susfs.sh
+          echo "[+] Sumber SUSFS di-PIN ke JackA1ltman@58568ef1fc ($(grep -c "$SUSFS_PIN" integrate_ksu_susfs.sh) URL dialihkan)"
+
+          # ----- SANITASI PATCH SUSFS (revisi ke-8, 2026-09-10) -----
+          # BUG BARU (log rosemary-build-log.zip): susfs_patch_to_4.14.patch dari
+          # JackA1ltman branch 'mainline' kini TERCEMAR diff direktori .git/
+          # (.git/ORIG_HEAD, .git/index, .git/logs/HEAD, .git/objects/*) milik repo
+          # scratch pembuatnya (crdroidandroid .._sm8150). Saat 'patch -p1', file
+          # .git/* jadi target, gagal, lalu meninggalkan .git/logs/HEAD.rej -> audit
+          # menganggapnya reject tak tertangani -> build berhenti exit 1.
+          # CATATAN revisi ke-9: setelah sumber di-PIN ke 58568ef1fc di atas, patch
+          # yang diunduh SUDAH bersih dari .git/ (sudah diverifikasi: daftar
+          # 'diff --git' hanya berisi fs/, kernel/, mm/, include/, security/). Filter
+          # di bawah kini berfungsi sebagai jaring pengaman - kalau pin dinaikkan
+          # nanti dan upstream mencemari patch lagi, build tetap selamat.
+          # Perbaikan lapis-1 (mencegah di sumber): sisipkan filter awk yang membuang
+          # SEMUA section 'diff --git ...' yang menyasar .git/ SEBELUM patch
+          # diterapkan; section file kernel (fs/, kernel/, mm/, security/, include/)
+          # tetap utuh. Script sudah di-PIN, jadi teks baris apply-nya stabil.
+          printf '%s\n' '#!/bin/bash' 'P="$1"' \
+            'awk '\''/^diff --git /{d=($0 ~ /[ab]\/\.git\//)} !d'\'' "$P" > "$P.ng" && mv "$P.ng" "$P"' \
+            'echo "[+] (sanitasi) section .git/ dibuang dari patch sebelum apply"' \
+            'patch -p1 < "$P"' > /tmp/susfs_apply.sh
+          sed -i 's|patch -p1 < "susfs_patch_to_${KERNEL_VERSION}.patch"|bash /tmp/susfs_apply.sh "susfs_patch_to_${KERNEL_VERSION}.patch"|' integrate_ksu_susfs.sh
+          grep -q 'susfs_apply.sh' integrate_ksu_susfs.sh \
+            && echo "OK: apply patch SUSFS dialihkan ke filter anti-.git" \
+            || echo "CATATAN: baris apply tak ditemukan (script upstream berubah?) - pengaman audit .git di bawah tetap aktif"
 
           # </dev/null: script punya prompt interaktif "read -t 10" utk penanganan
           # reject. Di runner tidak ada tty, jadi dipaksa non-interaktif supaya
@@ -315,8 +355,12 @@ jobs:
           # Script dlagia memindahkan semua *.rej ke patch_rejects/ (termasuk yg
           # bawaan repo), jadi kumpulkan dari dua tempat lalu kurangi daftar
           # bawaan tadi. Sisanya = reject yang benar-benar dari patch SUSFS.
-          { find patch_rejects -name '*.rej' -printf '%P\n' 2>/dev/null; \
-            find . -path ./patch_rejects -prune -o -name '*.rej' -printf '%P\n' 2>/dev/null; } \
+          # Pengaman lapis-2: kalau toh ada .rej nyasar di dalam .git/ (mis. dari
+          # run lama atau bila sanitasi lapis-1 terlewat), buang dulu - itu bukan
+          # file kernel dan tidak boleh membuat audit gagal.
+          find . -path '*/.git/*' -name '*.rej' -delete 2>/dev/null || true
+          { find patch_rejects -path '*/.git/*' -prune -o -name '*.rej' -printf '%P\n' 2>/dev/null; \
+            find . \( -path ./patch_rejects -o -path ./.git \) -prune -o -name '*.rej' -printf '%P\n' 2>/dev/null; } \
             | sort -u > /tmp/rej_after.txt
           REJ=$(comm -13 /tmp/rej_before.txt /tmp/rej_after.txt)
 
@@ -329,7 +373,7 @@ jobs:
 
           # fs/proc/task_mmu.c.rej memang diharapkan gagal (hunk #1/#5/#6) dan
           # ditangani step berikutnya. Selain itu, berhenti.
-          UNEXPECTED=$(echo "$REJ" | grep -v '^fs/proc/task_mmu\.c\.rej$' | grep -v '^$' || true)
+          UNEXPECTED=$(echo "$REJ" | grep -v '^fs/proc/task_mmu\.c\.rej$' | grep -vE '(^|/)\.git/' | grep -v '^$' || true)
           if [ -n "$UNEXPECTED" ]; then
             echo ""
             echo "ERROR: ada reject SUSFS di file yang belum ditangani:"
