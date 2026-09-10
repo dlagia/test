@@ -91,6 +91,87 @@
 #   ditambahkan ke step "Pasang dependency build". Kalau COMPAT_VDSO mati paket
 #   ini tidak terpakai (tidak ada efek samping); kalau hidup, mencegah kegagalan
 #   "arm-linux-gnueabi-gcc: command not found" jauh di tengah build.
+#
+# PENYEMPURNAAN (revisi audit ke-6, 2026-09-10):
+# A. BUG NYATA - anchor extern ksu_hide_setprocattr TIDAK PERNAH COCOK.
+#    Blok "PERBAIKAN OTOMATIS ... security/selinux/hooks.c" memakai anchor
+#    'static int selinux_setprocattr(struct task_struct *p,'. Di rosemary-13
+#    signature aslinya adalah:
+#        static int selinux_setprocattr(const char *name, void *value, size_t size)
+#    (dicek langsung ke source: 1 kemunculan, di awal baris). Jadi anchor lama
+#    cocok 0 kali, `if grep -qF ...` gagal, dan karena TIDAK ADA `else` di dalam
+#    -> step mencetak "extern declaration hilang" lalu DIAM-DIAM tidak menambal
+#    apa pun. Kalau kondisi itu benar-benar terjadi, build baru mati jauh di
+#    belakang dengan "implicit declaration of function 'ksu_hide_setprocattr'".
+#    Sekarang: anchor dicocokkan ke nama fungsi saja (apa pun argumennya),
+#    jumlah kemunculan divalidasi harus 1, dan hasil tambalan diverifikasi -
+#    gagal = berhenti dengan pesan jelas, bukan lolos diam-diam.
+#    Catatan: upstream susfs_inline_hook_patches.sh (JackA1ltman) sebenarnya
+#    SUDAH menangani kedua bentuk signature, jadi jalur ini murni jaring
+#    pengaman - tapi jaring pengaman yang bolong sama saja tidak ada.
+# B. BUG NYATA - anykernel.sh memakai is_slot_device=1 di device A-only.
+#    tools/ak3-core.sh (fungsi setup_ak) punya:
+#        if [ ! "$slot" -a "$is_slot_device" == 1 ]; then
+#          abort "Unable to determine active slot. Aborting...";
+#    Keluarga MT6781 (rosemary/fleur/sea/ocean/miel/secret/maltose) A-only:
+#    tidak ada ro.boot.slot_suffix maupun androidboot.slot, jadi $slot kosong
+#    dan zip ABORT sebelum menyentuh partisi boot. Diganti ke is_slot_device=auto
+#    yang tetap mendeteksi slot kalau ada, tapi lanjut normal kalau tidak ada.
+# C. fix_susfs_task_mmu.py: verifikasi akhir memakai s.index() dua kali.
+#    (a) kalau salah satu penanda hilang -> ValueError/traceback mentah, bukan
+#    pesan yang bisa dibaca; (b) kalau penanda akhir kebetulan berada SEBELUM
+#    penanda awal, slicing Python menghasilkan string kosong TANPA error, jadi
+#    cek "return 0;" lolos diam-diam - persis kegagalan yang mau dicegah.
+#    Diganti find() + validasi urutan eksplisit.
+# D. Kegagalan unduh tertelan pipeline. `curl -LSs URL | bash -s dev` (NoMount)
+#    dan `wget -O- URL | bash` (Baseband-guard) berjalan tanpa `set -o pipefail`
+#    dan tanpa curl `-f`, jadi HTTP 404/500 tidak membuat step gagal di titik
+#    kejadian. Ditambahkan pipefail + `curl -fLSs` + cek exit wget eksplisit.
+# E. Entry NoMount di fs/Makefile tidak pernah diverifikasi. setup.sh melewati
+#    penambahan kalau `grep -q "nomount" fs/Makefile` sudah true karena sebab
+#    lain; akibatnya CONFIG_NOMOUNT=y tapi objeknya tidak pernah dikompilasi.
+#    Sekarang dicek eksplisit.
+# F. CONFIG_CGROUP_FREEZER tidak diverifikasi. Re:Kernel mendeteksi proses beku
+#    lewat frozen()/freezing(); keduanya baru mencerminkan pembekuan APLIKASI
+#    kalau CGROUP_FREEZER=y (kalau hanya PM_SLEEP, FREEZER=y tapi cuma untuk
+#    suspend, dan Re:Kernel tidak pernah melapor). rosemary_defconfig tidak
+#    menyetelnya dan init/Kconfig tidak men-default-kannya ke y. Ditambah
+#    PERINGATAN non-fatal di ringkasan config (bukan error: kalau memang mati,
+#    build tetap sah, cuma fitur Re:Kernel jadi mubazir).
+# G. /tmp/build.log hilang saat build gagal. Ditambah step upload artifact
+#    ber-`if: failure()` supaya log lengkap bisa diunduh.
+#
+# CEK PEMBARUAN UPSTREAM (per 2026-09-10):
+#   dlagia/Build-Kernel_scripts@10f1480 -> MASIH HEAD main (2026-08-10). Tetap.
+#   vc-teahouse/Baseband-guard@a54e0dc  -> MASIH HEAD main (2026-07-26). Tetap.
+#   maxsteeel/nomount@0c4b2db (setup.sh) -> HEAD dev kini 4463f16c (2026-09-09),
+#     tapi kernel/setup.sh terakhir berubah 2026-08-24 (26417ca5) dan isinya
+#     BYTE-IDENTIK dengan yang di pin. Jadi pin setup.sh tetap valid; 11 commit
+#     driver baru (ART rewrite + "fix ART child removal", "batch rule clearing",
+#     "only change d_flags if its our file", dll) tetap ikut terambil otomatis
+#     lewat argumen "-s dev". Diverifikasi ulang: nomount_srcu masih ada di
+#     kernel/src/nomount.c (grep penjaga di bawah masih sahih), userspace/src
+#     masih hanya nm.c + nm.h, dan _start masih didefinisikan via inline asm di
+#     nm.h (jadi -Wl,-e,_start masih benar).
+#   actions/cache@v6 (rilis v6.1.0) & actions/upload-artifact@v7 (v7.0.1) ->
+#     tag major masih ada dan valid. Tetap.
+#   fjrXTR/AnyKernel3@mt6781 -> a9fe54fa, tidak berubah sejak 2023. Tetap.
+#   kdrag0n/proton-clang@master -> 9fb011b1, tidak berubah sejak 2021. Tetap.
+#   Sakion-Team/Re-Kernel -> KOREKSI CATATAN revisi ke-4. Upstream SEKARANG
+#     menyediakan otomatisasi: Integrate/patches.sh + Integrate/rekernel/
+#     {rekernel.c,rekernel.h,Kconfig,Makefile} (jalur versi 11.6, 2026-09-07).
+#     TETAPI sengaja TIDAK dipakai di sini: rekernel.h upstream yang baru
+#     memakai frozen_task_group() = jobctl_frozen() || cgroup_freezing(), dan
+#     jobctl_frozen() butuh JOBCTL_TRAP_FREEZE yang hanya ada di kernel dengan
+#     backport cgroup freezer v2 (mainline 5.15+). rosemary-13 adalah 4.14
+#     standar tanpa backport itu, jadi sumber upstream yang baru TIDAK AKAN
+#     COMPILE di sini. Blob statis di bawah (pakai frozen()/freezing() pada
+#     group_leader, jalur cgroup freezer v1) tetap yang benar untuk 4.14.
+#     Catatan tambahan: contoh do_send_sig_info() di Integrate/README.md
+#     upstream memeriksa line_is_frozen(current) lalu melaporkan killer=p /
+#     dst=current - tertukar. Versi di bawah memeriksa p (target yang dibekukan)
+#     dan melaporkan killer=current / dst=p, yang sesuai maksud fiturnya, jadi
+#     sengaja dipertahankan.
 # ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
@@ -195,13 +276,31 @@ jobs:
 
           echo ""
           echo "== PERBAIKAN OTOMATIS: bug deteksi versi utk security/selinux/hooks.c (kernel 4.14) =="
+          # CATATAN revisi ke-6: anchor lama adalah
+          #   'static int selinux_setprocattr(struct task_struct *p,'
+          # dan itu TIDAK PERNAH cocok di rosemary-13, karena signature aslinya
+          #   static int selinux_setprocattr(const char *name, void *value, size_t size)
+          # Karena `if` bagian dalam tidak punya `else`, step lama akan mencetak
+          # "extern declaration hilang" lalu diam-diam TIDAK menambal apa pun,
+          # dan build baru mati jauh di belakang dengan implicit declaration.
+          # Sekarang: cocokkan nama fungsinya saja (apa pun bentuk argumennya).
           if grep -q 'ksu_hide_setprocattr(name, value, size);' security/selinux/hooks.c \
              && ! grep -q 'extern int ksu_hide_setprocattr' security/selinux/hooks.c; then
             echo "Terdeteksi: pemanggilan ksu_hide_setprocattr ada, tapi extern declaration hilang."
-            if grep -qF 'static int selinux_setprocattr(struct task_struct *p,' security/selinux/hooks.c; then
-              sed -i '/static int selinux_setprocattr(struct task_struct \*p,/i\#ifdef CONFIG_KSU\nextern int ksu_hide_setprocattr(const char *name, void *value, size_t size);\n#endif\n' security/selinux/hooks.c
-              grep -q 'extern int ksu_hide_setprocattr' security/selinux/hooks.c && \
-                echo "OK: extern ksu_hide_setprocattr berhasil ditambal manual."
+            N=$(grep -c '^static int selinux_setprocattr(' security/selinux/hooks.c || true)
+            if [ "$N" != "1" ]; then
+              echo "ERROR: anchor 'static int selinux_setprocattr(' ketemu $N kali (harus 1)."
+              echo "Struktur security/selinux/hooks.c berubah; extern ksu_hide_setprocattr"
+              echo "tidak bisa ditambal otomatis. Konteks di sekitarnya:"
+              grep -n 'selinux_setprocattr' security/selinux/hooks.c || true
+              exit 1
+            fi
+            sed -i '/^static int selinux_setprocattr(/i\#ifdef CONFIG_KSU\nextern int ksu_hide_setprocattr(const char *name, void *value, size_t size);\n#endif\n' security/selinux/hooks.c
+            if grep -q 'extern int ksu_hide_setprocattr' security/selinux/hooks.c; then
+              echo "OK: extern ksu_hide_setprocattr berhasil ditambal manual."
+            else
+              echo "ERROR: penyisipan extern ksu_hide_setprocattr GAGAL walau anchor cocok."
+              exit 1
             fi
           else
             echo "Tidak perlu ditambal."
@@ -242,7 +341,7 @@ jobs:
       - name: Perbaiki hasil patch SUSFS di fs/proc/task_mmu.c
         working-directory: kernel
         run: |
-          echo "IyEvdXNyL2Jpbi9lbnYgcHl0aG9uMwoiIiIKUGVyYmFpa2FuIGZzL3Byb2MvdGFza19tbXUuYyBzZXRlbGFoIHBhdGNoIFNVU0ZTIDQuMTQuCgpLZW5hcGEgcGVybHU6IGZzL3Byb2MvdGFza19tbXUuYyBkaSBzb3VyY2Ugcm9zZW1hcnktMTMgc3VkYWggZGktYmFja3BvcnQgZ2F5YQo0LjE5KyAoYWRhIHNtYXBfZ2F0aGVyX3N0YXRzKCksIHNob3dfc21hcCgpIHRhbnBhIGlzX3BpZCwgdGlkYWsgYWRhCjxsaW51eC9jdHlwZS5oPikuIEFraWJhdG55YSBwYWRhIHBhdGNoIHVwc3RyZWFtOgogIC0gSHVuayAjMSAoaW5jbHVkZSBzdXNmc19kZWYuaCkgIC0+IEZBSUxFRCAgPT4gbWFjcm8gU1VTRlNfSVNfSU5PREVfKiBqYWRpCiAgICBpbXBsaWNpdCBkZWNsYXJhdGlvbi4KICAtIEh1bmsgIzQgKGd1YXJkIFNVU19NQVAgZGkgc2hvd19zbWFwKSAtPiAiYmVyaGFzaWwiIGRlbmdhbiBmdXp6IDIgdGFwaQogICAgTUVOREFSQVQgREkgc21hcF9nYXRoZXJfc3RhdHMoKSB5YW5nIGJlcnRpcGUgdm9pZCA9PiAicmV0dXJuIDAiIGRpIGZ1bmdzaQogICAgdm9pZC4KICAtIEh1bmsgIzUgJiAjNiAtPiBGQUlMRUQsIGlzaW55YSBjdW1hIHRhbWJhaC9oYXB1cyBiYXJpcyBrb3NvbmcgKGtvc21ldGlrLAogICAgYW1hbiBkaWFiYWlrYW4pLgoKU2NyaXB0IGluaSBtZW1hc2FuZyBodW5rICMxIGRhbiBtZW1pbmRhaGthbiBodW5rICM0IGtlIHRlbXBhdCB5YW5nIGJlbmFyLgpJZGVtcG90ZW46IGthbGF1IHN1ZGFoIGJlbmFyLCB0aWRhayBtZWxha3VrYW4gYXBhLWFwYS4KIiIiCmltcG9ydCByZSwgc3lzCgpQQVRIID0gImZzL3Byb2MvdGFza19tbXUuYyIKSU5DID0gKCIjaWYgZGVmaW5lZChDT05GSUdfS1NVX1NVU0ZTX1NVU19LU1RBVCkgfHwgZGVmaW5lZChDT05GSUdfS1NVX1NVU0ZTX1NVU19NQVApIHx8IGRlZmluZWQoQ09ORklHX0tTVV9TVVNGU19PUEVOX1JFRElSRUNUKVxuIgogICAgICAgIiNpbmNsdWRlIDxsaW51eC9zdXNmc19kZWYuaD5cbiIKICAgICAgICIjZW5kaWZcbiIpCkdVQVJEID0gKCIjaWZkZWYgQ09ORklHX0tTVV9TVVNGU19TVVNfTUFQXG4iCiAgICAgICAgICJcdGlmICh2bWEtPnZtX2ZpbGUgJiYgU1VTRlNfSVNfSU5PREVfU1VTX01BUChmaWxlX2lub2RlKHZtYS0+dm1fZmlsZSkpKVxuIgogICAgICAgICAiXHRcdHJldHVybiAwO1xuIgogICAgICAgICAiI2VuZGlmXG4iKQoKcyA9IG9wZW4oUEFUSCwgZW5jb2Rpbmc9J3V0Zi04JywgZXJyb3JzPSdzdXJyb2dhdGVlc2NhcGUnKS5yZWFkKCkKCiMgLS0tIDEpIGluY2x1ZGUgc3VzZnNfZGVmLmggKGh1bmsgIzEgeWFuZyBnYWdhbCkKaWYgInN1c2ZzX2RlZi5oIiBpbiBzOgogICAgcHJpbnQoInRhc2tfbW11OiBpbmNsdWRlIHN1c2ZzX2RlZi5oIHN1ZGFoIGFkYSwgZGlsZXdhdGkiKQplbHNlOgogICAgYW5jaG9yID0gIiNpbmNsdWRlIDxsaW51eC9tbV9pbmxpbmUuaD5cbiIKICAgIGlmIHMuY291bnQoYW5jaG9yKSAhPSAxOgogICAgICAgIHN5cy5leGl0KCJ0YXNrX21tdTogYW5jaG9yIGluY2x1ZGUgbW1faW5saW5lLmgga2V0ZW11ICVkIGthbGkgKGhhcnVzIDEpIiAlIHMuY291bnQoYW5jaG9yKSkKICAgIHMgPSBzLnJlcGxhY2UoYW5jaG9yLCBhbmNob3IgKyBJTkMsIDEpCiAgICBwcmludCgidGFza19tbXU6IGluY2x1ZGUgc3VzZnNfZGVmLmggZGl0YW1iYWhrYW4iKQoKIyAtLS0gMikgYnVhbmcgZ3VhcmQgU1VTX01BUCB5YW5nIHNhbGFoIG1lbmRhcmF0IGRpIHNtYXBfZ2F0aGVyX3N0YXRzKCkgKHZvaWQpCm1pc3BsYWNlZCA9IHJlLmNvbXBpbGUoCiAgICByJ1xuI2lmZGVmIENPTkZJR19LU1VfU1VTRlNfU1VTX01BUFxuJwogICAgcidcdGlmIFwodm1hLT52bV9maWxlICYmIFNVU0ZTX0lTX0lOT0RFX1NVU19NQVBcKGZpbGVfaW5vZGVcKHZtYS0+dm1fZmlsZVwpXClcKVxuJwogICAgcidcdFx0cmV0dXJuIDA7XG4nCiAgICByJyNlbmRpZlxuXG4oXHRzbWFwc193YWxrXC5wcml2YXRlID0gbXNzO1xuKScpCm4gPSBsZW4obWlzcGxhY2VkLmZpbmRhbGwocykpCmlmIG4gPT0gMToKICAgIHMgPSBtaXNwbGFjZWQuc3ViKGxhbWJkYSBtOiAiXG4iICsgbS5ncm91cCgxKSwgcykKICAgIHByaW50KCJ0YXNrX21tdTogZ3VhcmQgU1VTX01BUCBzYWxhaCB0ZW1wYXQgZGkgc21hcF9nYXRoZXJfc3RhdHMoKSBkaWhhcHVzIikKZWxpZiBuID09IDA6CiAgICBwcmludCgidGFza19tbXU6IHRpZGFrIGFkYSBndWFyZCBzYWxhaCB0ZW1wYXQgKG11bmdraW4gcGF0Y2ggdXBzdHJlYW0gc3VkYWggZGlwZXJiYWlraSkiKQplbHNlOgogICAgc3lzLmV4aXQoInRhc2tfbW11OiBndWFyZCBzYWxhaCB0ZW1wYXQga2V0ZW11ICVkIGthbGksIHN0cnVrdHVyIHRhayBkaWtlbmFsIiAlIG4pCgojIC0tLSAzKSBwYXNhbmcgZ3VhcmQgU1VTX01BUCBkaSBzaG93X3NtYXAoKSB5YW5nIGJlbmFyCmlmIHJlLnNlYXJjaChyJ3N0YXRpYyBpbnQgc2hvd19zbWFwXChzdHJ1Y3Qgc2VxX2ZpbGUgXCptLCB2b2lkIFwqdlwpXG5ce1xuW159XSo/U1VTRlNfSVNfSU5PREVfU1VTX01BUCcsIHMpOgogICAgcHJpbnQoInRhc2tfbW11OiBndWFyZCBTVVNfTUFQIGRpIHNob3dfc21hcCgpIHN1ZGFoIGFkYSwgZGlsZXdhdGkiKQplbHNlOgogICAgYW5jaG9yID0gKCJzdGF0aWMgaW50IHNob3dfc21hcChzdHJ1Y3Qgc2VxX2ZpbGUgKm0sIHZvaWQgKnYpXG4iCiAgICAgICAgICAgICAgIntcbiIKICAgICAgICAgICAgICAiXHRzdHJ1Y3Qgdm1fYXJlYV9zdHJ1Y3QgKnZtYSA9IHY7XG4iCiAgICAgICAgICAgICAgIlx0c3RydWN0IG1lbV9zaXplX3N0YXRzIG1zcztcblxuIikKICAgIGlmIHMuY291bnQoYW5jaG9yKSAhPSAxOgogICAgICAgIHN5cy5leGl0KCJ0YXNrX21tdTogYW5jaG9yIHNob3dfc21hcCgpIGtldGVtdSAlZCBrYWxpIChoYXJ1cyAxKSAtICIKICAgICAgICAgICAgICAgICAic3RydWt0dXIgZmlsZSBiZXJ1YmFoLCBob29rIFNVU19NQVAgcGVybHUgZGlzZXN1YWlrYW4gbWFudWFsIiAlIHMuY291bnQoYW5jaG9yKSkKICAgIHMgPSBzLnJlcGxhY2UoYW5jaG9yLCBhbmNob3IgKyBHVUFSRCArICJcbiIsIDEpCiAgICBwcmludCgidGFza19tbXU6IGd1YXJkIFNVU19NQVAgZGlwYXNhbmcgZGkgc2hvd19zbWFwKCkiKQoKb3BlbihQQVRILCAndycsIGVuY29kaW5nPSd1dGYtOCcsIGVycm9ycz0nc3Vycm9nYXRlZXNjYXBlJykud3JpdGUocykKCiMgLS0tIHZlcmlmaWthc2kgYWtoaXIKcyA9IG9wZW4oUEFUSCwgZW5jb2Rpbmc9J3V0Zi04JywgZXJyb3JzPSdzdXJyb2dhdGVlc2NhcGUnKS5yZWFkKCkKYXNzZXJ0ICJzdXNmc19kZWYuaCIgaW4gcywgImluY2x1ZGUgc3VzZnNfZGVmLmggaGlsYW5nIgpnYXRoZXIgPSBzW3MuaW5kZXgoInN0YXRpYyB2b2lkIHNtYXBfZ2F0aGVyX3N0YXRzKCIpOnMuaW5kZXgoIi8qIFNob3cgdGhlIGNvbnRlbnRzIGNvbW1vbiBmb3Igc21hcHMiKV0KaWYgInJldHVybiAwOyIgaW4gZ2F0aGVyOgogICAgc3lzLmV4aXQoInRhc2tfbW11OiBtYXNpaCBhZGEgJ3JldHVybiAwOycgZGkgc21hcF9nYXRoZXJfc3RhdHMoKSB5YW5nIGJlcnRpcGUgdm9pZCIpCnByaW50KCJ0YXNrX21tdTogT0siKQo=" | base64 -d > /tmp/fix_susfs_task_mmu.py
+          echo "IyEvdXNyL2Jpbi9lbnYgcHl0aG9uMwoiIiIKUGVyYmFpa2FuIGZzL3Byb2MvdGFza19tbXUuYyBzZXRlbGFoIHBhdGNoIFNVU0ZTIDQuMTQuCgpLZW5hcGEgcGVybHU6IGZzL3Byb2MvdGFza19tbXUuYyBkaSBzb3VyY2Ugcm9zZW1hcnktMTMgc3VkYWggZGktYmFja3BvcnQgZ2F5YQo0LjE5KyAoYWRhIHNtYXBfZ2F0aGVyX3N0YXRzKCksIHNob3dfc21hcCgpIHRhbnBhIGlzX3BpZCwgdGlkYWsgYWRhCjxsaW51eC9jdHlwZS5oPikuIEFraWJhdG55YSBwYWRhIHBhdGNoIHVwc3RyZWFtOgogIC0gSHVuayAjMSAoaW5jbHVkZSBzdXNmc19kZWYuaCkgIC0+IEZBSUxFRCAgPT4gbWFjcm8gU1VTRlNfSVNfSU5PREVfKiBqYWRpCiAgICBpbXBsaWNpdCBkZWNsYXJhdGlvbi4KICAtIEh1bmsgIzQgKGd1YXJkIFNVU19NQVAgZGkgc2hvd19zbWFwKSAtPiAiYmVyaGFzaWwiIGRlbmdhbiBmdXp6IDIgdGFwaQogICAgTUVOREFSQVQgREkgc21hcF9nYXRoZXJfc3RhdHMoKSB5YW5nIGJlcnRpcGUgdm9pZCA9PiAicmV0dXJuIDAiIGRpIGZ1bmdzaQogICAgdm9pZC4KICAtIEh1bmsgIzUgJiAjNiAtPiBGQUlMRUQsIGlzaW55YSBjdW1hIHRhbWJhaC9oYXB1cyBiYXJpcyBrb3NvbmcgKGtvc21ldGlrLAogICAgYW1hbiBkaWFiYWlrYW4pLgoKU2NyaXB0IGluaSBtZW1hc2FuZyBodW5rICMxIGRhbiBtZW1pbmRhaGthbiBodW5rICM0IGtlIHRlbXBhdCB5YW5nIGJlbmFyLgpJZGVtcG90ZW46IGthbGF1IHN1ZGFoIGJlbmFyLCB0aWRhayBtZWxha3VrYW4gYXBhLWFwYS4KIiIiCmltcG9ydCByZSwgc3lzCgpQQVRIID0gImZzL3Byb2MvdGFza19tbXUuYyIKSU5DID0gKCIjaWYgZGVmaW5lZChDT05GSUdfS1NVX1NVU0ZTX1NVU19LU1RBVCkgfHwgZGVmaW5lZChDT05GSUdfS1NVX1NVU0ZTX1NVU19NQVApIHx8IGRlZmluZWQoQ09ORklHX0tTVV9TVVNGU19PUEVOX1JFRElSRUNUKVxuIgogICAgICAgIiNpbmNsdWRlIDxsaW51eC9zdXNmc19kZWYuaD5cbiIKICAgICAgICIjZW5kaWZcbiIpCkdVQVJEID0gKCIjaWZkZWYgQ09ORklHX0tTVV9TVVNGU19TVVNfTUFQXG4iCiAgICAgICAgICJcdGlmICh2bWEtPnZtX2ZpbGUgJiYgU1VTRlNfSVNfSU5PREVfU1VTX01BUChmaWxlX2lub2RlKHZtYS0+dm1fZmlsZSkpKVxuIgogICAgICAgICAiXHRcdHJldHVybiAwO1xuIgogICAgICAgICAiI2VuZGlmXG4iKQoKcyA9IG9wZW4oUEFUSCwgZW5jb2Rpbmc9J3V0Zi04JywgZXJyb3JzPSdzdXJyb2dhdGVlc2NhcGUnKS5yZWFkKCkKCiMgLS0tIDEpIGluY2x1ZGUgc3VzZnNfZGVmLmggKGh1bmsgIzEgeWFuZyBnYWdhbCkKaWYgInN1c2ZzX2RlZi5oIiBpbiBzOgogICAgcHJpbnQoInRhc2tfbW11OiBpbmNsdWRlIHN1c2ZzX2RlZi5oIHN1ZGFoIGFkYSwgZGlsZXdhdGkiKQplbHNlOgogICAgYW5jaG9yID0gIiNpbmNsdWRlIDxsaW51eC9tbV9pbmxpbmUuaD5cbiIKICAgIGlmIHMuY291bnQoYW5jaG9yKSAhPSAxOgogICAgICAgIHN5cy5leGl0KCJ0YXNrX21tdTogYW5jaG9yIGluY2x1ZGUgbW1faW5saW5lLmgga2V0ZW11ICVkIGthbGkgKGhhcnVzIDEpIiAlIHMuY291bnQoYW5jaG9yKSkKICAgIHMgPSBzLnJlcGxhY2UoYW5jaG9yLCBhbmNob3IgKyBJTkMsIDEpCiAgICBwcmludCgidGFza19tbXU6IGluY2x1ZGUgc3VzZnNfZGVmLmggZGl0YW1iYWhrYW4iKQoKIyAtLS0gMikgYnVhbmcgZ3VhcmQgU1VTX01BUCB5YW5nIHNhbGFoIG1lbmRhcmF0IGRpIHNtYXBfZ2F0aGVyX3N0YXRzKCkgKHZvaWQpCm1pc3BsYWNlZCA9IHJlLmNvbXBpbGUoCiAgICByJ1xuI2lmZGVmIENPTkZJR19LU1VfU1VTRlNfU1VTX01BUFxuJwogICAgcidcdGlmIFwodm1hLT52bV9maWxlICYmIFNVU0ZTX0lTX0lOT0RFX1NVU19NQVBcKGZpbGVfaW5vZGVcKHZtYS0+dm1fZmlsZVwpXClcKVxuJwogICAgcidcdFx0cmV0dXJuIDA7XG4nCiAgICByJyNlbmRpZlxuXG4oXHRzbWFwc193YWxrXC5wcml2YXRlID0gbXNzO1xuKScpCm4gPSBsZW4obWlzcGxhY2VkLmZpbmRhbGwocykpCmlmIG4gPT0gMToKICAgIHMgPSBtaXNwbGFjZWQuc3ViKGxhbWJkYSBtOiAiXG4iICsgbS5ncm91cCgxKSwgcykKICAgIHByaW50KCJ0YXNrX21tdTogZ3VhcmQgU1VTX01BUCBzYWxhaCB0ZW1wYXQgZGkgc21hcF9nYXRoZXJfc3RhdHMoKSBkaWhhcHVzIikKZWxpZiBuID09IDA6CiAgICBwcmludCgidGFza19tbXU6IHRpZGFrIGFkYSBndWFyZCBzYWxhaCB0ZW1wYXQgKG11bmdraW4gcGF0Y2ggdXBzdHJlYW0gc3VkYWggZGlwZXJiYWlraSkiKQplbHNlOgogICAgc3lzLmV4aXQoInRhc2tfbW11OiBndWFyZCBzYWxhaCB0ZW1wYXQga2V0ZW11ICVkIGthbGksIHN0cnVrdHVyIHRhayBkaWtlbmFsIiAlIG4pCgojIC0tLSAzKSBwYXNhbmcgZ3VhcmQgU1VTX01BUCBkaSBzaG93X3NtYXAoKSB5YW5nIGJlbmFyCmlmIHJlLnNlYXJjaChyJ3N0YXRpYyBpbnQgc2hvd19zbWFwXChzdHJ1Y3Qgc2VxX2ZpbGUgXCptLCB2b2lkIFwqdlwpXG5ce1xuW159XSo/U1VTRlNfSVNfSU5PREVfU1VTX01BUCcsIHMpOgogICAgcHJpbnQoInRhc2tfbW11OiBndWFyZCBTVVNfTUFQIGRpIHNob3dfc21hcCgpIHN1ZGFoIGFkYSwgZGlsZXdhdGkiKQplbHNlOgogICAgYW5jaG9yID0gKCJzdGF0aWMgaW50IHNob3dfc21hcChzdHJ1Y3Qgc2VxX2ZpbGUgKm0sIHZvaWQgKnYpXG4iCiAgICAgICAgICAgICAgIntcbiIKICAgICAgICAgICAgICAiXHRzdHJ1Y3Qgdm1fYXJlYV9zdHJ1Y3QgKnZtYSA9IHY7XG4iCiAgICAgICAgICAgICAgIlx0c3RydWN0IG1lbV9zaXplX3N0YXRzIG1zcztcblxuIikKICAgIGlmIHMuY291bnQoYW5jaG9yKSAhPSAxOgogICAgICAgIHN5cy5leGl0KCJ0YXNrX21tdTogYW5jaG9yIHNob3dfc21hcCgpIGtldGVtdSAlZCBrYWxpIChoYXJ1cyAxKSAtICIKICAgICAgICAgICAgICAgICAic3RydWt0dXIgZmlsZSBiZXJ1YmFoLCBob29rIFNVU19NQVAgcGVybHUgZGlzZXN1YWlrYW4gbWFudWFsIiAlIHMuY291bnQoYW5jaG9yKSkKICAgIHMgPSBzLnJlcGxhY2UoYW5jaG9yLCBhbmNob3IgKyBHVUFSRCArICJcbiIsIDEpCiAgICBwcmludCgidGFza19tbXU6IGd1YXJkIFNVU19NQVAgZGlwYXNhbmcgZGkgc2hvd19zbWFwKCkiKQoKb3BlbihQQVRILCAndycsIGVuY29kaW5nPSd1dGYtOCcsIGVycm9ycz0nc3Vycm9nYXRlZXNjYXBlJykud3JpdGUocykKCiMgLS0tIHZlcmlmaWthc2kgYWtoaXIKIwojIER1bHUgYmFnaWFuIGluaSBtZW1ha2FpIHMuaW5kZXgoKSBkdWEga2FsaS4gRHVhIG1hc2FsYWggbnlhdGE6CiMgICBhKSBzLmluZGV4KCkgbWVsZW1wYXIgVmFsdWVFcnJvciAodHJhY2ViYWNrIG1lbnRhaCkga2FsYXUgc2FsYWggc2F0dSBwZW5hbmRhCiMgICAgICBoaWxhbmcgLSBwZXNhbiBlcnJvcm55YSB0aWRhayBtZW5qZWxhc2thbiBhcGEtYXBhIGtlIHBlbWJhY2EgbG9nIENJLgojICAgYikga2FsYXUgcGVuYW5kYSBha2hpciBrZWJldHVsYW4gYmVyYWRhIFNFQkVMVU0gcGVuYW5kYSBhd2FsLCBzbGljaW5nIFB5dGhvbgojICAgICAgbWVuZ2hhc2lsa2FuIHN0cmluZyBrb3NvbmcgdGFucGEgZXJyb3IsIGphZGkgY2VrICJyZXR1cm4gMDsiIGxvbG9zCiMgICAgICBkaWFtLWRpYW0gKGZhbHNlIG5lZ2F0aXZlKSAtIHBlcnNpcyBrZWdhZ2FsYW4geWFuZyBtYXUgZGljZWdhaC4KIyBTZWthcmFuZyBkaXBha2FpIGZpbmQoKSArIHZhbGlkYXNpIHVydXRhbiBzZWNhcmEgZWtzcGxpc2l0LgpzID0gb3BlbihQQVRILCBlbmNvZGluZz0ndXRmLTgnLCBlcnJvcnM9J3N1cnJvZ2F0ZWVzY2FwZScpLnJlYWQoKQoKaWYgInN1c2ZzX2RlZi5oIiBub3QgaW4gczoKICAgIHN5cy5leGl0KCJ0YXNrX21tdTogaW5jbHVkZSBzdXNmc19kZWYuaCBoaWxhbmcgc2V0ZWxhaCBwZW51bGlzYW4gZmlsZSIpCgpCRUcgPSAic3RhdGljIHZvaWQgc21hcF9nYXRoZXJfc3RhdHMoIgpFTkQgPSAiLyogU2hvdyB0aGUgY29udGVudHMgY29tbW9uIGZvciBzbWFwcyIKYiA9IHMuZmluZChCRUcpCmUgPSBzLmZpbmQoRU5EKQppZiBiIDwgMDoKICAgIHN5cy5leGl0KCJ0YXNrX21tdTogcGVuYW5kYSBhd2FsICclcycgdGlkYWsgZGl0ZW11a2FuIC0gc3RydWt0dXIgZmlsZSBiZXJ1YmFoLCAiCiAgICAgICAgICAgICAidmVyaWZpa2FzaSBzbWFwX2dhdGhlcl9zdGF0cygpIHRpZGFrIGJpc2EgZGlqYWxhbmthbiIgJSBCRUcpCmlmIGUgPCAwOgogICAgc3lzLmV4aXQoInRhc2tfbW11OiBwZW5hbmRhIGFraGlyICclcycgdGlkYWsgZGl0ZW11a2FuIC0gc3RydWt0dXIgZmlsZSBiZXJ1YmFoLCAiCiAgICAgICAgICAgICAidmVyaWZpa2FzaSBzbWFwX2dhdGhlcl9zdGF0cygpIHRpZGFrIGJpc2EgZGlqYWxhbmthbiIgJSBFTkQpCmlmIGUgPD0gYjoKICAgIHN5cy5leGl0KCJ0YXNrX21tdTogcGVuYW5kYSBha2hpciBtdW5jdWwgc2ViZWx1bSBwZW5hbmRhIGF3YWwgKGI9JWQsIGU9JWQpIC0gIgogICAgICAgICAgICAgInVydXRhbiBmdW5nc2kgYmVydWJhaCwgdmVyaWZpa2FzaSB0aWRhayB2YWxpZCIgJSAoYiwgZSkpCgpnYXRoZXIgPSBzW2I6ZV0KaWYgInJldHVybiAwOyIgaW4gZ2F0aGVyOgogICAgc3lzLmV4aXQoInRhc2tfbW11OiBtYXNpaCBhZGEgJ3JldHVybiAwOycgZGkgc21hcF9nYXRoZXJfc3RhdHMoKSB5YW5nIGJlcnRpcGUgdm9pZCIpCnByaW50KCJ0YXNrX21tdTogT0sgKGJsb2sgc21hcF9nYXRoZXJfc3RhdHMoKSBkaXZlcmlmaWthc2ksICVkIGJ5dGUpIiAlIGxlbihnYXRoZXIpKQo=" | base64 -d > /tmp/fix_susfs_task_mmu.py
           python3 /tmp/fix_susfs_task_mmu.py
           rm -f fs/proc/task_mmu.c.rej patch_rejects/fs/proc/task_mmu.c.rej
 
@@ -290,11 +389,16 @@ jobs:
       - name: Integrasikan NoMount (setup.sh resmi -s dev)
         working-directory: kernel
         run: |
+          # pipefail: tanpa ini, exit code pipeline = exit code `bash` saja,
+          # sehingga HTTP 404/500 dari curl tidak pernah menggagalkan step.
+          set -o pipefail
           rm -rf NoMount fs/nomount
           # setup.sh di-pin ke commit tertentu (bukan refs/heads/dev) supaya isi
           # script itu sendiri stabil; branch driver "dev" tetap dipilih lewat
           # argumen "-s dev" di bawah, terlepas dari pin ini.
-          curl -LSs "https://raw.githubusercontent.com/maxsteeel/nomount/0c4b2dbd113b267b673cd7925cd80736658d7a62/kernel/setup.sh" | bash -s dev
+          # -f: HTTP >=400 -> curl exit != 0 (tanpa -f, halaman error ikut ter-pipe
+          # ke bash sebagai "script" dan bash keluar 0).
+          curl -fLSs "https://raw.githubusercontent.com/maxsteeel/nomount/0c4b2dbd113b267b673cd7925cd80736658d7a62/kernel/setup.sh" | bash -s dev
 
           test -d NoMount || {
             echo "ERROR: direktori NoMount tidak ditemukan setelah setup.sh"
@@ -364,6 +468,24 @@ jobs:
             echo "ERROR: fs/nomount/nomount.c tidak mengandung nomount_srcu"
             exit 1
           }
+
+          # Entry fs/Makefile. setup.sh menambahkannya dengan penjaga longgar:
+          #     if ! grep -q "nomount" "$FS_MAKEFILE"; then
+          #         printf "\nobj-\$(CONFIG_NOMOUNT) += nomount/\n" >> "$FS_MAKEFILE"
+          # Artinya kalau kata "nomount" sudah muncul di fs/Makefile karena sebab
+          # lain (sisa run sebelumnya, komentar, patch lain), penambahan DILEWATI
+          # tanpa peringatan -> CONFIG_NOMOUNT=y tapi objeknya tidak pernah
+          # dikompilasi, dan kegagalannya baru terasa saat runtime di HP.
+          # Jadi entry-nya diverifikasi eksplisit di sini.
+          grep -nF 'obj-$(CONFIG_NOMOUNT) += nomount/' fs/Makefile || true
+          test "$(grep -cF 'obj-$(CONFIG_NOMOUNT) += nomount/' fs/Makefile)" = "1" || {
+            echo "ERROR: fs/Makefile tidak berisi tepat satu 'obj-\$(CONFIG_NOMOUNT) += nomount/'"
+            echo "Baris fs/Makefile yang menyebut nomount:"
+            grep -n 'nomount' fs/Makefile || echo "  (tidak ada sama sekali)"
+            exit 1
+          }
+          echo "OK: fs/Makefile berisi obj-\$(CONFIG_NOMOUNT) += nomount/"
+
           echo "NOMOUNT_SHA=$(git -C NoMount rev-parse --short HEAD)" >> "$GITHUB_ENV"
           echo "NoMount branch dev: OK"
 
@@ -408,8 +530,13 @@ jobs:
       - name: Integrasikan Baseband-guard (LSM anti-tulis baseband/boot chain)
         working-directory: kernel
         run: |
+          # pipefail: tanpa ini, kegagalan wget (404/timeout) tertelan karena exit
+          # code pipeline hanya diambil dari `bash` di ujung kanan.
+          set -o pipefail
           # Dipin ke commit tertentu (bukan 'main') dgn alasan yang sama seperti
           # integrate_ksu_susfs.sh di atas.
+          # wget default sudah keluar != 0 untuk HTTP >=400 (tidak perlu padanan
+          # curl -f), tapi pipefail-lah yang membuat exit code itu terpakai.
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/a54e0dc6cf0aff4dd87fec49644a02d2eb612905/setup.sh | bash
           grep -q 'baseband_guard' security/Kconfig && echo "baseband_guard: sudah terdaftar di default LSM list" || \
             sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' security/Kconfig
@@ -576,6 +703,26 @@ jobs:
           echo "==================== RESOLVED Re:Kernel CONFIG ===================="
           grep -E '^CONFIG_REKERNEL' out/.config || true
           grep -q '^CONFIG_REKERNEL=y$' out/.config || { echo "ERROR: CONFIG_REKERNEL tidak resolve ke y"; exit 1; }
+          # PERINGATAN (bukan error). rekernel_task_is_frozen() memakai
+          # frozen()/freezing() dari <linux/freezer.h>. Di 4.14 keduanya membaca
+          # flag PF_FROZEN / freezing_slow_path, yang mencerminkan pembekuan
+          # APLIKASI hanya kalau cgroup freezer v1 aktif. Tanpa CGROUP_FREEZER,
+          # jalur itu praktis cuma dipakai freezer suspend (PM_SLEEP), sehingga
+          # Re:Kernel tidak akan pernah melapor apa pun walau CONFIG_REKERNEL=y.
+          # rosemary_defconfig tidak menyetelnya dan init/Kconfig tidak
+          # men-default-kannya ke y, jadi statusnya dicetak supaya kelihatan.
+          # Sengaja TIDAK exit 1: kernelnya tetap sah, hanya fiturnya mubazir.
+          grep -E '^(CONFIG_CGROUP_FREEZER|CONFIG_FREEZER)\b|^# CONFIG_CGROUP_FREEZER' out/.config || true
+          if grep -q '^CONFIG_CGROUP_FREEZER=y$' out/.config; then
+            echo "OK: CONFIG_CGROUP_FREEZER=y - Re:Kernel bisa mendeteksi proses beku."
+          else
+            echo "PERINGATAN: CONFIG_CGROUP_FREEZER tidak aktif."
+            echo "  Re:Kernel akan ikut ter-compile dan netlink server tetap jalan,"
+            echo "  tapi frozen()/freezing() tidak akan pernah true untuk aplikasi,"
+            echo "  jadi notifikasi freeze binder/signal tidak akan pernah terkirim."
+            echo "  Kalau memang mau dipakai, tambahkan CONFIG_CGROUP_FREEZER=y ke"
+            echo "  fragment defconfig di step 'Siapkan defconfig'."
+          fi
 
           echo ""
           echo "==================== RESOLVED Baseband-guard CONFIG ===================="
@@ -657,7 +804,7 @@ jobs:
           test -f AnyKernel3/tools/ak3-core.sh || { echo "ERROR: tools/ak3-core.sh tidak ada di AnyKernel3"; exit 1; }
           rm -rf AnyKernel3/.git
 
-          echo "IyMjIEFueUtlcm5lbDMgUmFtZGlzayBNb2QgU2NyaXB0CiMjIG9zbTBzaXMgQCB4ZGEtZGV2ZWxvcGVycwoKIyMjIEFueUtlcm5lbCBzZXR1cAojIGJlZ2luIHByb3BlcnRpZXMKcHJvcGVydGllcygpIHsgJwprZXJuZWwuc3RyaW5nPXNwaGluWCBLZXJuZWwgYnkgZmpyWFRSCmRvLmRldmljZWNoZWNrPTEKZG8ubW9kdWxlcz0wCmRvLnN5c3RlbWxlc3M9MQpkby5jbGVhbnVwPTEKZG8uY2xlYW51cG9uYWJvcnQ9MApkZXZpY2UubmFtZTE9ZmxldXIKZGV2aWNlLm5hbWUyPW1pZWwKZGV2aWNlLm5hbWUzPXNlYQpkZXZpY2UubmFtZTQ9b2NlYW4KZGV2aWNlLm5hbWU1PXJvc2VtYXJ5CmRldmljZS5uYW1lNj1zZWNyZXQKZGV2aWNlLm5hbWU3PW1hbHRvc2UKc3VwcG9ydGVkLnZlcnNpb25zPTExLjAtMTQuMApzdXBwb3J0ZWQucGF0Y2hsZXZlbHM9Cic7IH0gIyBlbmQgcHJvcGVydGllcwoKIyMjIEFueUtlcm5lbCBpbnN0YWxsCiMgYmVnaW4gYXR0cmlidXRlcwphdHRyaWJ1dGVzKCkgewpzZXRfcGVybV9yZWN1cnNpdmUgMCAwIDc1NSA2NDQgJHJhbWRpc2svKjsKc2V0X3Blcm1fcmVjdXJzaXZlIDAgMCA3NTAgNzUwICRyYW1kaXNrL2luaXQqICRyYW1kaXNrL3NiaW47Cn0gIyBlbmQgYXR0cmlidXRlcwoKCiMjIGJvb3Qgc2hlbGwgdmFyaWFibGVzCmJsb2NrPS9kZXYvYmxvY2svYnktbmFtZS9ib290Owppc19zbG90X2RldmljZT0xOwpyYW1kaXNrX2NvbXByZXNzaW9uPWF1dG87CnBhdGNoX3ZibWV0YV9mbGFnPWF1dG87CgojIGltcG9ydCBmdW5jdGlvbnMvdmFyaWFibGVzIGFuZCBzZXR1cCBwYXRjaGluZyAtIHNlZSBmb3IgcmVmZXJlbmNlIChETyBOT1QgUkVNT1ZFKQouIHRvb2xzL2FrMy1jb3JlLnNoICYmIGF0dHJpYnV0ZXM7CgojIGJvb3QgaW5zdGFsbApkdW1wX2Jvb3Q7ICMgdXNlIHNwbGl0X2Jvb3QgdG8gc2tpcCByYW1kaXNrIHVucGFjaywgZS5nLiBmb3IgZGV2aWNlcyB3aXRoIGluaXRfYm9vdCByYW1kaXNrCndyaXRlX2Jvb3Q7ICMgdXNlIGZsYXNoX2Jvb3QgdG8gc2tpcCByYW1kaXNrIHJlcGFjaywgZS5nLiBmb3IgZGV2aWNlcyB3aXRoIGluaXRfYm9vdCByYW1kaXNrCiMjIGVuZCBib290IGluc3RhbGwK" | base64 -d > AnyKernel3/anykernel.sh
+          echo "IyMjIEFueUtlcm5lbDMgUmFtZGlzayBNb2QgU2NyaXB0CiMjIG9zbTBzaXMgQCB4ZGEtZGV2ZWxvcGVycwoKIyMjIEFueUtlcm5lbCBzZXR1cAojIGJlZ2luIHByb3BlcnRpZXMKcHJvcGVydGllcygpIHsgJwprZXJuZWwuc3RyaW5nPXNwaGluWCBLZXJuZWwgYnkgZmpyWFRSCmRvLmRldmljZWNoZWNrPTEKZG8ubW9kdWxlcz0wCmRvLnN5c3RlbWxlc3M9MQpkby5jbGVhbnVwPTEKZG8uY2xlYW51cG9uYWJvcnQ9MApkZXZpY2UubmFtZTE9ZmxldXIKZGV2aWNlLm5hbWUyPW1pZWwKZGV2aWNlLm5hbWUzPXNlYQpkZXZpY2UubmFtZTQ9b2NlYW4KZGV2aWNlLm5hbWU1PXJvc2VtYXJ5CmRldmljZS5uYW1lNj1zZWNyZXQKZGV2aWNlLm5hbWU3PW1hbHRvc2UKc3VwcG9ydGVkLnZlcnNpb25zPTExLjAtMTQuMApzdXBwb3J0ZWQucGF0Y2hsZXZlbHM9Cic7IH0gIyBlbmQgcHJvcGVydGllcwoKIyMjIEFueUtlcm5lbCBpbnN0YWxsCiMgYmVnaW4gYXR0cmlidXRlcwphdHRyaWJ1dGVzKCkgewpzZXRfcGVybV9yZWN1cnNpdmUgMCAwIDc1NSA2NDQgJHJhbWRpc2svKjsKc2V0X3Blcm1fcmVjdXJzaXZlIDAgMCA3NTAgNzUwICRyYW1kaXNrL2luaXQqICRyYW1kaXNrL3NiaW47Cn0gIyBlbmQgYXR0cmlidXRlcwoKCiMjIGJvb3Qgc2hlbGwgdmFyaWFibGVzCmJsb2NrPS9kZXYvYmxvY2svYnktbmFtZS9ib290OwojIGlzX3Nsb3RfZGV2aWNlPWF1dG8sIEJVS0FOIDEuIEtlbHVhcmdhIE1UNjc4MSAocm9zZW1hcnkvZmxldXIvc2VhLy4uLikgYWRhbGFoCiMgZGV2aWNlIEEtb25seTogdGlkYWsgYWRhIHJvLmJvb3Quc2xvdF9zdWZmaXggbWF1cHVuIGFuZHJvaWRib290LnNsb3QuIERlbmdhbgojIGlzX3Nsb3RfZGV2aWNlPTEsIHRvb2xzL2FrMy1jb3JlLnNoIChzZXR1cF9haykgbWVuamFsYW5rYW46CiMgICAgIGlmIFsgISAiJHNsb3QiIC1hICIkaXNfc2xvdF9kZXZpY2UiID09IDEgXTsgdGhlbgojICAgICAgIGFib3J0ICJVbmFibGUgdG8gZGV0ZXJtaW5lIGFjdGl2ZSBzbG90LiBBYm9ydGluZy4uLiI7CiMgc2VoaW5nZ2EgemlwIEdBR0FMIGRpLWZsYXNoIHNlYmVsdW0gbWVueWVudHVoIHBhcnRpc2kgYm9vdC4gTmlsYWkgImF1dG8iCiMgdGV0YXAgbWVuZGV0ZWtzaSBzbG90IGthbGF1IG1lbWFuZyBhZGEgKGRldmljZSBBL0IpLCB0YXBpIGxhbmp1dCBub3JtYWwKIyBrYWxhdSB0aWRhayBhZGEgLSBqYWRpIGFtYW4gdW50dWsga2VkdWEgamVuaXMgZGV2aWNlLgppc19zbG90X2RldmljZT1hdXRvOwpyYW1kaXNrX2NvbXByZXNzaW9uPWF1dG87CnBhdGNoX3ZibWV0YV9mbGFnPWF1dG87CgojIGltcG9ydCBmdW5jdGlvbnMvdmFyaWFibGVzIGFuZCBzZXR1cCBwYXRjaGluZyAtIHNlZSBmb3IgcmVmZXJlbmNlIChETyBOT1QgUkVNT1ZFKQouIHRvb2xzL2FrMy1jb3JlLnNoICYmIGF0dHJpYnV0ZXM7CgojIGJvb3QgaW5zdGFsbApkdW1wX2Jvb3Q7ICMgdXNlIHNwbGl0X2Jvb3QgdG8gc2tpcCByYW1kaXNrIHVucGFjaywgZS5nLiBmb3IgZGV2aWNlcyB3aXRoIGluaXRfYm9vdCByYW1kaXNrCndyaXRlX2Jvb3Q7ICMgdXNlIGZsYXNoX2Jvb3QgdG8gc2tpcCByYW1kaXNrIHJlcGFjaywgZS5nLiBmb3IgZGV2aWNlcyB3aXRoIGluaXRfYm9vdCByYW1kaXNrCiMjIGVuZCBib290IGluc3RhbGwK" | base64 -d > AnyKernel3/anykernel.sh
 
           cp "${{ steps.kimg.outputs.path }}" "AnyKernel3/${{ steps.kimg.outputs.name }}"
 
@@ -695,3 +842,20 @@ jobs:
             ${{ steps.kimg.outputs.dtbo }}
             nm-src/nm
             kernel/out/.config
+
+      # Kalau build gagal, step "Compile" hanya mencetak ~120 baris error +
+      # 3 potongan konteks ke log Actions. /tmp/build.log yang lengkap ikut
+      # hilang bersama runner. Step ini menyimpannya supaya bisa diunduh dan
+      # ditelusuri penuh. `if: failure()` -> hanya jalan saat ada step gagal,
+      # jadi tidak menambah artifact di build yang sukses.
+      - name: Upload log build lengkap (hanya saat gagal)
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: rosemary-build-log
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            /tmp/build.log
+            kernel/out/.config
+            kernel/patch_rejects/
