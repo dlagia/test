@@ -172,12 +172,76 @@
 #     dst=current - tertukar. Versi di bawah memeriksa p (target yang dibekukan)
 #     dan melaporkan killer=current / dst=p, yang sesuai maksud fiturnya, jadi
 #     sengaja dipertahankan.
+#
+# PENYEMPURNAAN (revisi audit ke-7, 2026-09-10) - fokus: STUCK DI LOGO.
+#   Gejala: kernel ter-build & ter-flash sukses tapi macet di logo Redmi (crash
+#   SEBELUM framebuffer, jadi bukan kegagalan build).
+#
+#   TEMUAN VERIFIKASI (menjawab kekhawatiran AI lain soal task_mmu.c &
+#   security/selinux/hooks.c):
+#   - Source rosemary-13 asli + patch SUSFS mainline (kini v2.3.0) di-REPRODUKSI
+#     ulang: patch task_mmu.c gagal di hunk #1/#4/#5/#6 persis seperti dulu, lalu
+#     fix_susfs_task_mmu.py memperbaikinya. Hasil akhirnya diperiksa baris demi
+#     baris: SEMUA guard SUS_MAP mendarat di fungsi yang benar - `return;` di
+#     show_map_vma() (void), `return 0;` di show_smap() (int), `goto` di
+#     pagemap_read() (ssize_t), dan smap_gather_stats() (void) BERSIH dari
+#     `return 0;`. Jadi hook task_mmu.c BENAR secara semantik, bukan penyebab.
+#   - security/selinux/hooks.c: signature asli rosemary-13 adalah
+#     selinux_setprocattr(const char *name, void *value, size_t size) dan
+#     susfs_inline_hook_patches.sh (JackA1ltman) memang menyisipkan extern +
+#     panggilan ksu_hide_setprocattr() lewat cabang signature-baru yang cocok.
+#     Ini hook KSU standar yang juga jalan di build yang DULU boot. Bukan
+#     penyebab. (Jaring pengaman manual di step integrasi tetap dipertahankan.)
+#
+#   AKAR MASALAH YANG SEBENARNYA - dependency yang MENGAMBANG di HEAD:
+#     Build ini punya 3 sumber DRIVER yang tidak di-pin dan berubah TEPAT setelah
+#     build terakhir yang boot:
+#       * SUSFS (JackA1ltman mainline) -> naik ke v2.3.0 pada 2026-09-04.
+#       * NoMount dev -> di-rewrite total RBTree => Adaptive Radix Tree
+#         (f7f7caaf, 2026-09-08) + rentetan commit "fix ..." susulan. Kode ini
+#         jalan di jalur d_revalidate + iterate_dir SEJAK filesystem pertama
+#         diakses saat boot; bug di sana = crash awal = stuck di logo. INI
+#         tersangka terkuat karena paling banyak diaduk & paling dekat ke boot.
+#       * ReSukiSU (KernelSU) -> tetap di-clone dari main HEAD.
+#     Itu sebabnya build "yang tadinya jalan" bisa mati sendiri tanpa ganti YAML.
+#
+#   PERBAIKAN DI REVISI INI:
+#   1. NoMount driver DI-PIN ke commit stabil terakhir SEBELUM rewrite ART
+#      (166f7b7c, 2026-09-06). setup.sh menerima <commit> sbagai argumen, jadi
+#      `bash -s <sha>` meng-checkout commit itu (detached HEAD); verifikasi
+#      diganti dari cek nama-branch ke cek SHA.
+#   2. Tiga add-on (NoMount / Re:Kernel / Baseband-guard) kini bisa DIMATIKAN
+#      lewat input workflow_dispatch untuk BISECT: build KSU+SUSFS murni dulu,
+#      lalu nyalakan satu per satu sampai ketemu yang bikin macet. Step integrasi
+#      di-guard `if:`, dan fragment defconfig + cek config saat compile ikut
+#      kondisional supaya tidak ada CONFIG_* menunjuk driver yang tak diintegrasi.
+#   3. Ringkasan run diberi perintah ambil log crash asli (pstore console-ramoops
+#      / last_kmsg) - itu satu-satunya cara memastikan penyebab tanpa menebak.
+#
+#   CATATAN: kalau dengan SEMUA add-on OFF pun masih stuck, tersangka bergeser ke
+#   inti KSU+SUSFS - kemungkinan besar SUSFS v2.3.0. Karena dlagia integrate.sh
+#   meng-hardcode fetch SUSFS dari branch 'mainline' (tak bisa di-pin dari luar
+#   tanpa fork), langkah lanjutannya adalah pin/ganti sumber SUSFS - lapor lagi
+#   kalau bisect menunjuk ke sana.
 # ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      build_nomount:
+        description: "Sertakan NoMount (matikan dulu untuk BISECT stuck-at-logo)"
+        type: boolean
+        default: true
+      build_rekernel:
+        description: "Sertakan Re:Kernel"
+        type: boolean
+        default: true
+      build_baseband_guard:
+        description: "Sertakan Baseband-guard"
+        type: boolean
+        default: true
   push:
     branches: [ main, master ]
 
@@ -189,6 +253,14 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 120
+
+    # Toggle komponen add-on untuk BISECT boot hang (stuck di logo). Trigger
+    # 'push' tidak punya inputs, jadi default-nya 'true' (build lengkap).
+    # workflow_dispatch: boolean input diteruskan sebagai string "true"/"false".
+    env:
+      BUILD_NOMOUNT: ${{ github.event.inputs.build_nomount || 'true' }}
+      BUILD_REKERNEL: ${{ github.event.inputs.build_rekernel || 'true' }}
+      BUILD_BBG: ${{ github.event.inputs.build_baseband_guard || 'true' }}
 
     steps:
       - name: Pasang dependency build
@@ -386,32 +458,49 @@ jobs:
             echo "Pengecekan -dirty di KernelSU/kernel/Kbuild sudah dinetralisir"
           fi
 
-      - name: Integrasikan NoMount (setup.sh resmi -s dev)
+      - name: Integrasikan NoMount (setup.sh resmi, driver di-PIN)
+        if: env.BUILD_NOMOUNT == 'true'
         working-directory: kernel
         run: |
+          # ==== PIN DRIVER NoMount (revisi audit ke-7) ====
+          # Sebelumnya `bash -s dev` = checkout branch dev + `git pull` -> SELALU
+          # ambil HEAD dev. Itu berarti KODE DRIVER yang di-compile berubah tiap
+          # run. Antara build terakhir yang boot (akhir Agustus) dan sekarang,
+          # dev NoMount di-rewrite total: RBTree -> Adaptive Radix Tree
+          # (f7f7caaf, 2026-09-08) plus serentetan commit "fix" susulan
+          # ("fix ART child removal", "only change d_flags if its our file", dst).
+          # Kode itu berjalan di jalur d_revalidate + iterate_dir SEJAK filesystem
+          # pertama diakses saat boot; bug di sana = crash sebelum framebuffer =
+          # STUCK DI LOGO. Karena setup.sh menerima argumen <commit-or-tag>
+          # (bukan cuma nama branch), driver sekarang di-pin ke commit STABIL
+          # TERAKHIR SEBELUM rewrite ART, supaya build reproducible dan tidak
+          # ikut kode yang masih diaduk upstream. Untuk update: ganti SHA di
+          # bawah setelah versi ART terbukti stabil.
+          NOMOUNT_PIN="166f7b7c8cf99247c952201feb8211b42bc1692b"  # 2026-09-06, pre-ART (RBTree)
+
           # pipefail: tanpa ini, exit code pipeline = exit code `bash` saja,
           # sehingga HTTP 404/500 dari curl tidak pernah menggagalkan step.
           set -o pipefail
           rm -rf NoMount fs/nomount
-          # setup.sh di-pin ke commit tertentu (bukan refs/heads/dev) supaya isi
-          # script itu sendiri stabil; branch driver "dev" tetap dipilih lewat
-          # argumen "-s dev" di bawah, terlepas dari pin ini.
+          # setup.sh sendiri tetap di-pin ke commit tertentu (isi script stabil);
+          # argumen $1 = commit driver yang mau di-checkout (detached HEAD).
           # -f: HTTP >=400 -> curl exit != 0 (tanpa -f, halaman error ikut ter-pipe
           # ke bash sebagai "script" dan bash keluar 0).
-          curl -fLSs "https://raw.githubusercontent.com/maxsteeel/nomount/0c4b2dbd113b267b673cd7925cd80736658d7a62/kernel/setup.sh" | bash -s dev
+          curl -fLSs "https://raw.githubusercontent.com/maxsteeel/nomount/0c4b2dbd113b267b673cd7925cd80736658d7a62/kernel/setup.sh" | bash -s "$NOMOUNT_PIN"
 
           test -d NoMount || {
             echo "ERROR: direktori NoMount tidak ditemukan setelah setup.sh"
             exit 1
           }
 
-          echo "NoMount commit dipakai (kernel + nm): $(git -C NoMount rev-parse --short HEAD)"
-          cd NoMount
-          test "$(git branch --show-current)" = "dev" || {
-            echo "ERROR: NoMount bukan branch dev setelah setup.sh -s dev"
+          echo "NoMount commit dipakai (kernel + nm): $(git -C NoMount rev-parse HEAD)"
+          # setup.sh mem-checkout SHA -> detached HEAD (bukan branch), jadi
+          # verifikasinya adalah kecocokan commit, bukan nama branch.
+          test "$(git -C NoMount rev-parse HEAD)" = "$NOMOUNT_PIN" || {
+            echo "ERROR: NoMount tidak ter-checkout ke commit pin ($NOMOUNT_PIN)"
+            echo "HEAD aktual: $(git -C NoMount rev-parse HEAD)"
             exit 1
           }
-          cd ..
 
           test -L fs/nomount || {
             echo "ERROR: symlink fs/nomount tidak dibuat oleh setup.sh"
@@ -490,6 +579,7 @@ jobs:
           echo "NoMount branch dev: OK"
 
       - name: Integrasikan Re:Kernel (Sakion-Team) - notifikasi freeze binder/signal
+        if: env.BUILD_REKERNEL == 'true'
         working-directory: kernel
         run: |
           rm -rf drivers/rekernel
@@ -528,6 +618,7 @@ jobs:
           echo "Re:Kernel: OK"
 
       - name: Integrasikan Baseband-guard (LSM anti-tulis baseband/boot chain)
+        if: env.BUILD_BBG == 'true'
         working-directory: kernel
         run: |
           # pipefail: tanpa ini, kegagalan wget (404/timeout) tertelan karena exit
@@ -601,13 +692,30 @@ jobs:
             echo 'CONFIG_LOCALVERSION="-perf"'
             echo "CONFIG_LOCALVERSION_AUTO=n"
             echo ""
-            echo "CONFIG_NOMOUNT=y"
-            echo ""
-            echo "CONFIG_REKERNEL=y"
-            echo ""
-            echo "CONFIG_BBG=y"
-            echo ""
           } >> "$DEF"
+
+          # Add-on config hanya di-set =y kalau komponennya memang di-build.
+          # Kalau di-matikan untuk bisect, config-nya sengaja TIDAK ditulis
+          # supaya tidak ada CONFIG_* menunjuk objek/driver yang tak diintegrasi.
+          if [ "$BUILD_NOMOUNT" = "true" ]; then
+            echo "" >> "$DEF"; echo "CONFIG_NOMOUNT=y" >> "$DEF"
+            echo "[defconfig] CONFIG_NOMOUNT=y ditambahkan"
+          else
+            echo "[defconfig] NoMount dimatikan (BUILD_NOMOUNT=$BUILD_NOMOUNT) - CONFIG_NOMOUNT tidak ditulis"
+          fi
+          if [ "$BUILD_REKERNEL" = "true" ]; then
+            echo "" >> "$DEF"; echo "CONFIG_REKERNEL=y" >> "$DEF"
+            echo "[defconfig] CONFIG_REKERNEL=y ditambahkan"
+          else
+            echo "[defconfig] Re:Kernel dimatikan (BUILD_REKERNEL=$BUILD_REKERNEL) - CONFIG_REKERNEL tidak ditulis"
+          fi
+          if [ "$BUILD_BBG" = "true" ]; then
+            echo "" >> "$DEF"; echo "CONFIG_BBG=y" >> "$DEF"
+            echo "[defconfig] CONFIG_BBG=y ditambahkan"
+          else
+            echo "[defconfig] Baseband-guard dimatikan (BUILD_BBG=$BUILD_BBG) - CONFIG_BBG tidak ditulis"
+          fi
+          echo "" >> "$DEF"
           tail -30 "$DEF"
 
       - name: Cache toolchain proton-clang
@@ -694,11 +802,18 @@ jobs:
             fi
           done
 
-          echo ""
-          echo "==================== RESOLVED NoMount CONFIG ===================="
-          grep -E '^CONFIG_NOMOUNT' out/.config || true
-          grep -q '^CONFIG_NOMOUNT=y$' out/.config || { echo "ERROR: CONFIG_NOMOUNT tidak resolve ke y"; exit 1; }
+          if [ "$BUILD_NOMOUNT" = "true" ]; then
+            echo ""
+            echo "==================== RESOLVED NoMount CONFIG ===================="
+            grep -E '^CONFIG_NOMOUNT' out/.config || true
+            grep -q '^CONFIG_NOMOUNT=y$' out/.config || { echo "ERROR: CONFIG_NOMOUNT tidak resolve ke y"; exit 1; }
+          else
+            echo ""
+            echo "==================== NoMount DIMATIKAN (bisect) ===================="
+            grep -q '^CONFIG_NOMOUNT=y$' out/.config && { echo "ERROR: NoMount dimatikan tapi CONFIG_NOMOUNT=y bocor di .config"; exit 1; } || echo "OK: CONFIG_NOMOUNT tidak aktif"
+          fi
 
+          if [ "$BUILD_REKERNEL" = "true" ]; then
           echo ""
           echo "==================== RESOLVED Re:Kernel CONFIG ===================="
           grep -E '^CONFIG_REKERNEL' out/.config || true
@@ -723,11 +838,22 @@ jobs:
             echo "  Kalau memang mau dipakai, tambahkan CONFIG_CGROUP_FREEZER=y ke"
             echo "  fragment defconfig di step 'Siapkan defconfig'."
           fi
+          else
+            echo ""
+            echo "==================== Re:Kernel DIMATIKAN (bisect) ===================="
+            grep -q '^CONFIG_REKERNEL=y$' out/.config && { echo "ERROR: Re:Kernel dimatikan tapi CONFIG_REKERNEL=y bocor di .config"; exit 1; } || echo "OK: CONFIG_REKERNEL tidak aktif"
+          fi
 
-          echo ""
-          echo "==================== RESOLVED Baseband-guard CONFIG ===================="
-          grep -E '^CONFIG_BBG' out/.config || true
-          grep -q '^CONFIG_BBG=y$' out/.config || { echo "ERROR: CONFIG_BBG tidak resolve ke y"; exit 1; }
+          if [ "$BUILD_BBG" = "true" ]; then
+            echo ""
+            echo "==================== RESOLVED Baseband-guard CONFIG ===================="
+            grep -E '^CONFIG_BBG' out/.config || true
+            grep -q '^CONFIG_BBG=y$' out/.config || { echo "ERROR: CONFIG_BBG tidak resolve ke y"; exit 1; }
+          else
+            echo ""
+            echo "==================== Baseband-guard DIMATIKAN (bisect) ===================="
+            grep -q '^CONFIG_BBG=y$' out/.config && { echo "ERROR: Baseband-guard dimatikan tapi CONFIG_BBG=y bocor di .config"; exit 1; } || echo "OK: CONFIG_BBG tidak aktif"
+          fi
 
           set -o pipefail
           if ! make -k O=out -j"$(nproc)" \
@@ -759,6 +885,7 @@ jobs:
           command -v ccache >/dev/null 2>&1 && ccache -s | head -8 || true
 
       - name: Compile nm (NoMount userspace CLI, commit sama dgn kernel)
+        if: env.BUILD_NOMOUNT == 'true'
         run: |
           NM_SRC="kernel/NoMount/userspace/src"
           test -d "$NM_SRC" || { echo "ERROR: $NM_SRC tidak ada - step Integrasikan NoMount gagal?"; exit 1; }
@@ -820,15 +947,38 @@ jobs:
           {
             echo "## Build kernel Rosemary"
             echo ""
+            echo "### Add-on aktif di build ini (bisect)"
+            echo "| Add-on | Status |"
+            echo "|---|---|"
+            echo "| NoMount        | \`${BUILD_NOMOUNT:-true}\` |"
+            echo "| Re:Kernel      | \`${BUILD_REKERNEL:-true}\` |"
+            echo "| Baseband-guard | \`${BUILD_BBG:-true}\` |"
+            echo ""
             echo "| Komponen | Commit |"
             echo "|---|---|"
             echo "| Kernel (rosemary-13) | \`${KERNEL_SHA:-?}\` |"
             echo "| ReSukiSU | \`${KSU_SHA:-?}\` |"
-            echo "| NoMount (dev) | \`${NOMOUNT_SHA:-?}\` |"
-            echo "| Baseband-guard | \`${BBG_SHA:-?}\` |"
+            echo "| NoMount (di-PIN, pre-ART) | \`${NOMOUNT_SHA:-dimatikan/?}\` |"
+            echo "| Baseband-guard | \`${BBG_SHA:-dimatikan/?}\` |"
             echo "| Re:Kernel | _embedded statis di YAML, bukan git clone - tidak ada commit SHA_ |"
             echo ""
             echo "Paket: \`${ZIP:-belum terbentuk}\`"
+            echo ""
+            echo "### Kalau masih STUCK DI LOGO"
+            echo "1. Ambil log crash sebenarnya dari HP (ini yang paling menentukan):"
+            echo "   masuk fastboot -> \`fastboot oem console\` **atau** setelah reboot"
+            echo "   paksa, boot ke sistem lama/TWRP lalu baca pstore:"
+            echo '   ```'
+            echo "   adb shell su -c 'cat /sys/fs/pstore/console-ramoops-0' > crash.txt"
+            echo "   # (atau /proc/last_kmsg pada sebagian device)"
+            echo '   ```'
+            echo "   Kirim crash.txt - di situ kelihatan panic/hook yang menabrak."
+            echo "2. BISECT lewat 'Run workflow': matikan **build_nomount** dulu."
+            echo "   - Boot? berarti NoMount penyebabnya (driver ART / d_revalidate)."
+            echo "   - Masih stuck? nyalakan lagi NoMount, matikan build_rekernel,"
+            echo "     lalu build_baseband_guard, satu per satu."
+            echo "   - Semua add-on OFF tapi tetap stuck = akarnya di inti"
+            echo "     KernelSU+SUSFS (kemungkinan besar SUSFS upstream v2.3.0)."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload paket + kernel mentah + dtbo + nm CLI
