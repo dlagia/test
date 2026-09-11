@@ -298,14 +298,28 @@
 #      - DEFAULT_TCP_CONG jatuh ke "cubic" lewat definisi wajib
 #        `config TCP_CONG_CUBIC / depends on !TCP_CONG_ADVANCED / default y`;
 #      - NET_SCHED=n -> sch_fq.o tidak dibangun, qdisc tetap pfifo_fast.
-#    Tujuh baris defconfig di step "Aktifkan KSU & SuSFS di defconfig"
+#    Delapan baris defconfig di step "Aktifkan KSU & SuSFS di defconfig"
 #    menyelesaikan semuanya. CONFIG_DEFAULT_FQ=y dipakai supaya `fq` jadi qdisc
 #    default dari kernel (net/sched/Kconfig punya choice "Default queuing
 #    discipline"), jadi TIDAK perlu `net.core.default_qdisc=fq` lewat init.d.
 #    BBR butuh pacing dan fq-lah yang menyediakannya - keduanya harus sepasang.
+#
+#    KOREKSI revisi ke-13 (build 2026-09-11 berhenti di assert qdisc): tujuh
+#    baris itu KURANG SATU. Di net/sched/Kconfig, choice "Default queuing
+#    discipline" DAN `config DEFAULT_NET_SCH` dua-duanya dibungkus
+#    `if NET_SCH_DEFAULT`, sementara NET_SCH_DEFAULT sendiri adalah
+#    menuconfig bool "Allow override default queue discipline" yang
+#    default-nya n ("If unsure, say N"). Jadi CONFIG_DEFAULT_FQ=y dibuang
+#    tanpa suara dan CONFIG_DEFAULT_NET_SCH tidak pernah DIDEFINISIKAN -
+#    bukan salah isi, tapi hilang sama sekali dari .config, makanya
+#    `grep -n CONFIG_DEFAULT_NET_SCH=` di pesan error pun keluar kosong.
+#    Perbaikannya satu baris: CONFIG_NET_SCH_DEFAULT=y, ditaruh SEBELUM
+#    CONFIG_DEFAULT_FQ=y. Sisanya (BBR) sudah resolve benar sejak rev 12.
+#
 #    Diverifikasi di step compile: TCP_CONG_ADVANCED/TCP_CONG_BBR/NET_SCHED/
-#    NET_SCH_FQ harus resolve ke y, DEFAULT_TCP_CONG harus "bbr", dan
-#    DEFAULT_NET_SCH harus "fq" - kalau tidak, build berhenti sebelum compile.
+#    NET_SCH_FQ/NET_SCH_DEFAULT harus resolve ke y, DEFAULT_TCP_CONG harus
+#    "bbr", dan DEFAULT_NET_SCH harus "fq" - kalau tidak, build berhenti
+#    sebelum compile.
 #    CONFIG_TCP_CONG_CUBIC=y tetap dipasang eksplisit sebagai jalan pulang:
 #    kalau BBR ternyata bermasalah, cukup `sysctl -w net.ipv4.tcp_congestion_control=cubic`
 #    tanpa perlu build ulang.
@@ -993,6 +1007,15 @@ jobs:
           #   CONFIG_NET_SCH_FQ=y         pacing untuk BBR. Tanpa fq, BBR cuma
           #                               mengandalkan internal pacing dan manfaatnya
           #                               berkurang.
+          #   CONFIG_NET_SCH_DEFAULT=y    GERBANG yang terlewat di rev 12 dan
+          #                               bikin build 2026-09-11 gagal: choice
+          #                               "Default queuing discipline" dan
+          #                               `config DEFAULT_NET_SCH` dibungkus
+          #                               `if NET_SCH_DEFAULT`, dan simbol itu
+          #                               default n. Tanpa baris ini DEFAULT_FQ
+          #                               dibuang diam-diam dan DEFAULT_NET_SCH
+          #                               tidak muncul sama sekali di .config.
+          #                               HARUS sebelum CONFIG_DEFAULT_FQ=y.
           #   CONFIG_DEFAULT_FQ=y         fq jadi qdisc default dari kernel, jadi
           #                               tidak perlu net.core.default_qdisc=fq
           #                               lewat init.d/Magisk.
@@ -1004,9 +1027,10 @@ jobs:
             echo "CONFIG_DEFAULT_BBR=y"
             echo "CONFIG_NET_SCHED=y"
             echo "CONFIG_NET_SCH_FQ=y"
+            echo "CONFIG_NET_SCH_DEFAULT=y"
             echo "CONFIG_DEFAULT_FQ=y"
           } >> "$DEF"
-          echo "[defconfig] BBR + fq ditambahkan (ADVANCED/CUBIC/BBR/DEFAULT_BBR/NET_SCHED/NET_SCH_FQ/DEFAULT_FQ)"
+          echo "[defconfig] BBR + fq ditambahkan (ADVANCED/CUBIC/BBR/DEFAULT_BBR/NET_SCHED/NET_SCH_FQ/NET_SCH_DEFAULT/DEFAULT_FQ)"
 
           # Re:Kernel & Baseband-guard sudah dicabut. Kalau CONFIG-nya nyelip dari
           # rosemary_defconfig atau dari fragment ksu-susfs_defconfig, buang di
@@ -1137,8 +1161,8 @@ jobs:
           # Kconfig bisa diam-diam menjatuhkan opsi kalau dependency-nya tidak
           # terpenuhi (mis. NET_SCH_FQ tanpa NET_SCHED). Karena itu hasil RESOLVE
           # yang diperiksa, bukan isi defconfig.
-          grep -E '^(CONFIG_TCP_CONG_ADVANCED|CONFIG_TCP_CONG_BBR|CONFIG_TCP_CONG_CUBIC|CONFIG_DEFAULT_BBR|CONFIG_NET_SCHED|CONFIG_NET_SCH_FQ|CONFIG_DEFAULT_FQ|CONFIG_DEFAULT_TCP_CONG|CONFIG_DEFAULT_NET_SCH)=' out/.config || true
-          for opt in CONFIG_TCP_CONG_ADVANCED CONFIG_TCP_CONG_BBR CONFIG_NET_SCHED CONFIG_NET_SCH_FQ; do
+          grep -E '^(CONFIG_TCP_CONG_ADVANCED|CONFIG_TCP_CONG_BBR|CONFIG_TCP_CONG_CUBIC|CONFIG_DEFAULT_BBR|CONFIG_NET_SCHED|CONFIG_NET_SCH_FQ|CONFIG_NET_SCH_DEFAULT|CONFIG_DEFAULT_FQ|CONFIG_DEFAULT_TCP_CONG|CONFIG_DEFAULT_NET_SCH)=' out/.config || true
+          for opt in CONFIG_TCP_CONG_ADVANCED CONFIG_TCP_CONG_BBR CONFIG_NET_SCHED CONFIG_NET_SCH_FQ CONFIG_NET_SCH_DEFAULT; do
             grep -q "^${opt}=y$" out/.config || {
               echo "ERROR: ${opt} tidak resolve ke y - BBR/fq tidak akan ikut terbangun."
               exit 1
@@ -1152,6 +1176,10 @@ jobs:
           grep -q '^CONFIG_DEFAULT_NET_SCH="fq"$' out/.config || {
             echo "ERROR: qdisc default bukan fq (BBR tanpa fq kehilangan pacing):"
             grep -n '^CONFIG_DEFAULT_NET_SCH=' out/.config || true
+            echo "PETUNJUK: kalau grep di atas kosong, DEFAULT_NET_SCH tidak"
+            echo "          didefinisikan - artinya CONFIG_NET_SCH_DEFAULT=n,"
+            echo "          karena choice qdisc dibungkus \`if NET_SCH_DEFAULT\`."
+            grep -n 'NET_SCH_DEFAULT' out/.config || true
             exit 1
           }
           echo "OK: BBR jadi congestion control default, fq jadi qdisc default."
