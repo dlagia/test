@@ -286,6 +286,84 @@
 #      CONFIG_REKERNEL / CONFIG_BBG / CONFIG_BASEBAND_GUARD. Jadi meski ada yang
 #      lolos dari lapis pertama, build tetap berhenti sebelum menghasilkan
 #      kernel yang tidak sesuai.
+#
+# PENYEMPURNAAN (revisi ke-12, 2026-09-11) - BBR + fq, dan pin terakhir.
+#
+# 1. BBR DIAKTIFKAN TANPA PATCH SAMA SEKALI.
+#    Pohon rosemary-13 SUDAH membawa net/ipv4/tcp_bbr.c dan net/sched/sch_fq.c
+#    (BBRv1 masuk mainline sejak 4.9), tapi rosemary_defconfig (537 baris) tidak
+#    menyetel SATU PUN opsi TCP_CONG/NET_SCH. Akibatnya selama ini:
+#      - TCP_CONG_ADVANCED=n, sehingga seluruh blok `if TCP_CONG_ADVANCED`
+#        (net/ipv4/Kconfig baris 488-744) tidak tersedia -> BBR tidak dibangun;
+#      - DEFAULT_TCP_CONG jatuh ke "cubic" lewat definisi wajib
+#        `config TCP_CONG_CUBIC / depends on !TCP_CONG_ADVANCED / default y`;
+#      - NET_SCHED=n -> sch_fq.o tidak dibangun, qdisc tetap pfifo_fast.
+#    Tujuh baris defconfig di step "Aktifkan KSU & SuSFS di defconfig"
+#    menyelesaikan semuanya. CONFIG_DEFAULT_FQ=y dipakai supaya `fq` jadi qdisc
+#    default dari kernel (net/sched/Kconfig punya choice "Default queuing
+#    discipline"), jadi TIDAK perlu `net.core.default_qdisc=fq` lewat init.d.
+#    BBR butuh pacing dan fq-lah yang menyediakannya - keduanya harus sepasang.
+#    Diverifikasi di step compile: TCP_CONG_ADVANCED/TCP_CONG_BBR/NET_SCHED/
+#    NET_SCH_FQ harus resolve ke y, DEFAULT_TCP_CONG harus "bbr", dan
+#    DEFAULT_NET_SCH harus "fq" - kalau tidak, build berhenti sebelum compile.
+#    CONFIG_TCP_CONG_CUBIC=y tetap dipasang eksplisit sebagai jalan pulang:
+#    kalau BBR ternyata bermasalah, cukup `sysctl -w net.ipv4.tcp_congestion_control=cubic`
+#    tanpa perlu build ulang.
+#
+#    CATATAN kenapa BUKAN BBRv2/BBRv3: google/bbr bukan kumpulan patch melainkan
+#    pohon Linux utuh (branch v2alpha = 5.13.12, branch v3 = 6.13.7, dan v3 malah
+#    menghapus tcp_bbr2.c). Backport-nya ke 4.14 menuntut sk_pacing_shift,
+#    tcp_plb, LINUX_MIB_TCPECNREHASH, field inet_diag, rate_sample.is_ece,
+#    skb_marked_lost(), dst. Satu-satunya backport 4.14 yang sudah jadi adalah
+#    zesakain/BBRv2-Kernel-4.14-Rosemary (tcp_bbr2.c-nya 2682 baris vs 2692 milik
+#    google = nyaris identik; yang mahal justru glue code-nya). Repo itu berbasis
+#    LineageOS 23.0 (4.14.356) dan defconfig-nya identik 100% dengan LineageOS,
+#    jadi TIDAK dipakai sebagai source; kalau nanti BBRv2 benar-benar diinginkan,
+#    ambil 27 commit net/ipv4-nya sebagai patch - semuanya di luar fs/, drivers/,
+#    dan security/, jadi tidak bertabrakan dengan SUSFS/KSU. Kconfig-nya punya
+#    tiga cacat yang harus diperbaiki saat apply: TCP_CONG_BBR2 dideklarasikan
+#    dua kali, DEFAULT_TCP_CONG diakhiri `default "bbr2"` tanpa kondisi (jadi
+#    tidak bisa balik ke cubic), dan fq tidak diaktifkan di defconfig.
+#
+# 2. BUG NYATA - ReSukiSU adalah dependency TERAKHIR yang masih MENGAMBANG.
+#    Baris 11 integrate_ksu_susfs.sh menjalankan
+#        curl -LSs ".../ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
+#    TANPA argumen, dan setup.sh tanpa argumen selalu `git checkout main` lalu
+#    `git pull`. Jadi kode driver KernelSU yang di-compile berubah tiap run -
+#    persis kelas kegagalan yang menyebabkan revisi ke-7 s/d ke-9 dulu, dan
+#    satu-satunya yang tersisa setelah SUSFS & NoMount dipaku.
+#    Bukti masih bergerak: 7ad75c5df3 "kernel: get session_keyring from
+#    key_permission LSM call" (2026-09-11) menyentuh kernel/ - sesudah build yang
+#    terbukti boot. setup.sh menerima <commit-or-tag> sebagai $1, jadi bisa
+#    dipaku dari luar tanpa fork, sama seperti trik pin SUSFS di revisi ke-9.
+#    Pin = 246d3e52e6 (commit terakhir 2026-09-10) = KONDISI YANG TERBUKTI BOOT
+#    di revisi ke-11; kode kernel-nya sama dengan pasca 830a5aedc7.
+#
+# 3. AnyKernel3 & proton-clang: dari "pin branch" naik jadi "assert SHA".
+#    - fjrXTR/AnyKernel3 sekarang menjawab HTTP 301: pemiliknya berganti nama
+#      jadi vlxlxlv/AnyKernel3. git mengikuti redirect jadi clone tetap jalan,
+#      tapi nama pemilik yang ditinggalkan bisa didaftarkan orang lain, jadi
+#      isinya kini diverifikasi lewat SHA (a9fe54fa, tidak berubah sejak 2023).
+#    - kdrag0n/proton-clang master masih 9fb011b1 (tidak berubah sejak 2021),
+#      tapi clone-nya `--depth=1 master`; sekarang di-assert juga.
+#
+# CEK PEMBARUAN UPSTREAM (per 2026-09-11) - PENTING, JANGAN LANGSUNG DINAIKKAN:
+#   JackA1ltman/NonGKI_Kernel_Build_2nd@mainline sudah bergerak jauh melewati pin
+#   58568ef1fc, dan commit-commitnya memperbaiki PERSIS cacat yang ditambal
+#   sendiri oleh step "Perbaiki bug patch SUSFS untuk kernel 4.14":
+#     d12727a68e 12:35 "susfs_patches: remove +"            -> cacat 1 (^++)
+#     4b96c552c5 12:52 "introduce extern filename_lookup"   -> cacat 3
+#     92aca5b273 13:41 "fix: missing }"                     -> cacat 7 (proc/fd.c)
+#     1c442877c1 14:07 "fix: needn't real_mount"            -> cacat 2 (mnt_id)
+#     1013385341 14:25 "reorder the code"                   -> cacat 4 (statfs)
+#     183beb3588 14:42 "fix: have no security_sb_statfs"    -> cacat 5
+#   Isi patch 4.14 DAN inline hook script keduanya sudah berbeda dari pin (md5
+#   berbeda). Kalau SUSFS_PIN dinaikkan, fixer di bawah TIDAK otomatis jadi no-op:
+#   fix_fd() misalnya akan `sys.exit` kalau FD_OLD maupun FD_NEW sama-sama tidak
+#   cocok (upstream memperbaikinya dengan bentuk yang mungkin berbeda), begitu
+#   juga fix_susfs_include() yang exit kalau anchor '#include <linux/fs.h>' tidak
+#   tepat satu. Jadi menaikkan pin = wajib satu run percobaan + baca audit reject,
+#   BUKAN perubahan sepele. Selama kernel yang sekarang boot, pin TETAP.
 # ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
@@ -344,6 +422,32 @@ jobs:
           echo "[+] Mengunduh integrate_ksu_susfs.sh dari dlagia/Build-Kernel_scripts (pinned commit)..."
           curl -fLSs "https://raw.githubusercontent.com/dlagia/Build-Kernel_scripts/10f1480b39418e885d4402e78a5ec7721d5040d3/scripts/integrate_ksu_susfs.sh" -o integrate_ksu_susfs.sh
           chmod +x integrate_ksu_susfs.sh
+
+          # ----- PIN ReSukiSU (revisi ke-12, 2026-09-11) -----
+          # Baris 11 script ini menjalankan setup.sh ReSukiSU TANPA argumen, dan
+          # setup.sh tanpa argumen = `git checkout main` + `git pull` = kode driver
+          # KernelSU berubah tiap run. Itu dependency mengambang TERAKHIR di build
+          # ini. setup.sh menerima <commit-or-tag> sebagai $1, jadi dua sed di
+          # bawah memaku sumbernya tanpa perlu fork:
+          #   (1) URL setup.sh: branch 'main' -> SHA
+          #   (2) pemanggilan: `| bash` -> `| bash -s <SHA>` (argumen checkout)
+          # Pin = commit terakhir 2026-09-10 = kondisi yang TERBUKTI BOOT di
+          # revisi ke-11. Commit kernel sesudahnya (7ad75c5df3 "get session_keyring
+          # from key_permission LSM call", 2026-09-11) sengaja tidak diambil.
+          KSU_PIN="246d3e52e667cb72ce8f70c93b70d3b42b100b76"
+          sed -i "s|ReSukiSU/ReSukiSU/main/kernel/setup.sh|ReSukiSU/ReSukiSU/${KSU_PIN}/kernel/setup.sh|" integrate_ksu_susfs.sh
+          sed -i "s#setup.sh\" | bash >#setup.sh\" | bash -s ${KSU_PIN} >#" integrate_ksu_susfs.sh
+          # PENTING: URL dan `| bash >` ada di BARIS YANG SAMA (baris 11), jadi di sini
+          # dipakai `grep -o | wc -l` (hitung KEMUNCULAN), bukan `grep -c` yang
+          # menghitung BARIS dan akan selalu mengembalikan 1 lalu gagal palsu.
+          KSU_HIT=$(grep -o "$KSU_PIN" integrate_ksu_susfs.sh | wc -l | tr -d ' ')
+          if [ "$KSU_HIT" != "2" ]; then
+            echo "ERROR: pin ReSukiSU gagal disisipkan (harus 2 kemunculan: URL + argumen, dapat $KSU_HIT)."
+            echo "Struktur integrate_ksu_susfs.sh berubah? Baris yang menyebut ReSukiSU:"
+            grep -n 'ReSukiSU' integrate_ksu_susfs.sh || true
+            exit 1
+          fi
+          echo "[+] ReSukiSU di-PIN ke ${KSU_PIN} (URL setup.sh + argumen checkout)"
 
           # ----- PIN SUMBER PATCH SUSFS (revisi ke-9, 2026-09-10) -----
           # integrate_ksu_susfs.sh mengunduh susfs_inline_hook_patches.sh dan
@@ -507,6 +611,22 @@ jobs:
             grep -q "$sym" "$file" || { echo "ERROR: hook $sym tidak ada di $file"; exit 1; }
             echo "OK: $sym ada di $file"
           done
+
+          # Pin harus TERMATERIALISASI, bukan sekadar teks di script (revisi ke-12).
+          # WAJIB, bukan formalitas: setup.sh ReSukiSU menutup checkout-nya dengan
+          #     git checkout "$1" && echo ... || echo "[-] Checkout default branch"
+          # sehingga checkout yang GAGAL tidak menghentikan script - ia diam-diam
+          # lanjut memakai branch main. Assert di bawah ini satu-satunya yang
+          # menangkap kondisi itu sebelum kode salah ikut ter-compile.
+          KSU_HEAD="$(git -C KernelSU rev-parse HEAD)"
+          test "$KSU_HEAD" = "$KSU_PIN" || {
+            echo "ERROR: KernelSU tidak ter-checkout ke commit pin."
+            echo "  diharapkan: $KSU_PIN"
+            echo "  aktual    : $KSU_HEAD"
+            echo "setup.sh mungkin gagal checkout (commit dihapus / force-push upstream)."
+            exit 1
+          }
+          echo "OK: ReSukiSU ter-pin di $KSU_PIN"
 
           echo "KSU_SHA=$(git -C KernelSU rev-parse --short HEAD)" >> "$GITHUB_ENV"
           echo "ReSukiSU commit: $(git -C KernelSU rev-parse HEAD)"
@@ -855,6 +975,39 @@ jobs:
           } >> "$DEF"
           echo "[defconfig] CONFIG_NOMOUNT=y ditambahkan"
 
+          # ----- BBR + fq (revisi ke-12, 2026-09-11) -----
+          # Tidak ada patch source sama sekali di sini: tcp_bbr.c dan sch_fq.c
+          # SUDAH ada di pohon rosemary-13 (BBRv1 mainline sejak 4.9), cuma tidak
+          # pernah dihidupkan karena rosemary_defconfig tidak menyetel satu pun
+          # opsi TCP_CONG/NET_SCH.
+          #   CONFIG_TCP_CONG_ADVANCED=y  membuka blok `if TCP_CONG_ADVANCED`
+          #                               (net/ipv4/Kconfig 488-744); tanpa ini
+          #                               TCP_CONG_BBR tidak pernah terlihat.
+          #   CONFIG_TCP_CONG_CUBIC=y     jalan pulang: saat ADVANCED=y, definisi
+          #                               wajib cubic (`depends on !TCP_CONG_ADVANCED`)
+          #                               tidak berlaku lagi, jadi dipasang eksplisit
+          #                               supaya bisa balik lewat sysctl tanpa rebuild.
+          #   CONFIG_DEFAULT_BBR=y        -> DEFAULT_TCP_CONG jadi "bbr".
+          #   CONFIG_NET_SCHED=y          menghidupkan subsistem qdisc (menuconfig,
+          #                               default n) - syarat NET_SCH_FQ.
+          #   CONFIG_NET_SCH_FQ=y         pacing untuk BBR. Tanpa fq, BBR cuma
+          #                               mengandalkan internal pacing dan manfaatnya
+          #                               berkurang.
+          #   CONFIG_DEFAULT_FQ=y         fq jadi qdisc default dari kernel, jadi
+          #                               tidak perlu net.core.default_qdisc=fq
+          #                               lewat init.d/Magisk.
+          {
+            echo ""
+            echo "CONFIG_TCP_CONG_ADVANCED=y"
+            echo "CONFIG_TCP_CONG_CUBIC=y"
+            echo "CONFIG_TCP_CONG_BBR=y"
+            echo "CONFIG_DEFAULT_BBR=y"
+            echo "CONFIG_NET_SCHED=y"
+            echo "CONFIG_NET_SCH_FQ=y"
+            echo "CONFIG_DEFAULT_FQ=y"
+          } >> "$DEF"
+          echo "[defconfig] BBR + fq ditambahkan (ADVANCED/CUBIC/BBR/DEFAULT_BBR/NET_SCHED/NET_SCH_FQ/DEFAULT_FQ)"
+
           # Re:Kernel & Baseband-guard sudah dicabut. Kalau CONFIG-nya nyelip dari
           # rosemary_defconfig atau dari fragment ksu-susfs_defconfig, buang di
           # sini: CONFIG yang menunjuk driver tak terintegrasi bikin objeknya tidak
@@ -889,6 +1042,26 @@ jobs:
             git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang-proton
           fi
           clang-proton/bin/clang --version | head -2
+
+          # Pin toolchain (revisi ke-12). master kdrag0n/proton-clang tidak berubah
+          # sejak 2021, tapi clone-nya `--depth=1 master` - kalau pemiliknya push,
+          # compiler ikut berubah diam-diam di run berikutnya.
+          CLANG_PIN="9fb011b183fe7e69b04b873ef6533b4b077e3c5e"
+          if [ -d clang-proton/.git ]; then
+            CLANG_SHA="$(git -C clang-proton rev-parse HEAD)"
+            echo "proton-clang commit: $CLANG_SHA"
+            test "$CLANG_SHA" = "$CLANG_PIN" || {
+              echo "ERROR: proton-clang bukan commit yang di-pin."
+              echo "  diharapkan: $CLANG_PIN"
+              echo "  aktual    : $CLANG_SHA"
+              echo "Kalau update ini disengaja: ganti CLANG_PIN, lalu naikkan juga key"
+              echo "cache 'proton-clang-master-v1' supaya cache lama tidak terpakai."
+              exit 1
+            }
+            echo "OK: proton-clang ter-pin di $CLANG_PIN"
+          else
+            echo "CATATAN: clang-proton dipulihkan dari cache tanpa .git - SHA tidak bisa diverifikasi."
+          fi
 
       - name: Cache ccache
         uses: actions/cache@v6
@@ -958,6 +1131,30 @@ jobs:
           echo "==================== RESOLVED NoMount CONFIG ===================="
           grep -E '^CONFIG_NOMOUNT' out/.config || true
           grep -q '^CONFIG_NOMOUNT=y$' out/.config || { echo "ERROR: CONFIG_NOMOUNT tidak resolve ke y"; exit 1; }
+
+          echo ""
+          echo "==================== RESOLVED BBR + fq CONFIG ===================="
+          # Kconfig bisa diam-diam menjatuhkan opsi kalau dependency-nya tidak
+          # terpenuhi (mis. NET_SCH_FQ tanpa NET_SCHED). Karena itu hasil RESOLVE
+          # yang diperiksa, bukan isi defconfig.
+          grep -E '^(CONFIG_TCP_CONG_ADVANCED|CONFIG_TCP_CONG_BBR|CONFIG_TCP_CONG_CUBIC|CONFIG_DEFAULT_BBR|CONFIG_NET_SCHED|CONFIG_NET_SCH_FQ|CONFIG_DEFAULT_FQ|CONFIG_DEFAULT_TCP_CONG|CONFIG_DEFAULT_NET_SCH)=' out/.config || true
+          for opt in CONFIG_TCP_CONG_ADVANCED CONFIG_TCP_CONG_BBR CONFIG_NET_SCHED CONFIG_NET_SCH_FQ; do
+            grep -q "^${opt}=y$" out/.config || {
+              echo "ERROR: ${opt} tidak resolve ke y - BBR/fq tidak akan ikut terbangun."
+              exit 1
+            }
+          done
+          grep -q '^CONFIG_DEFAULT_TCP_CONG="bbr"$' out/.config || {
+            echo "ERROR: congestion control default bukan bbr:"
+            grep -n '^CONFIG_DEFAULT_TCP_CONG=' out/.config || true
+            exit 1
+          }
+          grep -q '^CONFIG_DEFAULT_NET_SCH="fq"$' out/.config || {
+            echo "ERROR: qdisc default bukan fq (BBR tanpa fq kehilangan pacing):"
+            grep -n '^CONFIG_DEFAULT_NET_SCH=' out/.config || true
+            exit 1
+          }
+          echo "OK: BBR jadi congestion control default, fq jadi qdisc default."
 
           # Lapis kedua penjamin "tidak ada residu" (revisi ke-11): apa pun yang
           # lolos dari step pembersihan, ketahuan di sini setelah Kconfig
@@ -1043,6 +1240,22 @@ jobs:
           # mt6781 = SoC rosemary. tools/ak3-core.sh identik di kedua branch.
           git clone --depth=1 -b mt6781 https://github.com/fjrXTR/AnyKernel3.git AnyKernel3
           echo "AnyKernel3 commit: $(git -C AnyKernel3 rev-parse HEAD)"
+          # Pin AnyKernel3 (revisi ke-12). Repo fjrXTR/AnyKernel3 kini menjawab
+          # HTTP 301: pemiliknya berganti nama jadi vlxlxlv/AnyKernel3. git
+          # mengikuti redirect sehingga clone tetap jalan, TAPI nama pemilik yang
+          # ditinggalkan bisa didaftarkan orang lain - jadi isinya diverifikasi
+          # lewat SHA, bukan lewat nama repo.
+          AK3_PIN="a9fe54faa683daa54868687e701ca2a7b1fe68fc"
+          AK3_SHA="$(git -C AnyKernel3 rev-parse HEAD)"
+          test "$AK3_SHA" = "$AK3_PIN" || {
+            echo "ERROR: AnyKernel3 mt6781 bukan commit yang di-pin."
+            echo "  diharapkan: $AK3_PIN"
+            echo "  aktual    : $AK3_SHA"
+            echo "Periksa dulu isi repo sebelum menaikkan pin - anykernel.sh di bawah"
+            echo "menimpa template-nya, tapi tools/ak3-core.sh datang dari repo ini."
+            exit 1
+          }
+          echo "OK: AnyKernel3 ter-pin di $AK3_PIN"
           test -f AnyKernel3/tools/ak3-core.sh || { echo "ERROR: tools/ak3-core.sh tidak ada di AnyKernel3"; exit 1; }
           rm -rf AnyKernel3/.git
 
@@ -1066,13 +1279,14 @@ jobs:
             echo "| Add-on | Status |"
             echo "|---|---|"
             echo "| NoMount        | aktif (selalu ikut) |"
+            echo "| BBR + fq       | aktif (congestion control default \`bbr\`, qdisc default \`fq\`) |"
             echo "| Re:Kernel      | dicabut permanen (revisi ke-11) |"
             echo "| Baseband-guard | dicabut permanen (revisi ke-11) |"
             echo ""
             echo "| Komponen | Commit |"
             echo "|---|---|"
             echo "| Kernel (rosemary-13) | \`${KERNEL_SHA:-?}\` |"
-            echo "| ReSukiSU | \`${KSU_SHA:-?}\` |"
+            echo "| ReSukiSU (di-PIN) | \`${KSU_SHA:-?}\` |"
             echo "| NoMount (di-PIN, pre-ART) | \`${NOMOUNT_SHA:-?}\` |"
             echo ""
             echo "Paket: \`${ZIP:-belum terbentuk}\`"
