@@ -721,6 +721,25 @@ jobs:
           echo "ReSukiSU commit: $(git -C KernelSU rev-parse HEAD)"
           echo "Integrasi KernelSU + SuSFS via dlagia/Build-Kernel_scripts: SUKSES"
 
+      # ===== BUKTI SIMULASI (revisi ke-17, 2026-09-12) =====
+      # Seluruh rantai di bawah direproduksi di luar CI: fs/proc/task_mmu.c
+      # asli rosemary-13 + `patch -p1` (fuzz GNU default 2) + fixer ini, lalu
+      # setiap penanda SUSFS dipetakan ke fungsi pembungkusnya. Hasilnya persis
+      # seperti yang diasumsikan docstring fixer:
+      #   hunk 1 GAGAL  (include susfs_def.h)            -> dipasang fixer
+      #   hunk 2 fuzz 2 (extern spoof/open_redirect)     -> mendarat benar
+      #   hunk 3 OK     (guard di show_map_vma, `return;`)-> void, sah
+      #   hunk 4 fuzz 2 -> NYASAR ke smap_gather_stats() yang bertipe void,
+      #                    membawa `return 0;` = error kompilasi. Fixer
+      #                    mencabutnya lalu memasangnya di show_smap() (int).
+      #   hunk 5,6 GAGAL (kosmetik baris kosong)         -> aman diabaikan
+      #   hunk 7,8 OK    (pagemap_read: vma + goto bypass_orig_flow)
+      # Sesudah fixer: include ADA; guard SUS_MAP ada di show_smap() dengan
+      # `return 0;` yang cocok tipe; label bypass_orig_flow punya tepat satu
+      # pemakai di fungsi yang sama; `struct vm_area_struct *vma;` di
+      # pagemap_read() cuma satu (pagemap_read asli TIDAK punya vma, jadi tidak
+      # ada deklarasi ganda). Jadi tiga reject yang tersisa memang cuma hunk
+      # 1/5/6 dan ketiganya tertangani - bukan bug yang lolos diam-diam.
       - name: Perbaiki hasil patch SUSFS di fs/proc/task_mmu.c
         working-directory: kernel
         run: |
@@ -803,6 +822,23 @@ jobs:
 
           find . -name setlocalversion -exec sed -i 's/-dirty//g' {} + 2>/dev/null || true
 
+          # AUDIT RANTAI VERSI KSU (revisi ke-17, 2026-09-12), dibaca dari
+          # KernelSU/kernel/Kbuild pin 6930e97b:
+          #   KSU_VERSION = 30000 + `git rev-list --count HEAD` + 700. Aman:
+          #   setup.sh meng-clone TANPA --depth (baris 53), dan Kbuild baris 75
+          #   masih menjalankan `fetch --unshallow` kalau ../.git/shallow ada.
+          #   Jadi angka versinya asli, bukan hasil clone dangkal.
+          #   KSU_VERSION_FULL berasal dari CONFIG_KSU_FULL_NAME_FORMAT. Simbol
+          #   itu TIDAK ada di defconfig kita, TAPI ia `string` ber-default
+          #   "%TAG_NAME%-%COMMIT_SHA%@%REPO_NAME%" - dan Kconfig menerapkan
+          #   default walau simbolnya tak disebut, jadi versinya TIDAK kosong.
+          #   Sekaligus: sed di integrate_ksu_susfs.sh yang menimpa format itu
+          #   dengan "...-t.me/noforce2pay" berada di cabang `elif` yang hanya
+          #   menyala bila KernelSU/ SUDAH ada. Di alur kita integrate.sh yang
+          #   MEMBUAT KernelSU/, jadi cabang itu tidak pernah jalan dan iklan
+          #   Telegram milik dlagia tidak ikut ke kernel ini. Jangan "rapikan"
+          #   urutan step sampai KernelSU/ ada lebih dulu - itu justru akan
+          #   menyalakan branding tersebut.
           if [ -f KernelSU/kernel/Kbuild ]; then
             sed -i 's/KSU_COMMIT_SHA  := \$(KSU_COMMIT_SHA)-dirty/KSU_COMMIT_SHA  := \$(KSU_COMMIT_SHA)/' KernelSU/kernel/Kbuild || true
             echo "Pengecekan -dirty di KernelSU/kernel/Kbuild sudah dinetralisir"
@@ -1051,13 +1087,70 @@ jobs:
             echo "CFLAGS_REMOVE ditambah ke: $mk"
           done
           echo '== cek sisa =='
-          echo -n 'no_sanitize( tersisa: '; grep -rl 'no_sanitize(' --include='*.h' --include='*.c' . 2>/dev/null | wc -l
+          # Revisi ke-17: grep ini dulu TIDAK memakai --exclude-dir, padahal sed
+          # di atasnya memakai. Akibatnya hitungan 'tersisa' ikut mencacah file
+          # di patch_rejects/ (dan blob di .git/) yang memang sengaja tidak
+          # disunting - angkanya jadi > 0 dan menyesatkan pembaca log, seolah
+          # pembersihan gagal. Sekarang cakupannya disamakan dengan sed-nya.
+          echo -n 'no_sanitize( tersisa: '; grep -rl 'no_sanitize(' --include='*.h' --include='*.c' --exclude-dir=.git --exclude-dir=patch_rejects . 2>/dev/null | wc -l
 
       - name: Aktifkan KSU & SuSFS di defconfig (termasuk dlagia ksu-susfs_defconfig)
         working-directory: kernel
         run: |
           DEF=arch/arm64/configs/rosemary_defconfig
 
+          # ----- AUDIT STRUKTUR (revisi ke-16, 2026-09-12, pasca-boot rev-15) -----
+          # Dibaca langsung dari KernelSU/kernel/Kconfig pada pin ReSukiSU 6930e97b:
+          #
+          # 1. CONFIG_KSU_SUSFS BUKAN bool bebas. Ia anggota sebuah blok
+          #      choice / prompt "KernelSU Hooking Method" / depends on KSU
+          #      default KSU_TRACEPOINT_HOOK
+          #    beranggotakan TIGA simbol yang SALING MENIADAKAN:
+          #      KSU_TRACEPOINT_HOOK (GKI2 / 5.10+)  <- default upstream
+          #      KSU_MANUAL_HOOK     (3.4+)
+          #      KSU_SUSFS           ("SUSFS Inline Hook", depends on
+          #                           THREAD_INFO_IN_TASK && 64BIT)
+          #    Menyetel CONFIG_KSU_SUSFS=y otomatis memaksa dua yang lain jadi n.
+          #    Jadi assert "KSU_TRACEPOINT_HOOK bukan y" di step kompilasi
+          #    sebenarnya adalah pemeriksaan integritas choice, dan loop
+          #    KSU_MANUAL_HOOK_AUTO_* di sana dijamin lolos karena seluruh menu
+          #    "KernelSU - Manual Hook Auto hook" ber-depends on KSU_MANUAL_HOOK
+          #    yang kini n. Keduanya sabuk pengaman, bukan mubazir: kalau suatu
+          #    saat defconfig ini menyetel dua anggota choice sekaligus, yang
+          #    menang adalah baris TERAKHIR - dan assert-lah yang menangkapnya.
+          #    Kekhawatiran sempat muncul bahwa KSU_SUSFS "depends on
+          #    KSU_MANUAL_HOOK"; itu SALAH BACA - baris depends itu milik menu di
+          #    bawah endchoice. KSU_SUSFS hanya bergantung THREAD_INFO_IN_TASK &&
+          #    64BIT, dua-duanya menyala di arm64 4.14.
+          #
+          # 2. Berkas dlagia di bawah memuat 15 simbol. Empat belas cocok dengan
+          #    Kconfig. SATU tidak: CONFIG_KSU_SUSFS_TRY_UMOUNT=y adalah BARIS
+          #    MATI - di ReSukiSU tidak ada "config KSU_SUSFS_TRY_UMOUNT" (sembilan
+          #    sub-opsi yang ada: SUS_PATH, SUS_MOUNT, SUS_KSTAT, SPOOF_UNAME,
+          #    ENABLE_LOG, HIDE_KSU_SUSFS_SYMBOLS, SPOOF_CMDLINE_OR_BOOTCONFIG,
+          #    OPEN_REDIRECT, SUS_MAP), dan tidak ada simbol pengganti bernama
+          #    umount apa pun. Kconfig membuangnya diam-diam. TIDAK BERBAHAYA -
+          #    try_umount di ReSukiSU tidak lagi digerbangi Kconfig - jadi dibiarkan
+          #    apa adanya; jangan panik lagi kalau melihatnya hilang dari .config.
+          #
+          # 3. Kesembilan sub-opsi itu sudah "default y" begitu KSU_SUSFS menyala,
+          #    jadi menyetelnya di defconfig bersifat mengulang tapi tidak merusak.
+          #    Sebaliknya, TIDAK ADA satu pun CONFIG_ di seluruh rantai skrip
+          #    integrasi (integrate_ksu_susfs.sh maupun susfs_inline_hook_patches.sh)
+          #    yang menulis ke defconfig - keduanya hanya menambal source. Artinya
+          #    berkas dlagia inilah SATU-SATUNYA sumber CONFIG_KSU_SUSFS=y.
+          #
+          # 4. SUSFS vs NoMount TIDAK menambal titik yang sama, jadi tidak ada hook
+          #    ganda: SUSFS menambal CALL SITE di dalam fs/namei.c, fs/readdir.c,
+          #    fs/stat.c, fs/statfs.c, fs/namespace.c, fs/proc/*, mm/memory.c;
+          #    NoMount menukar POINTER di tabel operasi per-inode (i_op->lookup,
+          #    f_op->iterate/iterate_shared, d_op->d_revalidate, getattr) dan selalu
+          #    memanggil balik orig_iop. Beda lapisan, urutannya SUSFS sesudah
+          #    NoMount. Satu catatan cakupan (bukan bug/crash): jalur nm_dir_lookup
+          #    memanggil r_dir->i_op->lookup langsung sehingga tidak melewati
+          #    saringan SUS_PATH di fs/namei.c - path yang disembunyikan SUSFS bisa
+          #    tetap terlihat bila diakses lewat direktori hasil redirect NoMount.
+          #    Sembunyikan path semacam itu lewat NoMount, bukan SUS_PATH.
           echo "[+] Mengunduh dan menggabungkan ksu-susfs_defconfig dari dlagia/Build-Kernel_scripts (pinned commit)..."
           curl -fsSL "https://raw.githubusercontent.com/dlagia/Build-Kernel_scripts/10f1480b39418e885d4402e78a5ec7721d5040d3/defconfig/ksu-susfs_defconfig" >> "$DEF"
 
