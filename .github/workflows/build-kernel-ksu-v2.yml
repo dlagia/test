@@ -441,6 +441,87 @@
 #   Aturan "satu pin per flash" DIKESAMPINGKAN di revisi ke-15 atas permintaan
 #   eksplisit pemilik - semua dinaikkan sekaligus. Konsekuensinya (pelaku tidak
 #   langsung ketahuan kalau gagal boot) dicatat di blok revisi ke-15 di atas.
+#
+# PENYEMPURNAAN (revisi ke-18, 2026-09-12) - audit menyeluruh: commit, upstream,
+# dependensi, bug tersembunyi. Dua pin dinaikkan ke HEAD, tujuh cacat ditutup.
+#
+# A. PIN DINAIKKAN (keduanya diverifikasi, bukan ditebak dari pesan commit):
+#      ReSukiSU/ReSukiSU                    6930e97b -> fa1da13f  (3 commit)
+#      JackA1ltman/NonGKI_Kernel_Build_2nd  c6dcae264f -> f1004545 (1 commit)
+#    ReSukiSU: dari 3 commit hanya 052ca27775 yang menyentuh kernel/, dan judulnya
+#    "compat for old version of susfs" - yaitu PERSIS kasus kita (SUSFS versi
+#    backport 4.14). Isinya: include <linux/sched/task_stack.h> di balik guard
+#    >= 4.11 (ada di 4.14), set_thread_flag(TIF_PROC_IN_KSU_EXECVE) tidak lagi
+#    dikurung CONFIG_KSU_MANUAL_HOOK, dan TIF_PROC_IN_KSU_EXECVE=61 didefinisikan
+#    untuk cabang CONFIG_KSU_SUSFS. Bit 61 TIDAK bertabrakan dgn SUSFS (33/34/35).
+#    Jalur su tetap hidup: flag itu di-set di satu-satunya `return 0` milik
+#    do_ksu_handle_execveat_sucompat(), dan ksu_handle_post_execve() cuma
+#    terjangkau lewat is_su_session, jadi ksu_install_su_fd() tidak bisa kelaparan.
+#    Dua commit sisanya hanya manager/ (aplikasi Android, tidak dikompilasi).
+#    kernel/setup.sh, kernel/Kbuild, kernel/Kconfig byte-identik -> semua audit
+#    Kconfig revisi ke-16 dan mekanisme pin dua-sed tetap sahih.
+#    SUSFS: kedua patch susfs_patch_to_4.14.patch diunduh lalu di-diff -
+#    93 baris, HANYA DUA perubahan nyata:
+#      1) fs/statfs.c: label `orig_flow:` -> `bypass_orig_flow:` (rename saja).
+#      2) fs/susfs.c susfs_mark_inode_sus_kstat(): `if (is_update) {...} else {...}`
+#         jadi lurus, sehingga is_fuse/target_dev/spoofed_mnt_id/spoofed_kstatfs
+#         IKUT di-set walau is_update=true. Itu perbaikan bug upstream, bukan
+#         perubahan perilaku yang berisiko bagi kita.
+#    Section fs/proc/task_mmu.c md5-IDENTIK -> fixer task_mmu dan daftar reject
+#    "hanya task_mmu.c.rej yang diharapkan" tetap benar. Daftar section tetap 19
+#    file, susfs_inline_hook_patches.sh byte-identik, kurung fs/susfs.c 199/199
+#    dan tanda kurung 786/786 seimbang.
+#    SIMULASI LOKAL (aturan wajib sejak revisi ke-17, hasil: aman): fs/statfs.c
+#    murni dari dlagia@602782dab di-patch dgn KEDUA versi patch -> dua-duanya
+#    exit 0 tanpa reject, bedanya cuma nama label, ketujuh fixer lokal tetap
+#    no-op (mnt_id aktif 0, CALL_BAD 0, FD_NEW ada, extern mendahului pemakaian,
+#    security.h ada, '^++' 0, section .git/ 0), kurung 34/34, dan #if/#endif
+#    8/8 seimbang.
+#
+# B. DEPENDENSI YANG MEMANG SUDAH DI HEAD (diperiksa ulang hari ini, tidak
+#    diutak-atik): dlagia/Build-Kernel_scripts 10f1480b, maxsteeel/nomount
+#    setup.sh 0c4b2dbd (= HEAD master) + driver 6d8871dc (= HEAD branch dev),
+#    vlxlxlv/AnyKernel3@mt6781 a9fe54fa, kdrag0n/proton-clang@master 9fb011b1,
+#    dlagia/android_kernel_xiaomi_rosemary@rosemary-13 602782dab,
+#    actions/cache v6 (rilis v6.1.0), actions/upload-artifact v7 (v7.0.1).
+#    actions/checkout tidak dipakai (source kernel di-clone manual).
+#
+# C. BUG & LUBANG YANG DITUTUP DI REVISI INI (semuanya cacat workflow sendiri,
+#    bukan upstream - ini hasil "cek bug yang tersembunyi"):
+#    1. sed pin SUSFS TANPA assert. Kalau upstream mengganti bentuk URL-nya, sed
+#       jadi no-op dan build diam-diam balik ke branch mengambang - kelas bug
+#       yang dulu merusak revisi ke-7..ke-9. Kini wajib 2 URL, 0 sisa refs/heads/.
+#    2. `exit 1` sanitizer patch SUSFS DITELAN `|| true` milik script upstream
+#       (sed kita hanya mengganti bagian `patch -p1 < ...`, bukan seluruh baris).
+#       Kini sanitizer menulis sentinel /tmp/susfs_apply_failed yang diperiksa
+#       sesudah integrate selesai.
+#    3. Pemeriksaan pengalihan ke /tmp/susfs_apply.sh hanya `echo CATATAN`
+#       (tidak fatal) -> patch mentah bisa ter-apply tanpa sanitasi ^++ dan build
+#       baru mati jauh di belakang. Kini fatal, plus sentinel
+#       /tmp/susfs_apply_ran yang membuktikan filternya betul-betul dijalankan.
+#    4. Source kernel MENGAMBANG di branch rosemary-13 padahal setiap patch dan
+#       fixer diaudit terhadap isi pohon 602782dab. Kini di-assert SHA, dengan
+#       instruksi apa yang harus diulang kalau pin mau dinaikkan.
+#    5. AnyKernel3 di-clone lewat nama pemilik yang SUDAH DITINGGALKAN (fjrXTR,
+#       HTTP 301). Nama kosong bisa didaftarkan orang lain. URL dipindah ke
+#       vlxlxlv/AnyKernel3; SHA-nya sama (a9fe54fa) jadi assert tidak berubah.
+#    6. Verifikasi akhir fix_statfs() memakai `find(decl) > find(use)`: kalau
+#       extern-nya HILANG SAMA SEKALI, find() = -1 dan -1 > n selalu False, jadi
+#       cacat fatal itu LOLOS. Kini extern wajib ADA dan mendahului pemakaian.
+#    7. Docstring fixer masih menulis pin lama (@c6dcae264f) - diperbarui ke
+#       @f1004545d1 supaya jejak auditnya tidak menyesatkan. Komentar tanggal
+#       NOMOUNT_PIN dan referensi "pin 6930e97b" di dua blok audit ikut
+#       diselaraskan (author 2026-09-10 / commit 2026-09-11; Kbuild & Kconfig
+#       byte-identik antara 6930e97b dan fa1da13f).
+#
+# D. CACAT UPSTREAM YANG DISADARI TAPI TIDAK DITAMBAL (sengaja):
+#    susfs_get_non_sus_vfsmnt_from_vfsmnt() punya jalur fallback `return vfsmnt`
+#    TANPA mntget/dget, sedangkan pemanggilnya selalu dput()+mntput() - itu
+#    refcount underflow. Jalur itu hanya tercapai bila mnt.mnt_root NULL/IS_ERR
+#    (praktis tidak mungkin untuk mount hidup), fungsinya TIDAK berubah antara
+#    c6dcae264f dan f1004545, jadi ini bukan regresi dari kenaikan pin. Menambal
+#    di sini berarti menulis ulang helper upstream; dicatat saja supaya kalau ada
+#    panic refcount di dmesg, ini tersangka yang sudah diketahui.
 # ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
@@ -477,6 +558,30 @@ jobs:
           echo "KERNEL_SHA=$(git -C kernel rev-parse --short HEAD)" >> "$GITHUB_ENV"
           echo "Kernel source commit: $(git -C kernel rev-parse HEAD)"
 
+          # ----- ASSERT SHA SOURCE KERNEL (revisi ke-18, 2026-09-12) -----
+          # Ini dependency terakhir yang masih MENGAMBANG: branch rosemary-13.
+          # Semua patch SUSFS/KSU/NoMount di bawah, plus setiap fixer base64 di
+          # workflow ini, diaudit terhadap ISI POHON commit di bawah (mis.
+          # fs/statfs.c, fs/stat.c, fs/proc/fd.c). Kalau dlagia mendorong commit
+          # baru yang menyentuh fs/, patch bisa ter-apply "bersih" tapi salah,
+          # atau reject-nya berubah dan audit reject di bawah salah tuduh.
+          # Jadi drift-nya dibuat KERAS, bukan diam-diam.
+          KERNEL_PIN="602782dabb7a9b5925400f64ec00db7c632098a6"
+          KERNEL_ACT="$(git -C kernel rev-parse HEAD)"
+          test "$KERNEL_ACT" = "$KERNEL_PIN" || {
+            echo "ERROR: source kernel bukan commit yang diaudit."
+            echo "  diharapkan: $KERNEL_PIN"
+            echo "  aktual    : $KERNEL_ACT"
+            echo "Yang harus dilakukan sebelum menaikkan pin ini:"
+            echo "  1) git log --stat $KERNEL_PIN..$KERNEL_ACT -- fs/ arch/arm64/configs/"
+            echo "  2) kalau fs/ tersentuh: ulangi simulasi patch SUSFS (lihat blok"
+            echo "     BUKTI SIMULASI di step integrasi) dan perbarui daftar reject"
+            echo "     yang diharapkan."
+            echo "  3) kalau rosemary_defconfig tersentuh: ulangi audit defconfig."
+            exit 1
+          }
+          echo "OK: source kernel ter-pin di $KERNEL_PIN"
+
       - name: Integrasikan ReSukiSU & SuSFS (dlagia/Build-Kernel_scripts)
         working-directory: kernel
         run: |
@@ -509,6 +614,24 @@ jobs:
           #   (1) URL setup.sh: branch 'main' -> SHA
           #   (2) pemanggilan: `| bash` -> `| bash -s <SHA>` (argumen checkout)
           # DINAIKKAN di revisi ke-14 (2026-09-11): 246d3e52 -> 6930e97b, 4 commit.
+          # DINAIKKAN LAGI di revisi ke-18 (2026-09-12): 6930e97b -> fa1da13f,
+          # 3 commit, dan HANYA SATU yang menyentuh kernel/ (052ca27775):
+          #   - kernel/feature/adb_root.c: +#include <linux/sched/task_stack.h>
+          #     di balik `#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,11,0)` -
+          #     header itu ADA di 4.14 dan guard-nya benar.
+          #   - kernel/feature/sucompat.c: set_thread_flag(TIF_PROC_IN_KSU_EXECVE)
+          #     tidak lagi dikurung `#ifdef CONFIG_KSU_MANUAL_HOOK`, judul
+          #     commitnya "compat for old version of susfs" - PERSIS kasus kita
+          #     (SUSFS 4.14 backport), jadi ini justru perbaikan UNTUK build ini.
+          #   - kernel/feature/sucompat.h: `#define TIF_PROC_IN_KSU_EXECVE 61`
+          #     ditambahkan di cabang `#elif defined(CONFIG_KSU_SUSFS)`. Bit 61
+          #     TIDAK bertabrakan: SUSFS memakai bit 33/34/35, dan 61-63 memang
+          #     slot cadangan KSU di arm64 (64-bit flags word).
+          # Dua commit lainnya (19b6f4213c, fa1da13f89) hanya manager/ (aplikasi
+          # Android) - tidak ikut dikompilasi ke kernel. kernel/Kbuild dan
+          # kernel/Kconfig TIDAK berubah di rentang ini, jadi semua audit
+          # Kbuild/Kconfig di bawah tetap sahih, dan kernel/setup.sh juga
+          # byte-identik sehingga mekanisme pin dua-sed di bawah tetap jalan.
           # Yang benar-benar menyentuh kode kernel cuma 7ad75c5df3 "get
           # session_keyring from key_permission LSM call" (kernel_compat.c/h,
           # init.c, lsm_hooks.c); 07a28eb8 & 4f27ee12 sekadar bump crate userspace
@@ -518,7 +641,7 @@ jobs:
           # argumen non-flag ke `setup_kernelsu "$@"` -> `git checkout "$1"`, dan
           # cabang --submodule pun `return 0` begitu GITHUB_ACTIONS=true. Jadi
           # mekanisme pin dua-sed di bawah tetap sahih.
-          KSU_PIN="6930e97b59f8f5a7a2e75583f7be1cf982856157"
+          KSU_PIN="fa1da13f890a19335d3f8f5c62bb5bde466fc384"
           sed -i "s|ReSukiSU/ReSukiSU/main/kernel/setup.sh|ReSukiSU/ReSukiSU/${KSU_PIN}/kernel/setup.sh|" integrate_ksu_susfs.sh
           sed -i "s#setup.sh\" | bash >#setup.sh\" | bash -s ${KSU_PIN} >#" integrate_ksu_susfs.sh
           # PENTING: URL dan `| bash >` ada di BARIS YANG SAMA (baris 11), jadi di sini
@@ -549,9 +672,22 @@ jobs:
           # 6 dari 7 fixer otomatis jadi no-op, dan yang ke-7 (fix_stat_mnt_id)
           # sudah disesuaikan di step fixer supaya ikut no-op - upstream
           # MENGOMENTARI assignment stat->mnt_id, bukan menghapusnya.
-          SUSFS_PIN="c6dcae264f156e9ebb353d857bcea1fa82bd6bf4"
+          SUSFS_PIN="f1004545d1b2950cf039ad3176d7279d371b1e8e"
           sed -i "s|refs/heads/mainline|${SUSFS_PIN}|g" integrate_ksu_susfs.sh
-          echo "[+] Sumber SUSFS di-PIN ke JackA1ltman@${SUSFS_PIN} ($(grep -c "$SUSFS_PIN" integrate_ksu_susfs.sh) URL dialihkan)"
+          # Revisi ke-18: sed di atas dulu TANPA assert - kalau upstream mengubah
+          # bentuk URL-nya (mis. memakai 'refs/tags/' atau URL penuh), sed jadi
+          # no-op dan build diam-diam kembali memakai branch mengambang. Sekarang
+          # dipaksa: HARUS 2 URL (hook script + patch) dan TIDAK BOLEH ada sisa
+          # 'refs/heads/'.
+          SUSFS_HIT=$(grep -o "$SUSFS_PIN" integrate_ksu_susfs.sh | wc -l | tr -d ' ')
+          SUSFS_FLOAT=$(grep -c 'refs/heads/' integrate_ksu_susfs.sh || true)
+          if [ "$SUSFS_HIT" != "2" ] || [ "$SUSFS_FLOAT" != "0" ]; then
+            echo "ERROR: pin SUSFS gagal diterapkan (hit=$SUSFS_HIT harus 2, sisa refs/heads=$SUSFS_FLOAT harus 0)."
+            echo "Script upstream dlagia berubah bentuk URL-nya - periksa manual:"
+            grep -n 'raw.githubusercontent.com/JackA1ltman' integrate_ksu_susfs.sh || true
+            exit 1
+          fi
+          echo "[+] Sumber SUSFS di-PIN ke JackA1ltman@${SUSFS_PIN} ($SUSFS_HIT URL dialihkan, 0 sisa branch mengambang)"
 
           # ----- SANITASI PATCH SUSFS (revisi ke-8, 2026-09-10) -----
           # BUG BARU (log rosemary-build-log.zip): susfs_patch_to_4.14.patch dari
@@ -584,19 +720,52 @@ jobs:
             'sed -i -E "s/^\+\+(extern |#endif )/+\1/" "$P"' \
             'echo "[+] (sanitasi) $N baris diff bertanda ganda (^++) dinormalkan jadi ^+"' \
             'if grep -qE "^\+\+[^+]" "$P"; then' \
-            '  echo "GAGAL: masih ada baris ^++ tak dikenal di patch SUSFS:"; grep -nE "^\+\+[^+]" "$P"; exit 1' \
+            '  echo "GAGAL: masih ada baris ^++ tak dikenal di patch SUSFS:"; grep -nE "^\+\+[^+]" "$P"; touch /tmp/susfs_apply_failed; exit 1' \
             'fi' \
             'patch -p1 < "$P"' > /tmp/susfs_apply.sh
+          # Revisi ke-18, dua lubang ditutup:
+          # (a) Baris upstream-nya adalah `patch -p1 < "..." || true`. sed hanya
+          #     mengganti bagian `patch -p1 < "..."`, jadi `|| true` tetap ada dan
+          #     MENELAN `exit 1` sanitizer di atas. Karena itu sanitizer sekarang
+          #     meninggalkan sentinel /tmp/susfs_apply_failed, dan sentinel itu
+          #     diperiksa SESUDAH integrate selesai (di bawah). `|| true` sendiri
+          #     tetap dibiarkan: exit code `patch` yang bukan-nol untuk reject
+          #     yang MEMANG diharapkan (task_mmu.c) ditangani oleh audit reject.
+          # (b) Pemeriksaan pengalihan dulu cuma `echo CATATAN` (tidak fatal),
+          #     padahal kalau gagal, patch mentah ter-apply tanpa sanitasi ^++
+          #     dan build baru mati jauh di belakang dgn error compiler aneh.
+          #     Sekarang fatal, dan ditambah sentinel /tmp/susfs_apply_ran yang
+          #     membuktikan filternya BENAR-BENAR dijalankan, bukan cuma tertulis.
+          rm -f /tmp/susfs_apply_failed /tmp/susfs_apply_ran
+          sed -i '2i touch /tmp/susfs_apply_ran' /tmp/susfs_apply.sh
           sed -i 's|patch -p1 < "susfs_patch_to_${KERNEL_VERSION}.patch"|bash /tmp/susfs_apply.sh "susfs_patch_to_${KERNEL_VERSION}.patch"|' integrate_ksu_susfs.sh
-          grep -q 'susfs_apply.sh' integrate_ksu_susfs.sh \
-            && echo "OK: apply patch SUSFS dialihkan ke filter anti-.git" \
-            || echo "CATATAN: baris apply tak ditemukan (script upstream berubah?) - pengaman audit .git di bawah tetap aktif"
+          if grep -q 'susfs_apply.sh' integrate_ksu_susfs.sh; then
+            echo "OK: apply patch SUSFS dialihkan ke filter anti-.git"
+          else
+            echo "ERROR: baris apply patch SUSFS tak ditemukan - script upstream berubah."
+            echo "Baris apply yang ada sekarang:"
+            grep -n 'patch -p1' integrate_ksu_susfs.sh || true
+            exit 1
+          fi
 
           # </dev/null: script punya prompt interaktif "read -t 10" utk penanganan
           # reject. Di runner tidak ada tty, jadi dipaksa non-interaktif supaya
           # tidak menggantung 10 detik dan hasilnya deterministik.
           bash integrate_ksu_susfs.sh < /dev/null
           rm -f integrate_ksu_susfs.sh
+
+          # Revisi ke-18: sentinel sanitizer (lihat penjelasan (a)/(b) di atas).
+          if [ -f /tmp/susfs_apply_failed ]; then
+            echo "ERROR: sanitizer patch SUSFS gagal (baris ^++ tak dikenal) -"
+            echo "kegagalannya tadi ditelan oleh '|| true' milik script upstream."
+            exit 1
+          fi
+          test -f /tmp/susfs_apply_ran || {
+            echo "ERROR: /tmp/susfs_apply.sh tidak pernah dijalankan, jadi patch SUSFS"
+            echo "ter-apply TANPA sanitasi .git//^++. Periksa baris apply di script upstream."
+            exit 1
+          }
+          echo "OK: sanitizer patch SUSFS terbukti dijalankan, tanpa kegagalan keras"
 
           echo ""
           echo "== AUDIT REJECT PATCH SUSFS =="
@@ -781,7 +950,7 @@ jobs:
           #                                     tapi terlewat di sini.
           # (Baris diff bertanda ganda '^++' di fs/stat.c sudah ditangani lebih awal,
           #  di lapis-2 sanitizer /tmp/susfs_apply.sh.)
-          echo "IyEvdXNyL2Jpbi9lbnYgcHl0aG9uMwoiIiIKUGVyYmFpa2kgYnVnIHBhdGNoIFNVU0ZTIHYyLjMuMCAoSmFja0ExbHRtYW4gbWFpbmxpbmUgQGM2ZGNhZTI2NGYpIHBhZGEga2VybmVsIDQuMTQuCgpTZW11YSB5YW5nIGRpcGVyYmFpa2kgZGkgc2luaSBhZGFsYWggY2FjYXQgVVBTVFJFQU0sIGJ1a2FuIHNhbGFoIHdvcmtmbG93OiBwYXRjaAppdHUgZGl0dWxpcyB1bnR1ayBrZXJuZWwgNS4xMCsgbGFsdSBkaS1iYWNrcG9ydCBzZXRlbmdhaCBqYWxhbiwgc2VoaW5nZ2EgNCBmaWxlCmdhZ2FsIGNvbXBpbGUuIFRpYXAgcGVyYmFpa2FuIGlkZW1wb3RlbiBkYW4gbWVtdmFsaWRhc2kgYW5jaG9yLW55YSAoa2FsYXUKc3RydWt0dXIgYmVydWJhaCAtPiBiZXJoZW50aSBkZ24gcGVzYW4gamVsYXMsIGJ1a2FuIG1lbmFtYmFsIHNlcmFtcGFuZ2FuKS4KIiIiCmltcG9ydCByZSwgc3lzCgpkZWYgcncocGF0aCwgZm4pOgogICAgd2l0aCBvcGVuKHBhdGgsIGVuY29kaW5nPSd1dGYtOCcsIGVycm9ycz0nc3Vycm9nYXRlZXNjYXBlJykgYXMgZjoKICAgICAgICBzID0gZi5yZWFkKCkKICAgIG91dCA9IGZuKHMpCiAgICBpZiBvdXQgaXMgTm9uZToKICAgICAgICByZXR1cm4KICAgIHdpdGggb3BlbihwYXRoLCAndycsIGVuY29kaW5nPSd1dGYtOCcsIGVycm9ycz0nc3Vycm9nYXRlZXNjYXBlJykgYXMgZjoKICAgICAgICBmLndyaXRlKG91dCkKCmRlZiBuZWVkKHMsIHR4dCwgcGF0aCwgbGFiZWwsIG49MSk6CiAgICBjID0gcy5jb3VudCh0eHQpCiAgICBpZiBjICE9IG46CiAgICAgICAgc3lzLmV4aXQoInN1c2ZzLWZpeDogYW5jaG9yICclcycga2V0ZW11ICVkIGthbGkgKGhhcnVzICVkKSBkaSAlcyIgJSAobGFiZWwsIGMsIG4sIHBhdGgpKQoKIyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KIyAxKSBmcy9zdGF0LmMgLSBzdGF0LT5tbnRfaWQgdGlkYWsgYWRhIGRpIHN0cnVjdCBrc3RhdCBzZWJlbHVtIDUuMTAuCiMgICAgc3VzZnMuYyBzZW5kaXJpIG1lbmphZ2EgZmllbGQgaW5pIGRnbgojICAgICAgICAjaWYgTElOVVhfVkVSU0lPTl9DT0RFID49IEtFUk5FTF9WRVJTSU9OKDUsIDEwLCAwKQojICAgIHRhcGkgaHVuayBmcy9zdGF0LmMgbHVwYSBtZW1ha2FpIHBlbmphZ2EgeWFuZyBzYW1hLgojICAgIHJlc3VsdF9tYXNrIHRldGFwIGRpLXNldCwgamFkaSBqYWx1ciBzcG9vZmluZyB0aWRhayBiZXJ1YmFoLgojID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQpNTlRfUEFUID0gcideWyBcdF0qc3RhdC0+bW50X2lkID0gcmVhbF9tb3VudFwocGF0aC0+bW50XCktPm1udF9pZDtcbicKCmRlZiBmaXhfc3RhdF9tbnRfaWQocyk6CiAgICAjIFNlamFrIEphY2tBMWx0bWFuQDFjNDQyODc3ICgiZml4OiBuZWVkbid0IHJlYWxfbW91bnQiKSB1cHN0cmVhbSBUSURBSwogICAgIyBtZW5naGFwdXMgYXNzaWdubWVudCBpbmkgbWVsYWlua2FuIE1FTkdPTUVOVEFSSU5ZQSBtZW5qYWRpCiAgICAjICAgICAvLyBzdGF0LT5tbnRfaWQgPSByZWFsX21vdW50KHBhdGgtPm1udCktPm1udF9pZDsKICAgICMgSmFkaSBwZW5jYXJpYW4gc3Vic3RyaW5nICJzdGF0LT5tbnRfaWQiIG1hc2loIG1lbmVtdWthbm55YSBESSBEQUxBTQogICAgIyBrb21lbnRhciAtIGl0dSBidWthbiB0YW5kYSBrb2RlbnlhIGFrdGlmLiBZYW5nIGRpaGl0dW5nIGhhcnVzIGFzc2lnbm1lbnQKICAgICMgeWFuZyBiZW5hci1iZW5hciBha3RpZjsgcmVnZXggZGkgYmF3YWggYmVyamFuZ2thciBeWyBcdF0qIHNlaGluZ2dhIGJhcmlzCiAgICAjIHlhbmcgZGlhd2FsaSAiLy8iIHRpZGFrIGlrdXQgY29jb2suCiAgICBuID0gbGVuKHJlLmZpbmRhbGwoTU5UX1BBVCwgcywgcmUuTSkpCiAgICBpZiBuID09IDA6CiAgICAgICAgcHJpbnQoInN0YXQuYzogdGlkYWsgYWRhIGFzc2lnbm1lbnQgc3RhdC0+bW50X2lkIGFrdGlmIChzdWRhaCBkaWtvbWVudGFyaS9kaWhhcHVzIHVwc3RyZWFtKSwgZGlsZXdhdGkiKQogICAgICAgIHJldHVybiBOb25lCiAgICBpZiBuICE9IDI6CiAgICAgICAgc3lzLmV4aXQoInN1c2ZzLWZpeDogYXNzaWdubWVudCBzdGF0LT5tbnRfaWQgYWt0aWYga2V0ZW11ICVkIGthbGkgZGkgZnMvc3RhdC5jIChoYXJ1cyAwIGF0YXUgMikiICUgbikKICAgIHMgPSByZS5zdWIoTU5UX1BBVCwgJycsIHMsIGZsYWdzPXJlLk0pCiAgICBwcmludCgic3RhdC5jOiAyIGFzc2lnbm1lbnQgc3RhdC0+bW50X2lkIGRpYnVhbmcgKGtzdGF0IDQuMTQgdGlkYWsgcHVueWEgZmllbGQgaXR1KSIpCiAgICByZXR1cm4gcwoKIyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KIyAyKSBmcy9zdGF0LmMgKyBmcy9uYW1laS5jIC0gZmlsZW5hbWVfbG9va3VwKCkuCiMgICAgc3VzZnNfaW5saW5lX2hvb2tfcGF0Y2hlcy5zaCBtZW55aXNpcGthbiBwZW1hbmdnaWxhbiBmaWxlbmFtZV9sb29rdXAoKQojICAgIGtlIGZzL3N0YXQuYywgVEFQSSBwZW5qYWdhbnlhCiMgICAgICAgIGlmICEgZ3JlcCAtcSAiaW50ZXJuYWwuaCIgZnMvc3RhdC5jICYmICEgZ3JlcCAic3RhdGljIGludCBmaWxlbmFtZV9sb29rdXAiIGZzL25hbWVpLmMKIyAgICBtZW1idWF0IGRla2xhcmFzaW55YSBUSURBSyBpa3V0IGRpc2lzaXBrYW4ganVzdHJ1IGtldGlrYSBmdW5nc2lueWEgc3RhdGljCiMgICAgKGthc3VzIDQuMTQpIC0gamFkaSBrb2RlbnlhIG1hc3VrIHRhbnBhIGRla2xhcmFzaSBhcGEgcHVuLiBTb2x1c2lueWE6CiMgICAgYnVhbmcgJ3N0YXRpYycgZGkgZGVmaW5pc2kgbmFtZWkuYyBsYWx1IGRla2xhcmFzaWthbiBleHRlcm4gZGkgc3RhdC5jLgojID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQpOQU1FSV9PTEQgPSAic3RhdGljIGludCBmaWxlbmFtZV9sb29rdXAoaW50IGRmZCwgc3RydWN0IGZpbGVuYW1lICpuYW1lLCB1bnNpZ25lZCBmbGFncyxcbiIKTkFNRUlfTkVXID0gImludCBmaWxlbmFtZV9sb29rdXAoaW50IGRmZCwgc3RydWN0IGZpbGVuYW1lICpuYW1lLCB1bnNpZ25lZCBmbGFncyxcbiIKCmRlZiBmaXhfbmFtZWkocyk6CiAgICBpZiBOQU1FSV9PTEQgbm90IGluIHM6CiAgICAgICAgcHJpbnQoIm5hbWVpLmM6IGZpbGVuYW1lX2xvb2t1cCBzdWRhaCBub24tc3RhdGljLCBkaWxld2F0aSIpCiAgICAgICAgcmV0dXJuIE5vbmUKICAgIG5lZWQocywgTkFNRUlfT0xELCAnZnMvbmFtZWkuYycsICdzdGF0aWMgaW50IGZpbGVuYW1lX2xvb2t1cCgnKQogICAgcHJpbnQoIm5hbWVpLmM6ICdzdGF0aWMnIGRpYnVhbmcgZGFyaSBkZWZpbmlzaSBmaWxlbmFtZV9sb29rdXAoKSIpCiAgICByZXR1cm4gcy5yZXBsYWNlKE5BTUVJX09MRCwgTkFNRUlfTkVXLCAxKQoKU1RBVF9ERUNMID0gKCJleHRlcm4gaW50IGZpbGVuYW1lX2xvb2t1cChpbnQgZGZkLCBzdHJ1Y3QgZmlsZW5hbWUgKm5hbWUsIHVuc2lnbmVkIGZsYWdzLFxuIgogICAgICAgICAgICAgIlx0XHRcdHN0cnVjdCBwYXRoICpwYXRoLCBzdHJ1Y3QgcGF0aCAqcm9vdCk7XG4iKQpTVEFUX0FOQ0hPUiA9ICJleHRlcm4gaW50IGtzdV9oYW5kbGVfc3RhdChpbnQgKmRmZCwgc3RydWN0IGZpbGVuYW1lICoqZmlsZW5hbWUsIGludCAqZmxhZ3MpO1xuIgoKZGVmIGZpeF9zdGF0X2RlY2wocyk6CiAgICBpZiAiZXh0ZXJuIGludCBmaWxlbmFtZV9sb29rdXAoIiBpbiBzOgogICAgICAgIHByaW50KCJzdGF0LmM6IGRla2xhcmFzaSBmaWxlbmFtZV9sb29rdXAgc3VkYWggYWRhLCBkaWxld2F0aSIpCiAgICAgICAgcmV0dXJuIE5vbmUKICAgIGlmICJmaWxlbmFtZV9sb29rdXAoIiBub3QgaW4gczoKICAgICAgICBwcmludCgic3RhdC5jOiBmaWxlbmFtZV9sb29rdXAgdGlkYWsgZGlwYWthaSAoaG9vayBzY3JpcHQgYmVydWJhaD8pLCBkaWxld2F0aSIpCiAgICAgICAgcmV0dXJuIE5vbmUKICAgIG5lZWQocywgU1RBVF9BTkNIT1IsICdmcy9zdGF0LmMnLCAnZXh0ZXJuIGludCBrc3VfaGFuZGxlX3N0YXQoJykKICAgIHByaW50KCJzdGF0LmM6IGRla2xhcmFzaSBleHRlcm4gZmlsZW5hbWVfbG9va3VwKCkgZGl0YW1iYWhrYW4iKQogICAgcmV0dXJuIHMucmVwbGFjZShTVEFUX0FOQ0hPUiwgU1RBVF9BTkNIT1IgKyBTVEFUX0RFQ0wsIDEpCgojID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQojIDMpIGZzL3N0YXRmcy5jIC0gc3VzZnNfc3RhdGZzX2J5X2RlbnRyeSgpIG1lbWFuZ2dpbAojICAgIHN1c2ZzX3N1c19rc3RhdF9zcG9vZl92ZnNfc3RhdGZzKCkgcGFkYWhhbCBibG9rIGV4dGVybi1ueWEgZGl0YXJ1aAojICAgIFNFU1VEQUggZnVuZ3NpIGl0dS4gRGVrbGFyYXNpIGRpdWxhbmcgZGkgYXRhcyAoZGVrbGFyYXNpIGdhbmRhIHNhaCBkaSBDKS4KIyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KU1RBVEZTX0FOQ0hPUiA9ICJzdGF0aWMgaW50IHN1c2ZzX3N0YXRmc19ieV9kZW50cnkoc3RydWN0IGRlbnRyeSAqZGVudHJ5LCBzdHJ1Y3Qga3N0YXRmcyAqYnVmLCBib29sICppc19mdXNlKVxuIgpTVEFURlNfREVDTCA9ICgiZXh0ZXJuIGJvb2wgc3VzZnNfaXNfaW5vZGVfc3VzX2tzdGF0KHN0cnVjdCBpbm9kZSAqaW5vZGUsIGJvb2wgKm91dF9pc19mdXNlKTtcbiIKICAgICAgICAgICAgICAgImV4dGVybiBpbnQgc3VzZnNfc3VzX2tzdGF0X3Nwb29mX3Zmc19zdGF0ZnMoc3RydWN0IGlub2RlICppbm9kZSwgc3RydWN0IGtzdGF0ZnMgKmJ1ZiwgYm9vbCAqaXNfZnVzZSk7XG4iKQoKZGVmIGZpeF9zdGF0ZnMocyk6CiAgICBpX2RlY2wgPSBzLmZpbmQoImV4dGVybiBpbnQgc3VzZnNfc3VzX2tzdGF0X3Nwb29mX3Zmc19zdGF0ZnMiKQogICAgaV91c2UgPSBzLmZpbmQoU1RBVEZTX0FOQ0hPUikKICAgIGlmIGlfdXNlIDwgMDoKICAgICAgICBzeXMuZXhpdCgic3VzZnMtZml4OiBzdXNmc19zdGF0ZnNfYnlfZGVudHJ5KCkgdGlkYWsga2V0ZW11IGRpIGZzL3N0YXRmcy5jIikKICAgIGlmIDAgPD0gaV9kZWNsIDwgaV91c2U6CiAgICAgICAgcHJpbnQoInN0YXRmcy5jOiBleHRlcm4gc3VkYWggbWVuZGFodWx1aSBwZW1ha2FpYW4sIGRpbGV3YXRpIikKICAgICAgICByZXR1cm4gTm9uZQogICAgbmVlZChzLCBTVEFURlNfQU5DSE9SLCAnZnMvc3RhdGZzLmMnLCAnc3RhdGljIGludCBzdXNmc19zdGF0ZnNfYnlfZGVudHJ5KCcpCiAgICBwcmludCgic3RhdGZzLmM6IGRla2xhcmFzaSBleHRlcm4gZGlwaW5kYWgga2UgYXRhcyBzdXNmc19zdGF0ZnNfYnlfZGVudHJ5KCkiKQogICAgcmV0dXJuIHMucmVwbGFjZShTVEFURlNfQU5DSE9SLCBTVEFURlNfREVDTCArIFNUQVRGU19BTkNIT1IsIDEpCgojID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQojIDQpIGZzL3N1c2ZzLmMgLSBzZWN1cml0eV9zYl9zdGF0ZnMoKSBidXR1aCA8bGludXgvc2VjdXJpdHkuaD4uCiMgPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09ClNVU0ZTX0lOQ19BTkNIT1IgPSAiI2luY2x1ZGUgPGxpbnV4L2ZzLmg+XG4iClNVU0ZTX0lOQyA9ICIjaW5jbHVkZSA8bGludXgvc2VjdXJpdHkuaD5cbiIKCmRlZiBmaXhfc3VzZnNfaW5jbHVkZShzKToKICAgIGlmIFNVU0ZTX0lOQyBpbiBzOgogICAgICAgIHByaW50KCJzdXNmcy5jOiA8bGludXgvc2VjdXJpdHkuaD4gc3VkYWggYWRhLCBkaWxld2F0aSIpCiAgICAgICAgcmV0dXJuIE5vbmUKICAgIG5lZWQocywgU1VTRlNfSU5DX0FOQ0hPUiwgJ2ZzL3N1c2ZzLmMnLCAnI2luY2x1ZGUgPGxpbnV4L2ZzLmg+JykKICAgIHByaW50KCJzdXNmcy5jOiAjaW5jbHVkZSA8bGludXgvc2VjdXJpdHkuaD4gZGl0YW1iYWhrYW4gKHVudHVrIHNlY3VyaXR5X3NiX3N0YXRmcykiKQogICAgcmV0dXJuIHMucmVwbGFjZShTVVNGU19JTkNfQU5DSE9SLCBTVVNGU19JTkNfQU5DSE9SICsgU1VTRlNfSU5DLCAxKQoKIyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KIyA1KSBmcy9zdXNmcy5jIC0gc2F0dSBjYWxsIHNpdGUgc3VzZnNfbWFya19pbm9kZV9zdXNfa3N0YXQoKSBrZXRpbmdnYWxhbgojICAgIGFyZ3VtZW4ga2UtMyAoaXNfdXBkYXRlKSB3YWt0dSBzaWduYXR1cmUtbnlhIGRpdGFtYmFoLiBKYWx1ciBpbmkgYWRhbGFoCiMgICAgImlmIG5vIGR1cGxpY2F0ZWQsIGFkZCBpdCB0byBsaXN0IiA9IHBlbmFtYmFoYW4gYmFydSwgamFkaSBpc191cGRhdGU9ZmFsc2UKIyAgICAoc2FtYSBzZXBlcnRpIGNhbGwgc2l0ZSBzZWplbmlzIGRpIGF0YXNueWEpLgojID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQpDQUxMX0JBRCA9ICJzdXNmc19tYXJrX2lub2RlX3N1c19rc3RhdChuZXdfZW50cnktPmluZm8udGFyZ2V0X3BhdGhuYW1lLCBuZXdfZW50cnkpO1xuIgpDQUxMX09LID0gInN1c2ZzX21hcmtfaW5vZGVfc3VzX2tzdGF0KG5ld19lbnRyeS0+aW5mby50YXJnZXRfcGF0aG5hbWUsIG5ld19lbnRyeSwgZmFsc2UpO1xuIgoKZGVmIGZpeF9zdXNmc19jYWxsKHMpOgogICAgaWYgQ0FMTF9CQUQgbm90IGluIHM6CiAgICAgICAgcHJpbnQoInN1c2ZzLmM6IGNhbGwgc3VzZnNfbWFya19pbm9kZV9zdXNfa3N0YXQgc3VkYWggMyBhcmd1bWVuLCBkaWxld2F0aSIpCiAgICAgICAgcmV0dXJuIE5vbmUKICAgIG5lZWQocywgQ0FMTF9CQUQsICdmcy9zdXNmcy5jJywgJ3N1c2ZzX21hcmtfaW5vZGVfc3VzX2tzdGF0KC4uLCAuLikgMi1hcmd1bWVuJykKICAgIHByaW50KCJzdXNmcy5jOiBhcmd1bWVuIGlzX3VwZGF0ZT1mYWxzZSBkaXRhbWJhaGthbiBrZSBjYWxsIHN1c2ZzX21hcmtfaW5vZGVfc3VzX2tzdGF0KCkiKQogICAgcmV0dXJuIHMucmVwbGFjZShDQUxMX0JBRCwgQ0FMTF9PSywgMSkKCiMgPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09CiMgNikgZnMvcHJvYy9mZC5jIC0gYmxvayBTVVNfTU9VTlQga3VyYW5nIHNhdHUgJ30nOiBhZGEgZHVhICdpZicgeWFuZyBkaWJ1a2EKIyAgICB0YXBpIGN1bWEgc2F0dSB5YW5nIGRpdHV0dXAgc2ViZWx1bSBsYWJlbCBvcmlnX2Zsb3csIGphZGkgc2VsdXJ1aCBzaXNhCiMgICAgZmlsZSBpa3V0IHRlcnRlbGFuIGtlIGRhbGFtIHNlcV9zaG93KCkgKCJmdW5jdGlvbiBkZWZpbml0aW9uIGlzIG5vdAojICAgIGFsbG93ZWQgaGVyZSIpLiBJbmkgYnVnIHNlamVuaXMgeWcgYmFydSBzYWphIHVwc3RyZWFtIHBlcmJhaWtpIGRpCiMgICAgZnMvbm90aWZ5L2ZkaW5mby5jIHRhcGkgdGVybGV3YXQgZGkgc2luaS4KIyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KRkRfT0xEID0gIlx0XHRnb3RvIG9yaWdfZmxvdztcblx0fVxub3JpZ19mbG93OlxuI2VuZGlmIC8vICNpZmRlZiBDT05GSUdfS1NVX1NVU0ZTX1NVU19NT1VOVFxuIgpGRF9ORVcgPSAiXHRcdGdvdG8gb3JpZ19mbG93O1xuXHRcdH1cblx0fVxub3JpZ19mbG93OlxuI2VuZGlmIC8vICNpZmRlZiBDT05GSUdfS1NVX1NVU0ZTX1NVU19NT1VOVFxuIgoKZGVmIGZpeF9mZChzKToKICAgIGlmIEZEX05FVyBpbiBzOgogICAgICAgIHByaW50KCJwcm9jL2ZkLmM6IGJyYWNlIHN1ZGFoIHNlaW1iYW5nLCBkaWxld2F0aSIpCiAgICAgICAgcmV0dXJuIE5vbmUKICAgIG5lZWQocywgRkRfT0xELCAnZnMvcHJvYy9mZC5jJywgIidnb3RvIG9yaWdfZmxvdzsgfSBvcmlnX2Zsb3c6JyIpCiAgICBwcmludCgicHJvYy9mZC5jOiBzYXR1ICd9JyB5YW5nIGhpbGFuZyBkaSBibG9rIFNVU19NT1VOVCBkaXRhbWJhaGthbiIpCiAgICByZXR1cm4gcy5yZXBsYWNlKEZEX09MRCwgRkRfTkVXLCAxKQoKcncoJ2ZzL3N0YXQuYycsIGZpeF9zdGF0X21udF9pZCkKcncoJ2ZzL25hbWVpLmMnLCBmaXhfbmFtZWkpCnJ3KCdmcy9zdGF0LmMnLCBmaXhfc3RhdF9kZWNsKQpydygnZnMvc3RhdGZzLmMnLCBmaXhfc3RhdGZzKQpydygnZnMvc3VzZnMuYycsIGZpeF9zdXNmc19pbmNsdWRlKQpydygnZnMvc3VzZnMuYycsIGZpeF9zdXNmc19jYWxsKQpydygnZnMvcHJvYy9mZC5jJywgZml4X2ZkKQoKIyAtLS0tLS0tLS0tLS0tLS0tIHZlcmlmaWthc2kgYWtoaXIgLS0tLS0tLS0tLS0tLS0tLQpkZWYgcmQocCk6CiAgICByZXR1cm4gb3BlbihwLCBlbmNvZGluZz0ndXRmLTgnLCBlcnJvcnM9J3N1cnJvZ2F0ZWVzY2FwZScpLnJlYWQoKQoKZXJyID0gW10Kc3QgPSByZCgnZnMvc3RhdC5jJykKaWYgcmUuc2VhcmNoKE1OVF9QQVQsIHN0LCByZS5NKToKICAgIGVyci5hcHBlbmQoImZzL3N0YXQuYyBtYXNpaCBtZW1ha2FpIHN0YXQtPm1udF9pZCAoYXNzaWdubWVudCBha3RpZiwgYnVrYW4ga29tZW50YXIpIikKaWYgJ2ZpbGVuYW1lX2xvb2t1cCgnIGluIHN0IGFuZCAnZXh0ZXJuIGludCBmaWxlbmFtZV9sb29rdXAoJyBub3QgaW4gc3Q6CiAgICBlcnIuYXBwZW5kKCJmcy9zdGF0LmMgbWVtYW5nZ2lsIGZpbGVuYW1lX2xvb2t1cCgpIHRhbnBhIGRla2xhcmFzaSIpCmlmIHJlLnNlYXJjaChyJ15cKycsIHN0LCByZS5NKToKICAgIGVyci5hcHBlbmQoImZzL3N0YXQuYyBtYXNpaCBwdW55YSBiYXJpcyBiZXJhd2FsYW4gJysnIChzaXNhIG1hcmtlciBkaWZmKSIpCm5tID0gcmQoJ2ZzL25hbWVpLmMnKQppZiAnc3RhdGljIGludCBmaWxlbmFtZV9sb29rdXAoJyBpbiBubToKICAgIGVyci5hcHBlbmQoImZzL25hbWVpLmM6IGZpbGVuYW1lX2xvb2t1cCBtYXNpaCBzdGF0aWMiKQpzZiA9IHJkKCdmcy9zdGF0ZnMuYycpCmlmIHNmLmZpbmQoJ2V4dGVybiBpbnQgc3VzZnNfc3VzX2tzdGF0X3Nwb29mX3Zmc19zdGF0ZnMnKSA+IHNmLmZpbmQoJ3N0YXRpYyBpbnQgc3VzZnNfc3RhdGZzX2J5X2RlbnRyeScpOgogICAgZXJyLmFwcGVuZCgiZnMvc3RhdGZzLmM6IGV4dGVybiBtYXNpaCBkaSBiYXdhaCBwZW1ha2FpYW4iKQpzdSA9IHJkKCdmcy9zdXNmcy5jJykKaWYgJyNpbmNsdWRlIDxsaW51eC9zZWN1cml0eS5oPicgbm90IGluIHN1OgogICAgZXJyLmFwcGVuZCgiZnMvc3VzZnMuYzogPGxpbnV4L3NlY3VyaXR5Lmg+IGJlbHVtIGFkYSIpCmlmIENBTExfQkFEIGluIHN1OgogICAgZXJyLmFwcGVuZCgiZnMvc3VzZnMuYzogbWFzaWggYWRhIGNhbGwgc3VzZnNfbWFya19pbm9kZV9zdXNfa3N0YXQgMi1hcmd1bWVuIikKZmQgPSByZCgnZnMvcHJvYy9mZC5jJykKaWYgZmQuY291bnQoJ3snKSAhPSBmZC5jb3VudCgnfScpOgogICAgZXJyLmFwcGVuZCgiZnMvcHJvYy9mZC5jOiBicmFjZSB0aWRhayBzZWltYmFuZyAoez0lZCwgfT0lZCkiICUgKGZkLmNvdW50KCd7JyksIGZkLmNvdW50KCd9JykpKQppZiBlcnI6CiAgICBwcmludCgiXG5zdXNmcy1maXg6IFZFUklGSUtBU0kgR0FHQUw6IikKICAgIGZvciBlIGluIGVycjoKICAgICAgICBwcmludCgiICAtICIgKyBlKQogICAgc3lzLmV4aXQoMSkKcHJpbnQoInN1c2ZzLWZpeDogT0ssIDQgZmlsZSBTVVNGUyBkaXZlcmlmaWthc2kiKQo=" | base64 -d > /tmp/fix_susfs_414.py
+          echo "IyEvdXNyL2Jpbi9lbnYgcHl0aG9uMwoiIiIKUGVyYmFpa2kgYnVnIHBhdGNoIFNVU0ZTIHYyLjMuMCAoSmFja0ExbHRtYW4gbWFpbmxpbmUgQGYxMDA0NTQ1ZDEpIHBhZGEga2VybmVsIDQuMTQuCgpTZW11YSB5YW5nIGRpcGVyYmFpa2kgZGkgc2luaSBhZGFsYWggY2FjYXQgVVBTVFJFQU0sIGJ1a2FuIHNhbGFoIHdvcmtmbG93OiBwYXRjaAppdHUgZGl0dWxpcyB1bnR1ayBrZXJuZWwgNS4xMCsgbGFsdSBkaS1iYWNrcG9ydCBzZXRlbmdhaCBqYWxhbiwgc2VoaW5nZ2EgNCBmaWxlCmdhZ2FsIGNvbXBpbGUuIFRpYXAgcGVyYmFpa2FuIGlkZW1wb3RlbiBkYW4gbWVtdmFsaWRhc2kgYW5jaG9yLW55YSAoa2FsYXUKc3RydWt0dXIgYmVydWJhaCAtPiBiZXJoZW50aSBkZ24gcGVzYW4gamVsYXMsIGJ1a2FuIG1lbmFtYmFsIHNlcmFtcGFuZ2FuKS4KIiIiCmltcG9ydCByZSwgc3lzCgpkZWYgcncocGF0aCwgZm4pOgogICAgd2l0aCBvcGVuKHBhdGgsIGVuY29kaW5nPSd1dGYtOCcsIGVycm9ycz0nc3Vycm9nYXRlZXNjYXBlJykgYXMgZjoKICAgICAgICBzID0gZi5yZWFkKCkKICAgIG91dCA9IGZuKHMpCiAgICBpZiBvdXQgaXMgTm9uZToKICAgICAgICByZXR1cm4KICAgIHdpdGggb3BlbihwYXRoLCAndycsIGVuY29kaW5nPSd1dGYtOCcsIGVycm9ycz0nc3Vycm9nYXRlZXNjYXBlJykgYXMgZjoKICAgICAgICBmLndyaXRlKG91dCkKCmRlZiBuZWVkKHMsIHR4dCwgcGF0aCwgbGFiZWwsIG49MSk6CiAgICBjID0gcy5jb3VudCh0eHQpCiAgICBpZiBjICE9IG46CiAgICAgICAgc3lzLmV4aXQoInN1c2ZzLWZpeDogYW5jaG9yICclcycga2V0ZW11ICVkIGthbGkgKGhhcnVzICVkKSBkaSAlcyIgJSAobGFiZWwsIGMsIG4sIHBhdGgpKQoKIyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KIyAxKSBmcy9zdGF0LmMgLSBzdGF0LT5tbnRfaWQgdGlkYWsgYWRhIGRpIHN0cnVjdCBrc3RhdCBzZWJlbHVtIDUuMTAuCiMgICAgc3VzZnMuYyBzZW5kaXJpIG1lbmphZ2EgZmllbGQgaW5pIGRnbgojICAgICAgICAjaWYgTElOVVhfVkVSU0lPTl9DT0RFID49IEtFUk5FTF9WRVJTSU9OKDUsIDEwLCAwKQojICAgIHRhcGkgaHVuayBmcy9zdGF0LmMgbHVwYSBtZW1ha2FpIHBlbmphZ2EgeWFuZyBzYW1hLgojICAgIHJlc3VsdF9tYXNrIHRldGFwIGRpLXNldCwgamFkaSBqYWx1ciBzcG9vZmluZyB0aWRhayBiZXJ1YmFoLgojID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQpNTlRfUEFUID0gcideWyBcdF0qc3RhdC0+bW50X2lkID0gcmVhbF9tb3VudFwocGF0aC0+bW50XCktPm1udF9pZDtcbicKCmRlZiBmaXhfc3RhdF9tbnRfaWQocyk6CiAgICAjIFNlamFrIEphY2tBMWx0bWFuQDFjNDQyODc3ICgiZml4OiBuZWVkbid0IHJlYWxfbW91bnQiKSB1cHN0cmVhbSBUSURBSwogICAgIyBtZW5naGFwdXMgYXNzaWdubWVudCBpbmkgbWVsYWlua2FuIE1FTkdPTUVOVEFSSU5ZQSBtZW5qYWRpCiAgICAjICAgICAvLyBzdGF0LT5tbnRfaWQgPSByZWFsX21vdW50KHBhdGgtPm1udCktPm1udF9pZDsKICAgICMgSmFkaSBwZW5jYXJpYW4gc3Vic3RyaW5nICJzdGF0LT5tbnRfaWQiIG1hc2loIG1lbmVtdWthbm55YSBESSBEQUxBTQogICAgIyBrb21lbnRhciAtIGl0dSBidWthbiB0YW5kYSBrb2RlbnlhIGFrdGlmLiBZYW5nIGRpaGl0dW5nIGhhcnVzIGFzc2lnbm1lbnQKICAgICMgeWFuZyBiZW5hci1iZW5hciBha3RpZjsgcmVnZXggZGkgYmF3YWggYmVyamFuZ2thciBeWyBcdF0qIHNlaGluZ2dhIGJhcmlzCiAgICAjIHlhbmcgZGlhd2FsaSAiLy8iIHRpZGFrIGlrdXQgY29jb2suCiAgICBuID0gbGVuKHJlLmZpbmRhbGwoTU5UX1BBVCwgcywgcmUuTSkpCiAgICBpZiBuID09IDA6CiAgICAgICAgcHJpbnQoInN0YXQuYzogdGlkYWsgYWRhIGFzc2lnbm1lbnQgc3RhdC0+bW50X2lkIGFrdGlmIChzdWRhaCBkaWtvbWVudGFyaS9kaWhhcHVzIHVwc3RyZWFtKSwgZGlsZXdhdGkiKQogICAgICAgIHJldHVybiBOb25lCiAgICBpZiBuICE9IDI6CiAgICAgICAgc3lzLmV4aXQoInN1c2ZzLWZpeDogYXNzaWdubWVudCBzdGF0LT5tbnRfaWQgYWt0aWYga2V0ZW11ICVkIGthbGkgZGkgZnMvc3RhdC5jIChoYXJ1cyAwIGF0YXUgMikiICUgbikKICAgIHMgPSByZS5zdWIoTU5UX1BBVCwgJycsIHMsIGZsYWdzPXJlLk0pCiAgICBwcmludCgic3RhdC5jOiAyIGFzc2lnbm1lbnQgc3RhdC0+bW50X2lkIGRpYnVhbmcgKGtzdGF0IDQuMTQgdGlkYWsgcHVueWEgZmllbGQgaXR1KSIpCiAgICByZXR1cm4gcwoKIyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KIyAyKSBmcy9zdGF0LmMgKyBmcy9uYW1laS5jIC0gZmlsZW5hbWVfbG9va3VwKCkuCiMgICAgc3VzZnNfaW5saW5lX2hvb2tfcGF0Y2hlcy5zaCBtZW55aXNpcGthbiBwZW1hbmdnaWxhbiBmaWxlbmFtZV9sb29rdXAoKQojICAgIGtlIGZzL3N0YXQuYywgVEFQSSBwZW5qYWdhbnlhCiMgICAgICAgIGlmICEgZ3JlcCAtcSAiaW50ZXJuYWwuaCIgZnMvc3RhdC5jICYmICEgZ3JlcCAic3RhdGljIGludCBmaWxlbmFtZV9sb29rdXAiIGZzL25hbWVpLmMKIyAgICBtZW1idWF0IGRla2xhcmFzaW55YSBUSURBSyBpa3V0IGRpc2lzaXBrYW4ganVzdHJ1IGtldGlrYSBmdW5nc2lueWEgc3RhdGljCiMgICAgKGthc3VzIDQuMTQpIC0gamFkaSBrb2RlbnlhIG1hc3VrIHRhbnBhIGRla2xhcmFzaSBhcGEgcHVuLiBTb2x1c2lueWE6CiMgICAgYnVhbmcgJ3N0YXRpYycgZGkgZGVmaW5pc2kgbmFtZWkuYyBsYWx1IGRla2xhcmFzaWthbiBleHRlcm4gZGkgc3RhdC5jLgojID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQpOQU1FSV9PTEQgPSAic3RhdGljIGludCBmaWxlbmFtZV9sb29rdXAoaW50IGRmZCwgc3RydWN0IGZpbGVuYW1lICpuYW1lLCB1bnNpZ25lZCBmbGFncyxcbiIKTkFNRUlfTkVXID0gImludCBmaWxlbmFtZV9sb29rdXAoaW50IGRmZCwgc3RydWN0IGZpbGVuYW1lICpuYW1lLCB1bnNpZ25lZCBmbGFncyxcbiIKCmRlZiBmaXhfbmFtZWkocyk6CiAgICBpZiBOQU1FSV9PTEQgbm90IGluIHM6CiAgICAgICAgcHJpbnQoIm5hbWVpLmM6IGZpbGVuYW1lX2xvb2t1cCBzdWRhaCBub24tc3RhdGljLCBkaWxld2F0aSIpCiAgICAgICAgcmV0dXJuIE5vbmUKICAgIG5lZWQocywgTkFNRUlfT0xELCAnZnMvbmFtZWkuYycsICdzdGF0aWMgaW50IGZpbGVuYW1lX2xvb2t1cCgnKQogICAgcHJpbnQoIm5hbWVpLmM6ICdzdGF0aWMnIGRpYnVhbmcgZGFyaSBkZWZpbmlzaSBmaWxlbmFtZV9sb29rdXAoKSIpCiAgICByZXR1cm4gcy5yZXBsYWNlKE5BTUVJX09MRCwgTkFNRUlfTkVXLCAxKQoKU1RBVF9ERUNMID0gKCJleHRlcm4gaW50IGZpbGVuYW1lX2xvb2t1cChpbnQgZGZkLCBzdHJ1Y3QgZmlsZW5hbWUgKm5hbWUsIHVuc2lnbmVkIGZsYWdzLFxuIgogICAgICAgICAgICAgIlx0XHRcdHN0cnVjdCBwYXRoICpwYXRoLCBzdHJ1Y3QgcGF0aCAqcm9vdCk7XG4iKQpTVEFUX0FOQ0hPUiA9ICJleHRlcm4gaW50IGtzdV9oYW5kbGVfc3RhdChpbnQgKmRmZCwgc3RydWN0IGZpbGVuYW1lICoqZmlsZW5hbWUsIGludCAqZmxhZ3MpO1xuIgoKZGVmIGZpeF9zdGF0X2RlY2wocyk6CiAgICBpZiAiZXh0ZXJuIGludCBmaWxlbmFtZV9sb29rdXAoIiBpbiBzOgogICAgICAgIHByaW50KCJzdGF0LmM6IGRla2xhcmFzaSBmaWxlbmFtZV9sb29rdXAgc3VkYWggYWRhLCBkaWxld2F0aSIpCiAgICAgICAgcmV0dXJuIE5vbmUKICAgIGlmICJmaWxlbmFtZV9sb29rdXAoIiBub3QgaW4gczoKICAgICAgICBwcmludCgic3RhdC5jOiBmaWxlbmFtZV9sb29rdXAgdGlkYWsgZGlwYWthaSAoaG9vayBzY3JpcHQgYmVydWJhaD8pLCBkaWxld2F0aSIpCiAgICAgICAgcmV0dXJuIE5vbmUKICAgIG5lZWQocywgU1RBVF9BTkNIT1IsICdmcy9zdGF0LmMnLCAnZXh0ZXJuIGludCBrc3VfaGFuZGxlX3N0YXQoJykKICAgIHByaW50KCJzdGF0LmM6IGRla2xhcmFzaSBleHRlcm4gZmlsZW5hbWVfbG9va3VwKCkgZGl0YW1iYWhrYW4iKQogICAgcmV0dXJuIHMucmVwbGFjZShTVEFUX0FOQ0hPUiwgU1RBVF9BTkNIT1IgKyBTVEFUX0RFQ0wsIDEpCgojID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQojIDMpIGZzL3N0YXRmcy5jIC0gc3VzZnNfc3RhdGZzX2J5X2RlbnRyeSgpIG1lbWFuZ2dpbAojICAgIHN1c2ZzX3N1c19rc3RhdF9zcG9vZl92ZnNfc3RhdGZzKCkgcGFkYWhhbCBibG9rIGV4dGVybi1ueWEgZGl0YXJ1aAojICAgIFNFU1VEQUggZnVuZ3NpIGl0dS4gRGVrbGFyYXNpIGRpdWxhbmcgZGkgYXRhcyAoZGVrbGFyYXNpIGdhbmRhIHNhaCBkaSBDKS4KIyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KU1RBVEZTX0FOQ0hPUiA9ICJzdGF0aWMgaW50IHN1c2ZzX3N0YXRmc19ieV9kZW50cnkoc3RydWN0IGRlbnRyeSAqZGVudHJ5LCBzdHJ1Y3Qga3N0YXRmcyAqYnVmLCBib29sICppc19mdXNlKVxuIgpTVEFURlNfREVDTCA9ICgiZXh0ZXJuIGJvb2wgc3VzZnNfaXNfaW5vZGVfc3VzX2tzdGF0KHN0cnVjdCBpbm9kZSAqaW5vZGUsIGJvb2wgKm91dF9pc19mdXNlKTtcbiIKICAgICAgICAgICAgICAgImV4dGVybiBpbnQgc3VzZnNfc3VzX2tzdGF0X3Nwb29mX3Zmc19zdGF0ZnMoc3RydWN0IGlub2RlICppbm9kZSwgc3RydWN0IGtzdGF0ZnMgKmJ1ZiwgYm9vbCAqaXNfZnVzZSk7XG4iKQoKZGVmIGZpeF9zdGF0ZnMocyk6CiAgICBpX2RlY2wgPSBzLmZpbmQoImV4dGVybiBpbnQgc3VzZnNfc3VzX2tzdGF0X3Nwb29mX3Zmc19zdGF0ZnMiKQogICAgaV91c2UgPSBzLmZpbmQoU1RBVEZTX0FOQ0hPUikKICAgIGlmIGlfdXNlIDwgMDoKICAgICAgICBzeXMuZXhpdCgic3VzZnMtZml4OiBzdXNmc19zdGF0ZnNfYnlfZGVudHJ5KCkgdGlkYWsga2V0ZW11IGRpIGZzL3N0YXRmcy5jIikKICAgIGlmIDAgPD0gaV9kZWNsIDwgaV91c2U6CiAgICAgICAgcHJpbnQoInN0YXRmcy5jOiBleHRlcm4gc3VkYWggbWVuZGFodWx1aSBwZW1ha2FpYW4sIGRpbGV3YXRpIikKICAgICAgICByZXR1cm4gTm9uZQogICAgbmVlZChzLCBTVEFURlNfQU5DSE9SLCAnZnMvc3RhdGZzLmMnLCAnc3RhdGljIGludCBzdXNmc19zdGF0ZnNfYnlfZGVudHJ5KCcpCiAgICBwcmludCgic3RhdGZzLmM6IGRla2xhcmFzaSBleHRlcm4gZGlwaW5kYWgga2UgYXRhcyBzdXNmc19zdGF0ZnNfYnlfZGVudHJ5KCkiKQogICAgcmV0dXJuIHMucmVwbGFjZShTVEFURlNfQU5DSE9SLCBTVEFURlNfREVDTCArIFNUQVRGU19BTkNIT1IsIDEpCgojID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQojIDQpIGZzL3N1c2ZzLmMgLSBzZWN1cml0eV9zYl9zdGF0ZnMoKSBidXR1aCA8bGludXgvc2VjdXJpdHkuaD4uCiMgPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09ClNVU0ZTX0lOQ19BTkNIT1IgPSAiI2luY2x1ZGUgPGxpbnV4L2ZzLmg+XG4iClNVU0ZTX0lOQyA9ICIjaW5jbHVkZSA8bGludXgvc2VjdXJpdHkuaD5cbiIKCmRlZiBmaXhfc3VzZnNfaW5jbHVkZShzKToKICAgIGlmIFNVU0ZTX0lOQyBpbiBzOgogICAgICAgIHByaW50KCJzdXNmcy5jOiA8bGludXgvc2VjdXJpdHkuaD4gc3VkYWggYWRhLCBkaWxld2F0aSIpCiAgICAgICAgcmV0dXJuIE5vbmUKICAgIG5lZWQocywgU1VTRlNfSU5DX0FOQ0hPUiwgJ2ZzL3N1c2ZzLmMnLCAnI2luY2x1ZGUgPGxpbnV4L2ZzLmg+JykKICAgIHByaW50KCJzdXNmcy5jOiAjaW5jbHVkZSA8bGludXgvc2VjdXJpdHkuaD4gZGl0YW1iYWhrYW4gKHVudHVrIHNlY3VyaXR5X3NiX3N0YXRmcykiKQogICAgcmV0dXJuIHMucmVwbGFjZShTVVNGU19JTkNfQU5DSE9SLCBTVVNGU19JTkNfQU5DSE9SICsgU1VTRlNfSU5DLCAxKQoKIyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KIyA1KSBmcy9zdXNmcy5jIC0gc2F0dSBjYWxsIHNpdGUgc3VzZnNfbWFya19pbm9kZV9zdXNfa3N0YXQoKSBrZXRpbmdnYWxhbgojICAgIGFyZ3VtZW4ga2UtMyAoaXNfdXBkYXRlKSB3YWt0dSBzaWduYXR1cmUtbnlhIGRpdGFtYmFoLiBKYWx1ciBpbmkgYWRhbGFoCiMgICAgImlmIG5vIGR1cGxpY2F0ZWQsIGFkZCBpdCB0byBsaXN0IiA9IHBlbmFtYmFoYW4gYmFydSwgamFkaSBpc191cGRhdGU9ZmFsc2UKIyAgICAoc2FtYSBzZXBlcnRpIGNhbGwgc2l0ZSBzZWplbmlzIGRpIGF0YXNueWEpLgojID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQpDQUxMX0JBRCA9ICJzdXNmc19tYXJrX2lub2RlX3N1c19rc3RhdChuZXdfZW50cnktPmluZm8udGFyZ2V0X3BhdGhuYW1lLCBuZXdfZW50cnkpO1xuIgpDQUxMX09LID0gInN1c2ZzX21hcmtfaW5vZGVfc3VzX2tzdGF0KG5ld19lbnRyeS0+aW5mby50YXJnZXRfcGF0aG5hbWUsIG5ld19lbnRyeSwgZmFsc2UpO1xuIgoKZGVmIGZpeF9zdXNmc19jYWxsKHMpOgogICAgaWYgQ0FMTF9CQUQgbm90IGluIHM6CiAgICAgICAgcHJpbnQoInN1c2ZzLmM6IGNhbGwgc3VzZnNfbWFya19pbm9kZV9zdXNfa3N0YXQgc3VkYWggMyBhcmd1bWVuLCBkaWxld2F0aSIpCiAgICAgICAgcmV0dXJuIE5vbmUKICAgIG5lZWQocywgQ0FMTF9CQUQsICdmcy9zdXNmcy5jJywgJ3N1c2ZzX21hcmtfaW5vZGVfc3VzX2tzdGF0KC4uLCAuLikgMi1hcmd1bWVuJykKICAgIHByaW50KCJzdXNmcy5jOiBhcmd1bWVuIGlzX3VwZGF0ZT1mYWxzZSBkaXRhbWJhaGthbiBrZSBjYWxsIHN1c2ZzX21hcmtfaW5vZGVfc3VzX2tzdGF0KCkiKQogICAgcmV0dXJuIHMucmVwbGFjZShDQUxMX0JBRCwgQ0FMTF9PSywgMSkKCiMgPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09CiMgNikgZnMvcHJvYy9mZC5jIC0gYmxvayBTVVNfTU9VTlQga3VyYW5nIHNhdHUgJ30nOiBhZGEgZHVhICdpZicgeWFuZyBkaWJ1a2EKIyAgICB0YXBpIGN1bWEgc2F0dSB5YW5nIGRpdHV0dXAgc2ViZWx1bSBsYWJlbCBvcmlnX2Zsb3csIGphZGkgc2VsdXJ1aCBzaXNhCiMgICAgZmlsZSBpa3V0IHRlcnRlbGFuIGtlIGRhbGFtIHNlcV9zaG93KCkgKCJmdW5jdGlvbiBkZWZpbml0aW9uIGlzIG5vdAojICAgIGFsbG93ZWQgaGVyZSIpLiBJbmkgYnVnIHNlamVuaXMgeWcgYmFydSBzYWphIHVwc3RyZWFtIHBlcmJhaWtpIGRpCiMgICAgZnMvbm90aWZ5L2ZkaW5mby5jIHRhcGkgdGVybGV3YXQgZGkgc2luaS4KIyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KRkRfT0xEID0gIlx0XHRnb3RvIG9yaWdfZmxvdztcblx0fVxub3JpZ19mbG93OlxuI2VuZGlmIC8vICNpZmRlZiBDT05GSUdfS1NVX1NVU0ZTX1NVU19NT1VOVFxuIgpGRF9ORVcgPSAiXHRcdGdvdG8gb3JpZ19mbG93O1xuXHRcdH1cblx0fVxub3JpZ19mbG93OlxuI2VuZGlmIC8vICNpZmRlZiBDT05GSUdfS1NVX1NVU0ZTX1NVU19NT1VOVFxuIgoKZGVmIGZpeF9mZChzKToKICAgIGlmIEZEX05FVyBpbiBzOgogICAgICAgIHByaW50KCJwcm9jL2ZkLmM6IGJyYWNlIHN1ZGFoIHNlaW1iYW5nLCBkaWxld2F0aSIpCiAgICAgICAgcmV0dXJuIE5vbmUKICAgIG5lZWQocywgRkRfT0xELCAnZnMvcHJvYy9mZC5jJywgIidnb3RvIG9yaWdfZmxvdzsgfSBvcmlnX2Zsb3c6JyIpCiAgICBwcmludCgicHJvYy9mZC5jOiBzYXR1ICd9JyB5YW5nIGhpbGFuZyBkaSBibG9rIFNVU19NT1VOVCBkaXRhbWJhaGthbiIpCiAgICByZXR1cm4gcy5yZXBsYWNlKEZEX09MRCwgRkRfTkVXLCAxKQoKcncoJ2ZzL3N0YXQuYycsIGZpeF9zdGF0X21udF9pZCkKcncoJ2ZzL25hbWVpLmMnLCBmaXhfbmFtZWkpCnJ3KCdmcy9zdGF0LmMnLCBmaXhfc3RhdF9kZWNsKQpydygnZnMvc3RhdGZzLmMnLCBmaXhfc3RhdGZzKQpydygnZnMvc3VzZnMuYycsIGZpeF9zdXNmc19pbmNsdWRlKQpydygnZnMvc3VzZnMuYycsIGZpeF9zdXNmc19jYWxsKQpydygnZnMvcHJvYy9mZC5jJywgZml4X2ZkKQoKIyAtLS0tLS0tLS0tLS0tLS0tIHZlcmlmaWthc2kgYWtoaXIgLS0tLS0tLS0tLS0tLS0tLQpkZWYgcmQocCk6CiAgICByZXR1cm4gb3BlbihwLCBlbmNvZGluZz0ndXRmLTgnLCBlcnJvcnM9J3N1cnJvZ2F0ZWVzY2FwZScpLnJlYWQoKQoKZXJyID0gW10Kc3QgPSByZCgnZnMvc3RhdC5jJykKaWYgcmUuc2VhcmNoKE1OVF9QQVQsIHN0LCByZS5NKToKICAgIGVyci5hcHBlbmQoImZzL3N0YXQuYyBtYXNpaCBtZW1ha2FpIHN0YXQtPm1udF9pZCAoYXNzaWdubWVudCBha3RpZiwgYnVrYW4ga29tZW50YXIpIikKaWYgJ2ZpbGVuYW1lX2xvb2t1cCgnIGluIHN0IGFuZCAnZXh0ZXJuIGludCBmaWxlbmFtZV9sb29rdXAoJyBub3QgaW4gc3Q6CiAgICBlcnIuYXBwZW5kKCJmcy9zdGF0LmMgbWVtYW5nZ2lsIGZpbGVuYW1lX2xvb2t1cCgpIHRhbnBhIGRla2xhcmFzaSIpCmlmIHJlLnNlYXJjaChyJ15cKycsIHN0LCByZS5NKToKICAgIGVyci5hcHBlbmQoImZzL3N0YXQuYyBtYXNpaCBwdW55YSBiYXJpcyBiZXJhd2FsYW4gJysnIChzaXNhIG1hcmtlciBkaWZmKSIpCm5tID0gcmQoJ2ZzL25hbWVpLmMnKQppZiAnc3RhdGljIGludCBmaWxlbmFtZV9sb29rdXAoJyBpbiBubToKICAgIGVyci5hcHBlbmQoImZzL25hbWVpLmM6IGZpbGVuYW1lX2xvb2t1cCBtYXNpaCBzdGF0aWMiKQpzZiA9IHJkKCdmcy9zdGF0ZnMuYycpCiMgUGVtZXJpa3NhYW4gaW5pIGR1bHUgYGZpbmQoZGVjbCkgPiBmaW5kKHVzZSlgLiBLYWxhdSBleHRlcm4tbnlhIFRJREFLIEFEQSBzYW1hCiMgc2VrYWxpLCBmaW5kKCkgbWVuZ2VtYmFsaWthbiAtMSBkYW4gLTEgPiBuIHNlbGFsdSBGYWxzZSAtPiBsb2xvcyBwYWRhaGFsCiMgZnMvc3RhdGZzLmMgdGlkYWsgYmlzYSBjb21waWxlLiBTZWthcmFuZyBleHRlcm4gV0FKSUIgYWRhIERBTiBtZW5kYWh1bHVpLgppX2RlY2wgPSBzZi5maW5kKCdleHRlcm4gaW50IHN1c2ZzX3N1c19rc3RhdF9zcG9vZl92ZnNfc3RhdGZzJykKaV91c2UgPSBzZi5maW5kKFNUQVRGU19BTkNIT1IpCmlmIGlfdXNlIDwgMDoKICAgIGVyci5hcHBlbmQoImZzL3N0YXRmcy5jOiBzdXNmc19zdGF0ZnNfYnlfZGVudHJ5KCkgaGlsYW5nIChwYXRjaCBTVVNGUyB0aWRhayB0ZXItYXBwbHk/KSIpCmVsaWYgbm90ICgwIDw9IGlfZGVjbCA8IGlfdXNlKToKICAgIGVyci5hcHBlbmQoImZzL3N0YXRmcy5jOiBleHRlcm4gc3VzZnNfc3VzX2tzdGF0X3Nwb29mX3Zmc19zdGF0ZnMgdGlkYWsgYWRhIGF0YXUgIgogICAgICAgICAgICAgICAibWFzaWggZGkgYmF3YWggcGVtYWthaWFuIChkZWNsPSVkLCB1c2U9JWQpIiAlIChpX2RlY2wsIGlfdXNlKSkKc3UgPSByZCgnZnMvc3VzZnMuYycpCmlmICcjaW5jbHVkZSA8bGludXgvc2VjdXJpdHkuaD4nIG5vdCBpbiBzdToKICAgIGVyci5hcHBlbmQoImZzL3N1c2ZzLmM6IDxsaW51eC9zZWN1cml0eS5oPiBiZWx1bSBhZGEiKQppZiBDQUxMX0JBRCBpbiBzdToKICAgIGVyci5hcHBlbmQoImZzL3N1c2ZzLmM6IG1hc2loIGFkYSBjYWxsIHN1c2ZzX21hcmtfaW5vZGVfc3VzX2tzdGF0IDItYXJndW1lbiIpCmZkID0gcmQoJ2ZzL3Byb2MvZmQuYycpCmlmIGZkLmNvdW50KCd7JykgIT0gZmQuY291bnQoJ30nKToKICAgIGVyci5hcHBlbmQoImZzL3Byb2MvZmQuYzogYnJhY2UgdGlkYWsgc2VpbWJhbmcgKHs9JWQsIH09JWQpIiAlIChmZC5jb3VudCgneycpLCBmZC5jb3VudCgnfScpKSkKaWYgZXJyOgogICAgcHJpbnQoIlxuc3VzZnMtZml4OiBWRVJJRklLQVNJIEdBR0FMOiIpCiAgICBmb3IgZSBpbiBlcnI6CiAgICAgICAgcHJpbnQoIiAgLSAiICsgZSkKICAgIHN5cy5leGl0KDEpCnByaW50KCJzdXNmcy1maXg6IE9LLCA0IGZpbGUgU1VTRlMgZGl2ZXJpZmlrYXNpIikK" | base64 -d > /tmp/fix_susfs_414.py
           python3 /tmp/fix_susfs_414.py
 
           echo ""
@@ -823,7 +992,7 @@ jobs:
           find . -name setlocalversion -exec sed -i 's/-dirty//g' {} + 2>/dev/null || true
 
           # AUDIT RANTAI VERSI KSU (revisi ke-17, 2026-09-12), dibaca dari
-          # KernelSU/kernel/Kbuild pin 6930e97b:
+          # KernelSU/kernel/Kbuild pin fa1da13f (Kbuild byte-identik dgn 6930e97b):
           #   KSU_VERSION = 30000 + `git rev-list --count HEAD` + 700. Aman:
           #   setup.sh meng-clone TANPA --depth (baris 53), dan Kbuild baris 75
           #   masih menjalankan `fetch --unshallow` kalau ../.git/shallow ada.
@@ -872,7 +1041,7 @@ jobs:
           # jalan di d_revalidate + iterate_dir sejak filesystem pertama diakses.
           # Kalau stuck di logo kembali, INI tersangka pertama - turunkan dulu
           # ke 166f7b7c untuk membuktikan.
-          NOMOUNT_PIN="6d8871dc7a89ed705b5bd9880a941ac09d193252"  # 2026-09-11, ART + ~8 commit perbaikan
+          NOMOUNT_PIN="6d8871dc7a89ed705b5bd9880a941ac09d193252"  # HEAD branch dev (author 2026-09-10, commit 2026-09-11), ART + ~8 commit perbaikan
 
           # pipefail: tanpa ini, exit code pipeline = exit code `bash` saja,
           # sehingga HTTP 404/500 dari curl tidak pernah menggagalkan step.
@@ -1100,7 +1269,8 @@ jobs:
           DEF=arch/arm64/configs/rosemary_defconfig
 
           # ----- AUDIT STRUKTUR (revisi ke-16, 2026-09-12, pasca-boot rev-15) -----
-          # Dibaca langsung dari KernelSU/kernel/Kconfig pada pin ReSukiSU 6930e97b:
+          # Dibaca dari KernelSU/kernel/Kconfig pada pin ReSukiSU fa1da13f
+          # (Kconfig byte-identik dgn 6930e97b yang diaudit di revisi ke-16):
           #
           # 1. CONFIG_KSU_SUSFS BUKAN bool bebas. Ia anggota sebuah blok
           #      choice / prompt "KernelSU Hooking Method" / depends on KSU
@@ -1440,18 +1610,20 @@ jobs:
             echo "dtbo.img ditemukan: $DTBO"
           fi
 
-      - name: Rakit paket AnyKernel3 (template asli fjrXTR)
+      - name: Rakit paket AnyKernel3 (template asli fjrXTR -> vlxlxlv)
         run: |
           # PENTING: branch default repo ini adalah 'ruby', bukan 'master'. Tanpa -b
           # isi paket ikut berubah diam-diam kalau pemilik repo ganti default.
           # mt6781 = SoC rosemary. tools/ak3-core.sh identik di kedua branch.
-          git clone --depth=1 -b mt6781 https://github.com/fjrXTR/AnyKernel3.git AnyKernel3
+          # Revisi ke-18: URL dipindah dari fjrXTR/ ke vlxlxlv/ (nama pemilik yang
+          # SEKARANG). fjrXTR hanya HTTP 301 alias yang sudah ditinggalkan dan bisa
+          # didaftarkan ulang orang lain; jangan menggantungkan clone pada redirect
+          # milik nama kosong. SHA-nya sama (a9fe54fa, sudah diverifikasi di
+          # vlxlxlv/AnyKernel3@mt6781), assert di bawah tidak berubah.
+          git clone --depth=1 -b mt6781 https://github.com/vlxlxlv/AnyKernel3.git AnyKernel3
           echo "AnyKernel3 commit: $(git -C AnyKernel3 rev-parse HEAD)"
-          # Pin AnyKernel3 (revisi ke-12). Repo fjrXTR/AnyKernel3 kini menjawab
-          # HTTP 301: pemiliknya berganti nama jadi vlxlxlv/AnyKernel3. git
-          # mengikuti redirect sehingga clone tetap jalan, TAPI nama pemilik yang
-          # ditinggalkan bisa didaftarkan orang lain - jadi isinya diverifikasi
-          # lewat SHA, bukan lewat nama repo.
+          # Pin AnyKernel3 (revisi ke-12, URL diperbaiki di revisi ke-18).
+          # Isinya tetap diverifikasi lewat SHA, bukan lewat nama repo.
           AK3_PIN="a9fe54faa683daa54868687e701ca2a7b1fe68fc"
           AK3_SHA="$(git -C AnyKernel3 rev-parse HEAD)"
           test "$AK3_SHA" = "$AK3_PIN" || {
