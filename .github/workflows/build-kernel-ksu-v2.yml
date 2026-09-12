@@ -593,6 +593,30 @@
 # E. URUTAN BACK-OUT kalau gagal boot (hanya satu baris yang berubah):
 #      KSU_PIN 3380d41f -> fa1da13f  (revisi ke-18, belum pernah diflash)
 #      lalu -> 6930e97b              (revisi ke-14/15, TERBUKTI BOOT)
+#
+# HASIL LAPANGAN revisi ke-19: DIBUILD, DIFLASH, BOOT NORMAL (2026-09-12).
+# Jadi revisi ke-19 kini titik aman terbaru, dan sekaligus membuktikan di
+# perangkat kedua kenaikan pin serta ketujuh perbaikan revisi ke-18.
+#
+# PENYEMPURNAAN (revisi ke-20, 2026-09-12) - satu pin naik, tidak ada
+# perubahan lain pada logika workflow.
+#
+# A. PIN DINAIKKAN (satu-satunya yang bergerak sejak revisi ke-19):
+#      maxsteeel/nomount (driver)  6d8871dc -> 7919faf2  (1 commit)
+#    "kernel: replace implicit initialization with memset for compatibility"
+#    (author 2026-09-12T14:32:09Z, commit 2026-09-12T14:32:40Z). Satu file,
+#    kernel/src/nomount.c, +2/-2: dua `*p = (struct nomount_rule){0};` jadi
+#    `memset(p, 0, sizeof(*p));`. Uraian lengkap + alasan kenapa perilakunya
+#    identik ada di step "Integrasikan NoMount" tepat di atas NOMOUNT_PIN.
+#    Keempat penjaga NoMount diuji ulang terhadap SHA baru: SEMUA lolos.
+#
+# B. DEPENDENSI LAIN: tidak ada yang bergerak sejak revisi ke-19. Diperiksa
+#    dengan preflight.sh (actionlint + shellcheck + git ls-remote tiap pin);
+#    KERNEL/KSU/SUSFS/CLANG/AK3/SCRIPTS semuanya masih = HEAD upstream.
+#
+# C. URUTAN BACK-OUT kalau gagal boot:
+#      NOMOUNT_PIN 7919faf2 -> 6d8871dc  (revisi ke-19, TERBUKTI BOOT)
+#      lalu -> 166f7b7c                  (pra-ART, titik aman lama)
 # ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
@@ -1126,7 +1150,30 @@ jobs:
           # jalan di d_revalidate + iterate_dir sejak filesystem pertama diakses.
           # Kalau stuck di logo kembali, INI tersangka pertama - turunkan dulu
           # ke 166f7b7c untuk membuktikan.
-          NOMOUNT_PIN="6d8871dc7a89ed705b5bd9880a941ac09d193252"  # HEAD branch dev (author 2026-09-10, commit 2026-09-11), ART + ~8 commit perbaikan
+          #
+          # DINAIKKAN LAGI di revisi ke-20 (2026-09-12): 6d8871dc -> 7919faf2,
+          # SATU commit, SATU file, kernel/src/nomount.c +2/-2. Judulnya "kernel:
+          # replace implicit initialization with memset for compatibility" dan
+          # diff-nya diperiksa baris per baris, bukan dipercaya dari judul:
+          #   nomount_generate_virtual_topology():  *irule = (struct nomount_rule){0};
+          #   nm_alloc_rule():                      *rule  = (struct nomount_rule){0};
+          # keduanya jadi memset(ptr, 0, sizeof(*ptr)).
+          # PERILAKU TIDAK BERUBAH: struct nomount_rule berakhir dengan flexible
+          # array member `char paths[]` (nomount.h:127), dan sizeof() TIDAK
+          # menghitung FAM - jadi kedua bentuk membersihkan byte yang persis sama
+          # (bagian tetap saja); isi paths[] tetap ditulis memcpy sesudahnya.
+          # Yang didapat justru soal kompatibilitas: assignment compound literal
+          # ke struct ber-FAM ditolak/diperingatkan sebagian compiler lama, dan
+          # memset selalu sah. Aman untuk 4.14 + proton-clang, dan tetap sejajar
+          # dengan upstream. Per 2026-09-12 branch dev DAN master sama-sama
+          # menunjuk 7919faf2.
+          # Keempat penjaga DIUJI ULANG terhadap 7919faf2 sebelum dinaikkan:
+          # kernel/setup.sh md5 deb7713c88a51e4c37ed88411ca2b95a - BYTE-IDENTIK
+          # dengan pin loader 0c4b2dbd di bawah; nomount_srcu 8 kemunculan;
+          # userspace/src tetap hanya nm.c + nm.h; `_start` tetap inline asm di
+          # nm.h:25 (arm64), jadi -nostdlib -static -Wl,-e,_start di step "Compile
+          # nm" tetap sahih.
+          NOMOUNT_PIN="7919faf2ab574110e388a4f444e5fef909c24e16"  # HEAD dev & master (author+commit 2026-09-12T14:32Z), ART + perbaikan + memset-compat
 
           # pipefail: tanpa ini, exit code pipeline = exit code `bash` saja,
           # sehingga HTTP 404/500 dari curl tidak pernah menggagalkan step.
