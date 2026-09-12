@@ -522,6 +522,77 @@
 #    c6dcae264f dan f1004545, jadi ini bukan regresi dari kenaikan pin. Menambal
 #    di sini berarti menulis ulang helper upstream; dicatat saja supaya kalau ada
 #    panic refcount di dmesg, ini tersangka yang sudah diketahui.
+#
+# PENYEMPURNAAN (revisi ke-19, 2026-09-12) - audit ulang menyeluruh atas
+# permintaan pemilik: update, upstream, commit, dependensi, bug tersembunyi.
+# Hasilnya: SATU pin naik, NOL bug baru ditemukan.
+#
+# A. PIN DINAIKKAN (satu-satunya yang bergerak sejak revisi ke-18):
+#      ReSukiSU/ReSukiSU  fa1da13f -> 3380d41f  (1 commit)
+#    Commit 3380d41f "ksud: sync upstream commit" (author 2026-09-12T11:40:37Z,
+#    commit 2026-09-12T11:42:25Z).
+#    Isinya diperiksa langsung, bukan ditebak dari judul: HANYA
+#    userspace/ksud/src/android/susfs/cli.rs yang berubah, 8 perubahan dan
+#    semuanya kalimat doc-comment Rust. Seluruh kernel/ byte-identik dengan
+#    fa1da13f -> tidak ada satu pun audit lama yang perlu diulang. ksud tidak
+#    ikut dikompilasi ke kernel. Satu-satunya efek terlihat: KSU_VERSION +1
+#    (30000 + rev-list --count + 700).
+#
+# B. DEPENDENSI YANG SUDAH DI HEAD (dicek ulang hari ini, TIDAK diutak-atik):
+#      dlagia/android_kernel_xiaomi_rosemary@rosemary-13  602782dab
+#      dlagia/Build-Kernel_scripts@main                   10f1480b
+#      JackA1ltman/NonGKI_Kernel_Build_2nd@mainline       f1004545
+#      maxsteeel/nomount@dev (driver)                     6d8871dc
+#      maxsteeel/nomount@master (setup.sh)                0c4b2dbd
+#      kdrag0n/proton-clang@master                        9fb011b1
+#      vlxlxlv/AnyKernel3@mt6781                          a9fe54fa
+#      actions/cache v6 (v6.1.0), actions/upload-artifact v7 (v7.0.1)
+#
+# C. REPRODUKSI LOKAL PENUH (aturan wajib sejak revisi ke-17; semua HIJAU):
+#    Pohon kernel 602782dab disusun ulang di lokal, ReSukiSU di-clone sebagai
+#    drivers/kernelsu, lalu susfs_inline_hook_patches.sh -> sanitizer + patch -p1
+#    -> kedua fixer base64 dijalankan sungguhan. Hasil:
+#      - patch -p1 menghasilkan TEPAT SATU reject: fs/proc/task_mmu.c.rej -
+#        persis yang di-whitelist workflow. Hunk #1/#5/#6 gagal (include
+#        susfs_def.h + dua baris kosong kosmetik), hunk #4 mendarat di 813
+#        dengan fuzz 2 di smap_gather_stats() yang bertipe void.
+#      - fix_task_mmu.py membetulkan ketiganya: guard SUSFS_IS_INODE_SUS_MAP +
+#        `return 0;` ada di show_smap() (task_mmu.c:888), smap_gather_stats()
+#        tidak punya `return` sama sekali, blok include di baris 22-24.
+#        Idempoten (jalan dua kali -> hasil sama).
+#      - fix_414.py: KETUJUH sub-fix sekarang no-op murni di pin f1004545
+#        (upstream sudah membetulkan semuanya). Step 04 kini semata jaring
+#        assert - dibiarkan, karena itu yang menangkap regresi upstream.
+#      - Ketiga assert sed pin lolos terhadap integrate_ksu_susfs.sh upstream
+#        asli: KSU_HIT=2, SUSFS_HIT=2, SUSFS_FLOAT=0, pengalihan ke
+#        /tmp/susfs_apply.sh terkonfirmasi, sentinel _ran ada / _failed tidak.
+#      - Keseimbangan kurung OK di 15 file yang dipatch; NOL simbol
+#        KSU_*/SUSFS_* yang dipakai tanpa deklarasi di 21 file.
+#      - Ketujuh target check_ksu_hook milik inline_hook_check.mk ADA sesudah
+#        hook script; kelima check_ksu_hook_incompatible bersih; ketujuh
+#        check_ksu_manual_guard bersih.
+#      - NoMount: kernel/setup.sh md5-identik antara 0c4b2dbd dan 6d8871dc,
+#        userspace/src hanya nm.c + nm.h (cp dua file di step 14 lengkap),
+#        kernel/src persis empat file yang di-assert step 06, nomount_srcu x8,
+#        `_start` ada di nm.h:25 -> -nostdlib -static -Wl,-e,_start sahih.
+#      - YAML parse OK, 20 step, 16 blok run lolos `bash -n`, kedua fixer
+#        base64 lolos compile.
+#
+# D. CATATAN LATEN (disadari, sengaja TIDAK diubah):
+#    1. Cache key proton-clang tetap 'proton-clang-master-v1' walau CLANG_PIN
+#       bisa berubah - sudah ditulis di pesan error step-nya sendiri.
+#    2. runs-on wajib ubuntu-22.04 karena libtinfo5/libncurses5 tidak ada di
+#       24.04. Per hari ini 22.04 masih tersedia dan BELUM punya jadwal
+#       pencabutan, tapi 26.04 sudah preview - kalau nanti 22.04 dicabut,
+#       gantinya adalah unduh libtinfo5/libncurses5 manual, bukan ganti runner.
+#    3. Commit di dalam KernelSU/ pada step 05 menggeser rev-list --count +1
+#       dibanding upstream (kosmetik, hanya angka versi di manager).
+#    4. Bug refcount upstream di poin D revisi ke-18 masih ada dan masih
+#       tidak ditambal (alasan sama).
+#
+# E. URUTAN BACK-OUT kalau gagal boot (hanya satu baris yang berubah):
+#      KSU_PIN 3380d41f -> fa1da13f  (revisi ke-18, belum pernah diflash)
+#      lalu -> 6930e97b              (revisi ke-14/15, TERBUKTI BOOT)
 # ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
@@ -641,7 +712,20 @@ jobs:
           # argumen non-flag ke `setup_kernelsu "$@"` -> `git checkout "$1"`, dan
           # cabang --submodule pun `return 0` begitu GITHUB_ACTIONS=true. Jadi
           # mekanisme pin dua-sed di bawah tetap sahih.
-          KSU_PIN="fa1da13f890a19335d3f8f5c62bb5bde466fc384"
+          # DINAIKKAN LAGI di revisi ke-19 (2026-09-12): fa1da13f -> 3380d41f,
+          # SATU commit: "ksud: sync upstream commit". Diverifikasi lewat API
+          # compare, bukan dari judulnya: satu-satunya file yang disentuh adalah
+          # userspace/ksud/src/android/susfs/cli.rs, 8 perubahan dan SEMUANYA
+          # teks doc-comment Rust ("Only effective for umounted process with
+          # uid >= 10000" -> "Effective for all processes with uid >= 10000").
+          # Seluruh kernel/ BYTE-IDENTIK antara fa1da13f dan 3380d41f (setup.sh,
+          # Kbuild, Kconfig, tools/inline_hook_check.mk, feature/*), jadi semua
+          # audit Kconfig/Kbuild/hook di bawah tetap sahih tanpa diulang. ksud
+          # adalah binary userspace yang TIDAK ikut dikompilasi ke kernel.
+          # Efek satu-satunya yang terlihat di build: KSU_VERSION naik +1 karena
+          # `git rev-list --count HEAD` bertambah satu. URL raw setup.sh untuk
+          # pin baru sudah dicek HTTP 200.
+          KSU_PIN="3380d41f2043644d0ef6c0e0e91be6b229024d00"
           sed -i "s|ReSukiSU/ReSukiSU/main/kernel/setup.sh|ReSukiSU/ReSukiSU/${KSU_PIN}/kernel/setup.sh|" integrate_ksu_susfs.sh
           sed -i "s#setup.sh\" | bash >#setup.sh\" | bash -s ${KSU_PIN} >#" integrate_ksu_susfs.sh
           # PENTING: URL dan `| bash >` ada di BARIS YANG SAMA (baris 11), jadi di sini
@@ -992,7 +1076,8 @@ jobs:
           find . -name setlocalversion -exec sed -i 's/-dirty//g' {} + 2>/dev/null || true
 
           # AUDIT RANTAI VERSI KSU (revisi ke-17, 2026-09-12), dibaca dari
-          # KernelSU/kernel/Kbuild pin fa1da13f (Kbuild byte-identik dgn 6930e97b):
+          # KernelSU/kernel/Kbuild pin 3380d41f (Kbuild byte-identik dgn
+          # fa1da13f dan 6930e97b - tidak berubah sejak revisi ke-14):
           #   KSU_VERSION = 30000 + `git rev-list --count HEAD` + 700. Aman:
           #   setup.sh meng-clone TANPA --depth (baris 53), dan Kbuild baris 75
           #   masih menjalankan `fetch --unshallow` kalau ../.git/shallow ada.
@@ -1269,8 +1354,9 @@ jobs:
           DEF=arch/arm64/configs/rosemary_defconfig
 
           # ----- AUDIT STRUKTUR (revisi ke-16, 2026-09-12, pasca-boot rev-15) -----
-          # Dibaca dari KernelSU/kernel/Kconfig pada pin ReSukiSU fa1da13f
-          # (Kconfig byte-identik dgn 6930e97b yang diaudit di revisi ke-16):
+          # Dibaca dari KernelSU/kernel/Kconfig pada pin ReSukiSU 3380d41f
+          # (Kconfig byte-identik dgn fa1da13f dan 6930e97b yang diaudit di
+          # revisi ke-16 - tidak ada perubahan Kconfig sejak saat itu):
           #
           # 1. CONFIG_KSU_SUSFS BUKAN bool bebas. Ia anggota sebuah blok
           #      choice / prompt "KernelSU Hooking Method" / depends on KSU
