@@ -814,6 +814,13 @@
 # retensi. Release membawa zip AnyKernel3-nya apa adanya, permanen, dan terlihat
 # di halaman depan repo. Konsekuensinya token build perlu `contents: write`,
 # yang sekarang ditulis eksplisit di blok `permissions:` (lihat di bawah).
+#
+# 25a: percobaan pertama gagal (run 34770523128) - build sukses, zip jadi, tapi
+# `gh release create` mati dengan "fatal: not a git repository". Sebabnya job ini
+# memang TIDAK PERNAH meng-checkout repo sendiri (semua sumber di-clone ke
+# subfolder), jadi gh tidak punya remote untuk menebak repo. Diperbaiki dengan
+# GH_REPO eksplisit, plus --target "$GITHUB_SHA" supaya tag menempel di commit
+# yang benar-benar dibangun, bukan di HEAD branch default.
 # ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
@@ -2169,6 +2176,13 @@ jobs:
       - name: Terbitkan Release berisi zip siap-flash
         env:
           GH_TOKEN: ${{ github.token }}
+          # WAJIB. Job ini tidak pernah `actions/checkout` - semua sumber
+          # di-clone ke subfolder - jadi workspace-nya bukan repo git sama
+          # sekali. Tanpa GH_REPO, `gh release create` mencoba menebak repo dari
+          # remote git dan mati dengan "fatal: not a git repository" (persis yang
+          # terjadi di run 34770523128; build-nya sendiri sukses, hanya step ini
+          # yang gagal).
+          GH_REPO: ${{ github.repository }}
         run: |
           set -e
           test -f "$ZIP" || { echo "ERROR: zip tidak ada: $ZIP"; exit 1; }
@@ -2186,7 +2200,10 @@ jobs:
             printf -- '  recovery/KernelSU, tidak perlu dibongkar dulu.\n'
           } > /tmp/notes.md
 
-          gh release create "$TAG" "$ZIP" --title "$TAG" --notes-file /tmp/notes.md
+          # --target: tanpa repo git lokal, gh akan menempelkan tag ke HEAD
+          # branch default. Kunci ke commit yang benar-benar dibangun.
+          gh release create "$TAG" "$ZIP" \
+            --title "$TAG" --notes-file /tmp/notes.md --target "$GITHUB_SHA"
           URL="$(gh release view "$TAG" --json url --jq .url)"
           {
             echo ""
