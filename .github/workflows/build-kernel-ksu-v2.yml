@@ -821,6 +821,29 @@
 # subfolder), jadi gh tidak punya remote untuk menebak repo. Diperbaiki dengan
 # GH_REPO eksplisit, plus --target "$GITHUB_SHA" supaya tag menempel di commit
 # yang benar-benar dibangun, bukan di HEAD branch default.
+#
+# REVISI KE-26 (2026-09-14) - kedelapan pin PINDAH dari file ini ke pins.env di
+# root repo. Alasannya bukan kerapian melainkan syarat teknis: GITHUB_TOKEN
+# dilarang menulis file apa pun di bawah .github/workflows/, jadi selama SHA
+# tinggal di sini, TIDAK ADA workflow yang bisa menaikkannya - tombol "Naikkan
+# pin" mustahil dibuat. Sejak pin tinggal di pins.env, menaikkannya cukup pilih
+# komponen dari dropdown.
+#
+# Yang berubah di file ini: satu step baru "Muat pins.env" di urutan pertama,
+# enam baris NAMA_PIN="..." dicabut, tiga SHA yang tertanam di dalam URL
+# (integrate_ksu_susfs.sh, ksu-susfs_defconfig, loader NoMount) diganti variabel,
+# dan `paths:` menambah pins.env. Perilaku build TIDAK berubah sama sekali:
+# step pemuat mengandung daftar delapan nilai yang diharapkan dan GAGAL kalau
+# ada satu huruf pun bergeser, jadi artefak revisi ini wajib seukuran artefak
+# revisi ke-25a. Daftar sekali-pakai itu dicabut di revisi berikutnya.
+#
+# Dua hal yang sengaja dipilih di step pemuat:
+#   - dibaca lewat API pada $GITHUB_SHA, bukan actions/checkout - job ini tidak
+#     pernah punya .git di workspace (lihat revisi ke-25a), dan membaca pada
+#     commit pemicu menjamin pin yang dipakai milik commit itu.
+#   - bentuk tiap baris divalidasi KERAS sebelum disalin ke $GITHUB_ENV. Isi
+#     pins.env masuk ke lingkungan semua step sesudahnya, jadi apa pun yang
+#     bukan NAMA=<40 hex kecil> ditolak di sana.
 # ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
@@ -838,6 +861,11 @@ on:
     # (workflow_dispatch) yang sudah ada di atas.
     paths:
       - '.github/workflows/build-kernel-ksu-v2.yml'
+      # Revisi ke-26: pins.env ikut, supaya menyunting pin lewat web GitHub
+      # langsung membangun. (Commit dari workflow "Naikkan pin" TIDAK memicu
+      # push-event - itu aturan GitHub untuk mencegah rekursi - jadi workflow
+      # itu memanggil build lewat workflow_dispatch, bukan lewat jalur ini.)
+      - 'pins.env'
 
 # Revisi ke-25: step terakhir menerbitkan Release, jadi token build butuh izin
 # TULIS contents. Blok ini sengaja ditulis eksplisit - tanpa `permissions:`,
@@ -857,6 +885,76 @@ jobs:
     timeout-minutes: 120
 
     steps:
+      # Step pertama, karena semua step sesudahnya bergantung padanya.
+      #
+      # Dibaca lewat API pada $GITHUB_SHA, BUKAN actions/checkout: job ini
+      # sengaja tidak pernah punya .git di workspace (alasannya di revisi
+      # ke-25a), dan membaca pada commit pemicu menjamin pin yang dipakai
+      # persis milik commit itu - bukan HEAD branch yang bisa sudah bergerak
+      # di tengah antrean build.
+      - name: Muat pins.env
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # tr -d '\r': kalau pins.env pernah ter-commit dari Windows, tiap baris
+          # berakhir CRLF dan penjaga bentuk di bawah menolaknya dengan pesan
+          # "tidak berbentuk NAMA=<40 hex>" - keluhan tentang karakter yang tak
+          # kelihatan. Dibuang saja di sini; CR tidak pernah sah di file ini.
+          gh api "repos/${GITHUB_REPOSITORY}/contents/pins.env?ref=${GITHUB_SHA}" \
+            --jq .content | base64 -d | tr -d '\r' > /tmp/pins.env
+
+          # Isi pins.env disalin ke $GITHUB_ENV, jadi bentuknya diperiksa DULU.
+          # Kelas karakter namanya WAJIB memuat angka: AK3_PIN punya "3", dan
+          # dengan [A-Z_]+ saja ia ditolak di sini padahal sah. Ketahuan waktu
+          # dry-run lokal; actionlint maupun pemeriksa YAML tidak melihatnya.
+          # Baris yang berarti wajib persis NAMA=<40 hex kecil>; selain itu cuma
+          # boleh baris kosong atau komentar. Apa pun di luar itu - spasi, kutip,
+          # komentar di ujung baris, apalagi perintah - ditolak di sini, sebelum
+          # sebaris pun sempat masuk ke lingkungan step berikutnya.
+          if grep -nvE '^[[:space:]]*(#.*)?$|^[A-Z0-9_]+=[0-9a-f]{40}$' /tmp/pins.env; then
+            echo "ERROR: baris di atas tidak berbentuk NAMA=<40 hex huruf kecil>"
+            exit 1
+          fi
+
+          for n in KERNEL_PIN SCRIPTS_PIN KSU_PIN SUSFS_PIN \
+                   NOMOUNT_PIN NOMOUNT_LOADER_PIN CLANG_PIN AK3_PIN; do
+            grep -qE "^${n}=[0-9a-f]{40}$" /tmp/pins.env || {
+              echo "ERROR: $n hilang atau cacat di pins.env"
+              exit 1
+            }
+          done
+
+          grep -E '^[A-Z0-9_]+=[0-9a-f]{40}$' /tmp/pins.env >> "$GITHUB_ENV"
+
+          echo "== pin yang dipakai build ini =="
+          grep -E '^[A-Z0-9_]+=[0-9a-f]{40}$' /tmp/pins.env | sed 's/^/  /'
+
+          # SEKALI PAKAI (revisi ke-26). pins.env baru saja dipisah dari workflow
+          # ini, jadi build ini wajib membuktikan nilainya identik dengan yang
+          # dulu tertanam - kalau ada satu huruf bergeser, yang terbangun bukan
+          # kernel yang sama dan perbandingan ukuran artefak jadi omong kosong.
+          # Blok ini DICABUT di revisi berikutnya: begitu tombol "Naikkan pin"
+          # hidup, pins.env memang harus boleh berubah.
+          for h in \
+            KERNEL_PIN=602782dabb7a9b5925400f64ec00db7c632098a6 \
+            SCRIPTS_PIN=10f1480b39418e885d4402e78a5ec7721d5040d3 \
+            KSU_PIN=c04159fcbdfdb71b0c3765ecaaf23c4e0a498c93 \
+            SUSFS_PIN=57022dd56f1dbae45750ff5bf00f09457e3f2b8d \
+            NOMOUNT_PIN=7919faf2ab574110e388a4f444e5fef909c24e16 \
+            NOMOUNT_LOADER_PIN=016375cd4a9e7da07b0519dd7bc492101de2a834 \
+            CLANG_PIN=9fb011b183fe7e69b04b873ef6533b4b077e3c5e \
+            AK3_PIN=a9fe54faa683daa54868687e701ca2a7b1fe68fc; do
+            grep -qxF "$h" /tmp/pins.env || {
+              echo "ERROR: $h tidak cocok dengan pins.env."
+              echo "       Revisi ke-26 hanya MEMINDAHKAN pin, tidak menaikkannya."
+              exit 1
+            }
+          done
+          echo "OK: kedelapan pin identik dengan yang dulu tertanam di workflow."
+
       - name: Pasang dependency build
         run: |
           sudo apt-get update
@@ -880,7 +978,7 @@ jobs:
           # baru yang menyentuh fs/, patch bisa ter-apply "bersih" tapi salah,
           # atau reject-nya berubah dan audit reject di bawah salah tuduh.
           # Jadi drift-nya dibuat KERAS, bukan diam-diam.
-          KERNEL_PIN="602782dabb7a9b5925400f64ec00db7c632098a6"
+          # KERNEL_PIN dari pins.env (revisi ke-26).
           KERNEL_ACT="$(git -C kernel rev-parse HEAD)"
           test "$KERNEL_ACT" = "$KERNEL_PIN" || {
             echo "ERROR: source kernel bukan commit yang diaudit."
@@ -916,7 +1014,7 @@ jobs:
           # Dipin ke commit tertentu (bukan 'main') supaya perubahan script upstream
           # tidak diam-diam mengubah cara integrasi KSU/SuSFS di run berikutnya.
           echo "[+] Mengunduh integrate_ksu_susfs.sh dari dlagia/Build-Kernel_scripts (pinned commit)..."
-          curl -fLSs "https://raw.githubusercontent.com/dlagia/Build-Kernel_scripts/10f1480b39418e885d4402e78a5ec7721d5040d3/scripts/integrate_ksu_susfs.sh" -o integrate_ksu_susfs.sh
+          curl -fLSs "https://raw.githubusercontent.com/dlagia/Build-Kernel_scripts/${SCRIPTS_PIN}/scripts/integrate_ksu_susfs.sh" -o integrate_ksu_susfs.sh
           chmod +x integrate_ksu_susfs.sh
 
           # ----- PIN ReSukiSU (revisi ke-12; dinaikkan di revisi ke-14) -----
@@ -988,7 +1086,7 @@ jobs:
           # file, SEMUANYA di manager/ (Kotlin + strings.xml terjemahan). Nol file
           # di kernel/, jadi audit Kconfig/Kbuild/setup.sh/hook di atas tetap sahih
           # dan satu-satunya efek di build adalah KSU_VERSION +3.
-          KSU_PIN="c04159fcbdfdb71b0c3765ecaaf23c4e0a498c93"
+          # KSU_PIN dari pins.env (revisi ke-26).
           sed -i "s|ReSukiSU/ReSukiSU/main/kernel/setup.sh|ReSukiSU/ReSukiSU/${KSU_PIN}/kernel/setup.sh|" integrate_ksu_susfs.sh
           sed -i "s#setup.sh\" | bash >#setup.sh\" | bash -s ${KSU_PIN} >#" integrate_ksu_susfs.sh
           # PENTING: URL dan `| bash >` ada di BARIS YANG SAMA (baris 11), jadi di sini
@@ -1033,7 +1131,7 @@ jobs:
           # reject tetap HANYA fs/proc/task_mmu.c (hunk #1/#5/#6) seperti dulu.
           # Section baru itu membawa satu cacat 4.14 (ida_simple_get vs
           # unnamed_dev_lock) yang ditambal fixer #7 di step berikutnya.
-          SUSFS_PIN="57022dd56f1dbae45750ff5bf00f09457e3f2b8d"
+          # SUSFS_PIN dari pins.env (revisi ke-26).
           sed -i "s|refs/heads/mainline|${SUSFS_PIN}|g" integrate_ksu_susfs.sh
           # Revisi ke-18: sed di atas dulu TANPA assert - kalau upstream mengubah
           # bentuk URL-nya (mis. memakai 'refs/tags/' atau URL penuh), sed jadi
@@ -1461,7 +1559,9 @@ jobs:
           # userspace/src tetap hanya nm.c + nm.h; `_start` tetap inline asm di
           # nm.h:25 (arm64), jadi -nostdlib -static -Wl,-e,_start di step "Compile
           # nm" tetap sahih.
-          NOMOUNT_PIN="7919faf2ab574110e388a4f444e5fef909c24e16"  # HEAD dev & master (author+commit 2026-09-12T14:32Z), ART + perbaikan + memset-compat
+          # NOMOUNT_PIN dari pins.env (revisi ke-26). Nilai saat ini
+          # 7919faf2 = HEAD dev & master (2026-09-12T14:32Z), ART + perbaikan
+          # + memset-compat.
 
           # pipefail: tanpa ini, exit code pipeline = exit code `bash` saja,
           # sehingga HTTP 404/500 dari curl tidak pernah menggagalkan step.
@@ -1475,7 +1575,7 @@ jobs:
           # (HEAD master). kernel/setup.sh di kedua commit md5-nya sama
           # (deb7713c88a51e4c37ed88411ca2b95a) alias BYTE-IDENTIK, jadi ini murni
           # supaya URL tidak tertinggal di commit lama - nol perubahan perilaku.
-          curl -fLSs "https://raw.githubusercontent.com/maxsteeel/nomount/016375cd4a9e7da07b0519dd7bc492101de2a834/kernel/setup.sh" | bash -s "$NOMOUNT_PIN"
+          curl -fLSs "https://raw.githubusercontent.com/maxsteeel/nomount/${NOMOUNT_LOADER_PIN}/kernel/setup.sh" | bash -s "$NOMOUNT_PIN"
 
           test -d NoMount || {
             echo "ERROR: direktori NoMount tidak ditemukan setelah setup.sh"
@@ -1760,7 +1860,7 @@ jobs:
           #    tetap terlihat bila diakses lewat direktori hasil redirect NoMount.
           #    Sembunyikan path semacam itu lewat NoMount, bukan SUS_PATH.
           echo "[+] Mengunduh dan menggabungkan ksu-susfs_defconfig dari dlagia/Build-Kernel_scripts (pinned commit)..."
-          curl -fsSL "https://raw.githubusercontent.com/dlagia/Build-Kernel_scripts/10f1480b39418e885d4402e78a5ec7721d5040d3/defconfig/ksu-susfs_defconfig" >> "$DEF"
+          curl -fsSL "https://raw.githubusercontent.com/dlagia/Build-Kernel_scripts/${SCRIPTS_PIN}/defconfig/ksu-susfs_defconfig" >> "$DEF"
 
           {
             echo ""
@@ -1860,7 +1960,7 @@ jobs:
           # Pin toolchain (revisi ke-12). master kdrag0n/proton-clang tidak berubah
           # sejak 2021, tapi clone-nya `--depth=1 master` - kalau pemiliknya push,
           # compiler ikut berubah diam-diam di run berikutnya.
-          CLANG_PIN="9fb011b183fe7e69b04b873ef6533b4b077e3c5e"
+          # CLANG_PIN dari pins.env (revisi ke-26).
           if [ -d clang-proton/.git ]; then
             CLANG_SHA="$(git -C clang-proton rev-parse HEAD)"
             echo "proton-clang commit: $CLANG_SHA"
@@ -2079,7 +2179,7 @@ jobs:
           echo "AnyKernel3 commit: $(git -C AnyKernel3 rev-parse HEAD)"
           # Pin AnyKernel3 (revisi ke-12, URL diperbaiki di revisi ke-18).
           # Isinya tetap diverifikasi lewat SHA, bukan lewat nama repo.
-          AK3_PIN="a9fe54faa683daa54868687e701ca2a7b1fe68fc"
+          # AK3_PIN dari pins.env (revisi ke-26).
           AK3_SHA="$(git -C AnyKernel3 rev-parse HEAD)"
           # SELF-HEAL (revisi ke-23), alasan sama dengan proton-clang & step 04:
           # `clone --depth=1 -b mt6781` cuma membawa HEAD branch, jadi satu commit
