@@ -806,6 +806,14 @@
 #    menulis satu issue berisi vonis per komponen (AMAN dinaikkan / PERLU AUDIT
 #    / ORPHAN). Drift SUSFS di butir A justru ditemukan oleh dry-run robot ini,
 #    beberapa jam setelah revisi ke-23 di-push.
+#
+# REVISI KE-25 (2026-09-13) - zip hasil build sekarang juga diterbitkan sebagai
+# GitHub Release, bukan cuma sebagai artifact. Alasannya praktis: artifact
+# Actions selalu dibungkus ulang, jadi yang sampai di HP adalah zip berisi zip
+# yang harus dibongkar dulu sebelum bisa di-flash, dan ia hangus setelah masa
+# retensi. Release membawa zip AnyKernel3-nya apa adanya, permanen, dan terlihat
+# di halaman depan repo. Konsekuensinya token build perlu `contents: write`,
+# yang sekarang ditulis eksplisit di blok `permissions:` (lihat di bawah).
 # ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
@@ -823,6 +831,14 @@ on:
     # (workflow_dispatch) yang sudah ada di atas.
     paths:
       - '.github/workflows/build-kernel-ksu-v2.yml'
+
+# Revisi ke-25: step terakhir menerbitkan Release, jadi token build butuh izin
+# TULIS contents. Blok ini sengaja ditulis eksplisit - tanpa `permissions:`,
+# izin default ikut setelan repo/akun dan bisa berubah diam-diam. `contents:
+# write` sudah mencakup baca (checkout) sekaligus membuat release, dan tidak
+# memberi akses ke issues, packages, maupun id-token.
+permissions:
+  contents: write
 
 concurrency:
   group: build-rosemary-${{ github.ref }}
@@ -2142,6 +2158,41 @@ jobs:
             ${{ steps.kimg.outputs.dtbo }}
             nm-src/nm
             kernel/out/.config
+
+      # actions/upload-artifact SELALU membungkus ulang isinya, jadi yang terunduh
+      # di HP adalah zip-berisi-zip: harus dibongkar dulu baru bisa di-flash, dan
+      # hangus begitu masa retensi habis. Release menyimpan zip AnyKernel3-nya apa
+      # adanya - sekali unduh langsung flashable, tautannya permanen, dan muncul di
+      # halaman depan repo alih-alih terkubur di dalam satu run Actions.
+      # Hanya jalan untuk build yang sukses; `if: failure()` di step berikutnya
+      # yang mengurus jalur gagal.
+      - name: Terbitkan Release berisi zip siap-flash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          test -f "$ZIP" || { echo "ERROR: zip tidak ada: $ZIP"; exit 1; }
+
+          TAG="build-$(date -u +%Y%m%d-%H%M%S)"
+          {
+            printf 'Build otomatis dari commit `%s`.\n\n' "${GITHUB_SHA:0:9}"
+            printf -- '| bagian | commit |\n|---|---|\n'
+            printf -- '| kernel | `%s` |\n' "$KERNEL_SHA"
+            printf -- '| ReSukiSU | `%s` |\n' "$KSU_SHA"
+            printf -- '| NoMount | `%s` |\n' "$NOMOUNT_SHA"
+            printf -- '\n- run: %s/%s/actions/runs/%s\n' \
+              "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+            printf -- '- `%s` sudah berformat AnyKernel3: flash langsung lewat\n' "$ZIP"
+            printf -- '  recovery/KernelSU, tidak perlu dibongkar dulu.\n'
+          } > /tmp/notes.md
+
+          gh release create "$TAG" "$ZIP" --title "$TAG" --notes-file /tmp/notes.md
+          URL="$(gh release view "$TAG" --json url --jq .url)"
+          {
+            echo ""
+            echo "### Unduh"
+            echo "[$ZIP]($URL) - zip AnyKernel3 siap flash (bukan artifact dobel-zip)."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Kalau build gagal, step "Compile" hanya mencetak ~120 baris error +
       # 3 potongan konteks ke log Actions. /tmp/build.log yang lengkap ikut
