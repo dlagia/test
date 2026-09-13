@@ -773,6 +773,39 @@
 #    rosemary_defconfig (kernel 4.14 MTK ini tidak memakai CFI clang), tapi
 #    kalau suatu saat CFI dinyalakan, sed ini harus dipersempit dulu.
 #    Sekarang yang dicetak nama file-nya, bukan cuma cacahnya.
+#
+# REVISI KE-24 (2026-09-13) - revisi ke-23 SUDAH DI-FLASH DAN BOOT NORMAL, jadi
+# fixer #8, fixer #7, SUSFS c231ef5d, ReSukiSU c04159fc dan loader NoMount
+# 016375cd semuanya terbukti on-device sekaligus. Titik known-good pindah dari
+# revisi ke-20 ke revisi ke-23.
+#
+# A. SUSFS c231ef5d -> 57022dd5 ("susfs_patches: merged latest commmit").
+#    Satu commit, lima patch per-versi disentuh, tapi untuk kita hanya
+#    susfs_patch_to_4.14.patch yang berarti: 16 baris berubah dan SEMUANYA
+#    terkurung di section fs/statfs.c. Isinya membuang label `bypass_orig_flow:`
+#    dan menggantinya dengan return langsung:
+#      - `error = susfs_statfs_by_dentry(...); goto bypass_orig_flow;`
+#        menjadi `return susfs_statfs_by_dentry(...);`
+#      - ekor fungsinya jadi `if (!error) buf->f_flags = calculate_f_flags(...);
+#        return error;`
+#    Disimulasikan di luar CI terhadap fs/statfs.c pohon 602782da: apply BERSIH,
+#    nol fuzz, nol reject (patch lama maupun baru sama-sama bersih). Sesudah
+#    apply: anchor `susfs_statfs_by_dentry(` tetap tepat 1, extern
+#    susfs_sus_kstat_spoof_vfs_statfs tetap 1 dan sudah mendahului pemakaian
+#    (fixer #4 tetap no-op, persis seperti di log revisi ke-23), `goto` dan
+#    label seimbang 1:1 (bukan goto menggantung), brace seimbang, dan
+#    calculate_f_flags() memang ada di 4.14. Sembilan belas section patch yang
+#    lain byte-identik, jadi seluruh audit sebelumnya tetap berlaku dan tidak
+#    ada fixer yang perlu disesuaikan.
+#
+# B. Trigger build dibatasi `paths:` - lihat blok `on:` di bawah.
+#
+# C. Ditambahkan workflow KEDUA, .github/workflows/pin-watch.yml: robot triase
+#    pin. Ia tidak pernah compile, tidak pernah mengubah pin, tidak pernah
+#    push - cuma membandingkan kedelapan pin dengan upstream tiap hari lalu
+#    menulis satu issue berisi vonis per komponen (AMAN dinaikkan / PERLU AUDIT
+#    / ORPHAN). Drift SUSFS di butir A justru ditemukan oleh dry-run robot ini,
+#    beberapa jam setelah revisi ke-23 di-push.
 # ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
@@ -783,6 +816,13 @@ on:
   workflow_dispatch:
   push:
     branches: [ main, master ]
+    # Revisi ke-24: dulu SETIAP push ke main menyalakan build kernel 9 menit -
+    # termasuk push yang cuma menyentuh workflow lain (mis. pin-watch.yml) atau
+    # berkas non-build. Sekarang dibatasi ke file build ini sendiri. Kalau perlu
+    # membangun ulang tanpa mengubah apa pun, pakai tombol "Run workflow"
+    # (workflow_dispatch) yang sudah ada di atas.
+    paths:
+      - '.github/workflows/build-kernel-ksu-v2.yml'
 
 concurrency:
   group: build-rosemary-${{ github.ref }}
@@ -970,7 +1010,7 @@ jobs:
           # reject tetap HANYA fs/proc/task_mmu.c (hunk #1/#5/#6) seperti dulu.
           # Section baru itu membawa satu cacat 4.14 (ida_simple_get vs
           # unnamed_dev_lock) yang ditambal fixer #7 di step berikutnya.
-          SUSFS_PIN="c231ef5d459861b6a637fcfceb8add3e50a523c5"
+          SUSFS_PIN="57022dd56f1dbae45750ff5bf00f09457e3f2b8d"
           sed -i "s|refs/heads/mainline|${SUSFS_PIN}|g" integrate_ksu_susfs.sh
           # Revisi ke-18: sed di atas dulu TANPA assert - kalau upstream mengubah
           # bentuk URL-nya (mis. memakai 'refs/tags/' atau URL penuh), sed jadi
