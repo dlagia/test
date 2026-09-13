@@ -724,6 +724,55 @@
 # D. URUTAN BACK-OUT kalau gagal boot: sama seperti revisi ke-21 (fixer #8 ->
 #    SUSFS_PIN -> KSU_PIN), dengan catatan KSU_PIN sekarang turun ke 3380d41f
 #    langsung karena f4c4923e tidak bisa lagi dipakai sebagai titik balik.
+#
+# AUDIT ULANG (revisi ke-23, 2026-09-13) - build 34761663445 (revisi ke-22)
+# SUKSES: semua pin di HEAD, nol warning compiler di fs/, KernelSU/ maupun
+# nomount/, reject persis seperti simulasi, Image.gz-dtb 12.284.925 byte.
+# Kedua fixer IDA diverifikasi ULANG terhadap teks patch upstream, bukan cuma
+# terhadap log:
+#   - #7 fs/super.c AMAN: hunk SUSFS duduk di AWAL get_anon_bdev(), sebelum
+#     label `retry:` dan sebelum spin_lock mana pun, jadi membungkusnya dengan
+#     unnamed_dev_lock tidak mungkin deadlock-diri. spin_unlock-nya juga jatuh
+#     SEBELUM ketiga `return` di jalur itu, jadi tidak ada lock yang bocor.
+#   - #8 fs/namespace.c AMAN: bentuknya persis mnt_alloc_id() 4.14
+#     (ida_pre_get di luar, ida_get_new_above di dalam mnt_id_lock, retry saat
+#     -EAGAIN). Sengaja TIDAK memperbarui mnt_id_start - itu cuma hint untuk
+#     id kecil, dan id ksu memang dialokasikan dari DEFAULT_KSU_MNT_ID yang
+#     tinggi; menaikkannya justru akan mendorong mount biasa ke id tinggi.
+#
+# Tiga cacat yang DITEMUKAN dan diperbaiki di revisi ini, semuanya workflow:
+#
+# A. SELF-HEAL PIN CUMA ADA DI ReSukiSU. Pelajaran revisi ke-22 (branch
+#    upstream bergerak/rebase -> commit ter-pin tidak ikut terbawa oleh
+#    `git clone --depth=1 -b <branch>`) berlaku sama untuk proton-clang dan
+#    AnyKernel3: keduanya cuma di-ASSERT. Artinya pin di sana bukan "bangun
+#    commit ini", melainkan "matikan build kalau upstream bergerak" - padahal
+#    isinya masih bisa diambil lewat fetch-by-sha (allowAnySHA1InWant).
+#    Keduanya sekarang memakai pola yang sama dengan step 04. --depth=1 boleh
+#    di sini karena tidak ada `rev-list --count` yang bergantung pada riwayat
+#    (berbeda dari KSU_VERSION). Source kernel SENGAJA tidak ikut di-self-heal:
+#    itu repo dlagia sendiri, jadi drift di rosemary-13 berarti pemiliknya yang
+#    memindahkannya dan memang harus berhenti untuk diaudit ulang.
+#
+# B. CACHE TOOLCHAIN TIDAK TERIKAT PIN. Key-nya 'proton-clang-master-v1', jadi
+#    menaikkan CLANG_PIN tanpa ingat menaikkan key akan memulihkan compiler
+#    LAMA dari cache - persis jebakan yang catatannya sendiri sudah
+#    memperingatkan tapi diserahkan ke ingatan manusia. Key sekarang memuat SHA
+#    pin itu sendiri, jadi ganti pin = otomatis cache miss.
+#
+# C. 'no_sanitize( tersisa: 1' TIDAK BISA DIJELASKAN dari log. Angkanya benar
+#    tapi telanjang, jadi pembaca tidak bisa tahu itu sisa wajar atau bukan.
+#    Sisa itu SELALU include/linux/compiler-clang.h dan memang tidak bisa
+#    disentuh sed di atasnya: bentuknya dua baris DAN dua argumen
+#    (`__attribute__((no_sanitize("address", "hwaddress")))`), sedangkan
+#    regex-nya satu baris satu string. Tidak berbahaya - itu definisi
+#    __no_sanitize_address, bukan pemakaian, dan KASAN tidak dinyalakan.
+#    Efek samping yang layak dicatat: baris `#define __nocfi
+#    __attribute__((no_sanitize("cfi")))` di file yang sama JUSTRU kena sed dan
+#    jadi kosong. Tidak apa-apa karena CONFIG_CFI_CLANG tidak ada di
+#    rosemary_defconfig (kernel 4.14 MTK ini tidak memakai CFI clang), tapi
+#    kalau suatu saat CFI dinyalakan, sed ini harus dipersempit dulu.
+#    Sekarang yang dicetak nama file-nya, bukan cuma cacahnya.
 # ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
@@ -1573,6 +1622,19 @@ jobs:
           # di patch_rejects/ (dan blob di .git/) yang memang sengaja tidak
           # disunting - angkanya jadi > 0 dan menyesatkan pembaca log, seolah
           # pembersihan gagal. Sekarang cakupannya disamakan dengan sed-nya.
+          # Revisi ke-23: dulu yang dicetak cuma cacahnya, sehingga "tersisa: 1"
+          # tidak bisa diverifikasi pembaca log. Sisa itu selalu
+          # include/linux/compiler-clang.h: di sana __no_sanitize_address ditulis
+          # DUA BARIS dengan DUA argumen - __attribute__((no_sanitize("address",
+          # "hwaddress"))) - sedangkan sed di atas satu baris satu string, jadi
+          # tidak mungkin cocok. Aman: itu definisi makro, bukan pemakaian, dan
+          # KASAN mati. Catatan: `#define __nocfi __attribute__((no_sanitize("cfi")))`
+          # di file yang sama JUSTRU kena sed dan dikosongkan - tidak apa-apa
+          # selama CONFIG_CFI_CLANG tidak dipakai (memang tidak ada di
+          # rosemary_defconfig). Kalau CFI suatu saat dinyalakan, persempit dulu
+          # sed-nya supaya tidak ikut menghapus definisi __nocfi.
+          echo '== sisa no_sanitize( (diharapkan hanya include/linux/compiler-clang.h) =='
+          grep -rl 'no_sanitize(' --include='*.h' --include='*.c' --exclude-dir=.git --exclude-dir=patch_rejects . 2>/dev/null | sed 's/^/  /'
           echo -n 'no_sanitize( tersisa: '; grep -rl 'no_sanitize(' --include='*.h' --include='*.c' --exclude-dir=.git --exclude-dir=patch_rejects . 2>/dev/null | wc -l
 
       - name: Aktifkan KSU & SuSFS di defconfig (termasuk dlagia ksu-susfs_defconfig)
@@ -1714,7 +1776,10 @@ jobs:
         uses: actions/cache@v6
         with:
           path: clang-proton
-          key: proton-clang-master-v1
+          # Revisi ke-23: key memuat SHA pin (lihat CLANG_PIN di step bawah), jadi
+          # menaikkan pin otomatis jadi cache miss. Sebelumnya 'proton-clang-master-v1'
+          # dan sinkronisasinya diserahkan ke ingatan manusia.
+          key: proton-clang-9fb011b1
 
       - name: Ambil toolchain proton-clang (dipakai penulis kernel ini di b.sh)
         run: |
@@ -1736,12 +1801,26 @@ jobs:
           if [ -d clang-proton/.git ]; then
             CLANG_SHA="$(git -C clang-proton rev-parse HEAD)"
             echo "proton-clang commit: $CLANG_SHA"
+            # SELF-HEAL (revisi ke-23): pola yang sama dengan step 04. Clone di
+            # atas `--depth=1` tanpa -b, jadi yang terbawa cuma HEAD branch
+            # default. Begitu kdrag0n mendorong satu commit (atau me-rebase),
+            # commit yang di-pin tidak ada di clone dan assert di bawah mati -
+            # padahal isinya masih dilayani GitHub lewat fetch-by-sha. --depth=1
+            # aman di sini: tidak ada rev-list --count yang bergantung riwayat.
+            if [ "$CLANG_SHA" != "$CLANG_PIN" ]; then
+              echo "HEAD bukan pin, menarik commit ter-pin langsung: $CLANG_PIN"
+              git -C clang-proton fetch --depth=1 origin "$CLANG_PIN" \
+                && git -C clang-proton checkout -q FETCH_HEAD || true
+              CLANG_SHA="$(git -C clang-proton rev-parse HEAD)"
+              echo "proton-clang commit setelah self-heal: $CLANG_SHA"
+            fi
             test "$CLANG_SHA" = "$CLANG_PIN" || {
-              echo "ERROR: proton-clang bukan commit yang di-pin."
+              echo "ERROR: proton-clang bukan commit yang di-pin, self-heal juga gagal."
               echo "  diharapkan: $CLANG_PIN"
               echo "  aktual    : $CLANG_SHA"
-              echo "Kalau update ini disengaja: ganti CLANG_PIN, lalu naikkan juga key"
-              echo "cache 'proton-clang-master-v1' supaya cache lama tidak terpakai."
+              echo "Berarti commit itu benar-benar tidak dilayani lagi oleh remote."
+              echo "Kalau update ini disengaja: cukup ganti CLANG_PIN - key cache"
+              echo "sudah memuat SHA pin sejak revisi ke-23, jadi ikut berganti sendiri."
               exit 1
             }
             echo "OK: proton-clang ter-pin di $CLANG_PIN"
@@ -1939,8 +2018,18 @@ jobs:
           # Isinya tetap diverifikasi lewat SHA, bukan lewat nama repo.
           AK3_PIN="a9fe54faa683daa54868687e701ca2a7b1fe68fc"
           AK3_SHA="$(git -C AnyKernel3 rev-parse HEAD)"
+          # SELF-HEAL (revisi ke-23), alasan sama dengan proton-clang & step 04:
+          # `clone --depth=1 -b mt6781` cuma membawa HEAD branch, jadi satu commit
+          # baru dari vlxlxlv sudah cukup membuat pin tak terjangkau di clone.
+          if [ "$AK3_SHA" != "$AK3_PIN" ]; then
+            echo "HEAD bukan pin, menarik commit ter-pin langsung: $AK3_PIN"
+            git -C AnyKernel3 fetch --depth=1 origin "$AK3_PIN" \
+              && git -C AnyKernel3 checkout -q FETCH_HEAD || true
+            AK3_SHA="$(git -C AnyKernel3 rev-parse HEAD)"
+            echo "AnyKernel3 commit setelah self-heal: $AK3_SHA"
+          fi
           test "$AK3_SHA" = "$AK3_PIN" || {
-            echo "ERROR: AnyKernel3 mt6781 bukan commit yang di-pin."
+            echo "ERROR: AnyKernel3 mt6781 bukan commit yang di-pin, self-heal juga gagal."
             echo "  diharapkan: $AK3_PIN"
             echo "  aktual    : $AK3_SHA"
             echo "Periksa dulu isi repo sebelum menaikkan pin - anykernel.sh di bawah"
