@@ -1,0 +1,195 @@
+# ============================================================
+# Naikkan pin - tombol, bukan robot.
+#
+# Ia HANYA jalan kalau Anda menekannya (workflow_dispatch). Tidak ada jadwal,
+# tidak pernah menaikkan apa pun sendiri. Pasangannya:
+#
+#   pin-watch.yml   -> MEMBACA & memvonis  ("SUSFS gerak, vonis AMAN")
+#   naikkan-pin.yml -> MENULIS pins.env    (ini)
+#   build-...yml    -> MENG-COMPILE
+#
+# Kenapa pin harus tinggal di pins.env dan bukan di dalam workflow build:
+# GITHUB_TOKEN dilarang menulis file apa pun di bawah .github/workflows/, jadi
+# selama SHA tinggal di sana, tidak ada workflow yang bisa menaikkannya.
+#
+# PENGAMAN YANG PALING PENTING ada di step "Triase": sebelum menulis apa pun, ia
+# membandingkan pin lama dengan tujuan dan menolak kalau ada file sensitif yang
+# tersentuh (fs/, patch SUSFS, kernel/src/, defconfig, ...). Jadi tombol ini
+# tidak bisa dipakai untuk diam-diam menaikkan sesuatu yang seharusnya diaudit
+# dulu - kecuali Anda sendiri mencentang "paksa" dan menyatakan sudah paham.
+# ============================================================
+name: Naikkan pin
+
+on:
+  workflow_dispatch:
+    inputs:
+      komponen:
+        description: 'Pin mana yang dinaikkan'
+        required: true
+        type: choice
+        options:
+          - 'SUSFS'
+          - 'ReSukiSU'
+          - 'NoMount driver'
+          - 'NoMount loader'
+          - 'source kernel'
+          - 'Build-Kernel_scripts'
+          - 'AnyKernel3'
+          - 'proton-clang'
+      sha:
+        description: 'SHA tujuan - kosongkan untuk memakai HEAD upstream'
+        required: false
+        type: string
+        default: ''
+      bangun:
+        description: 'Langsung bangun kernel setelah pin naik'
+        type: boolean
+        default: true
+      paksa:
+        description: 'PAKSA walau menyentuh file sensitif (hanya kalau sudah diaudit)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # menulis pins.env
+  actions: write    # memanggil workflow build
+
+concurrency:
+  group: naikkan-pin
+  cancel-in-progress: false
+
+jobs:
+  naikkan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Triase lalu tulis pins.env
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KOMPONEN: ${{ inputs.komponen }}
+          SHA_MINTA: ${{ inputs.sha }}
+          PAKSA: ${{ inputs.paksa }}
+        run: |
+          set -euo pipefail
+
+          # Tabel ini KEMBARAN tabel KOMPONEN di pin-watch.yml - kalau satu
+          # diubah, ubah keduanya. Pemisah ';' (bukan '|') karena kolom regex
+          # jalur sensitif sendiri memakai '|' untuk alternasi.
+          case "$KOMPONEN" in
+            'source kernel')         BARIS='KERNEL_PIN;dlagia/android_kernel_xiaomi_rosemary;rosemary-13;^(fs/|arch/arm64/configs/)' ;;
+            'Build-Kernel_scripts')  BARIS='SCRIPTS_PIN;dlagia/Build-Kernel_scripts;main;.' ;;
+            'ReSukiSU')              BARIS='KSU_PIN;ReSukiSU/ReSukiSU;main;^kernel/' ;;
+            'SUSFS')                 BARIS='SUSFS_PIN;JackA1ltman/NonGKI_Kernel_Build_2nd;mainline;(susfs_patch_to_4\.14\.patch|^scripts/|hook)' ;;
+            'NoMount driver')        BARIS='NOMOUNT_PIN;maxsteeel/nomount;dev;^kernel/src/' ;;
+            'NoMount loader')        BARIS='NOMOUNT_LOADER_PIN;maxsteeel/nomount;master;^kernel/setup\.sh' ;;
+            'proton-clang')          BARIS='CLANG_PIN;kdrag0n/proton-clang;master;.' ;;
+            'AnyKernel3')            BARIS='AK3_PIN;vlxlxlv/AnyKernel3;mt6781;^tools/' ;;
+            *) echo "ERROR: komponen tak dikenal: $KOMPONEN"; exit 1 ;;
+          esac
+          IFS=';' read -r NAMA REPO REF SENSITIF <<< "$BARIS"
+
+          LAMA="$(grep -oE "^${NAMA}=[0-9a-f]{40}$" pins.env | cut -d= -f2)"
+          test -n "$LAMA" || { echo "ERROR: $NAMA tidak ada di pins.env"; exit 1; }
+
+          if [ -n "$SHA_MINTA" ]; then
+            # SHA diketik tangan: wajib 40 hex DAN benar-benar ada di repo itu.
+            echo "$SHA_MINTA" | grep -qE '^[0-9a-f]{40}$' \
+              || { echo "ERROR: '$SHA_MINTA' bukan SHA 40 hex huruf kecil"; exit 1; }
+            BARU="$(gh api "repos/$REPO/commits/$SHA_MINTA" --jq .sha)" \
+              || { echo "ERROR: $SHA_MINTA tidak ada di $REPO"; exit 1; }
+          else
+            BARU="$(gh api "repos/$REPO/commits/$REF" --jq .sha)"
+          fi
+
+          echo "komponen : $KOMPONEN ($NAMA)"
+          echo "repo     : $REPO@$REF"
+          echo "lama     : $LAMA"
+          echo "tujuan   : $BARU"
+
+          if [ "$LAMA" = "$BARU" ]; then
+            echo "Sudah di sana. Tidak ada yang diubah."
+            echo "TIDAK_ADA_PERUBAHAN=1" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          # ---------- triase ----------
+          CMP="$(gh api "repos/$REPO/compare/$LAMA...$BARU" 2>/dev/null || true)"
+          test -n "$CMP" || { echo "ERROR: tidak bisa membandingkan $LAMA...$BARU"; exit 1; }
+
+          STATUS="$(echo "$CMP" | jq -r .status)"
+          MAJU="$(echo "$CMP" | jq -r .ahead_by)"
+          BERKAS="$(echo "$CMP" | jq -r '.files[]?.filename')"
+          N_BERKAS="$(echo "$BERKAS" | grep -c . || true)"
+          KENA="$(echo "$BERKAS" | grep -cE "$SENSITIF" || true)"
+          : "${N_BERKAS:=0}" "${KENA:=0}"
+
+          echo "status   : $STATUS, maju $MAJU commit, $N_BERKAS file, $KENA sensitif"
+
+          if [ "$KENA" -gt 0 ]; then
+            echo ""
+            echo "File sensitif yang tersentuh:"
+            echo "$BERKAS" | grep -E "$SENSITIF" | head -20 | sed 's/^/  - /'
+            echo ""
+            if [ "$PAKSA" != "true" ]; then
+              echo "DITOLAK: kenaikan ini menyentuh bagian yang dulu diaudit."
+              echo "Patch/fixer bisa ikut patah, dan itu tidak ketahuan dari build hijau."
+              echo "Minta audit dulu. Kalau memang sudah diaudit, jalankan ulang dengan paksa = true."
+              exit 1
+            fi
+            echo "PAKSA aktif - diteruskan atas tanggung jawab penekan tombol."
+          fi
+
+          # ---------- tulis ----------
+          sed -i "s|^${NAMA}=${LAMA}$|${NAMA}=${BARU}|" pins.env
+
+          # Buktikan yang berubah tepat SATU baris, dan itu baris yang dimaksud.
+          UBAH="$(git diff --numstat -- pins.env | awk '{print $1 "/" $2}')"
+          test "$UBAH" = "1/1" || { echo "ERROR: pins.env berubah $UBAH baris, harusnya 1/1"; exit 1; }
+          grep -qE "^${NAMA}=${BARU}$" pins.env || { echo "ERROR: baris $NAMA tidak jadi tertulis"; exit 1; }
+
+          {
+            echo "## Pin dinaikkan"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| komponen | $KOMPONEN (\`$NAMA\`) |"
+            echo "| dari | \`${LAMA:0:9}\` |"
+            echo "| ke | \`${BARU:0:9}\` |"
+            echo "| isi | $MAJU commit, $N_BERKAS file, $KENA sensitif |"
+            echo "| diff | https://github.com/$REPO/compare/$LAMA...$BARU |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          {
+            echo "NAMA=$NAMA"
+            echo "LAMA=$LAMA"
+            echo "BARU=$BARU"
+          } >> "$GITHUB_ENV"
+
+      - name: Commit pins.env
+        if: env.TIDAK_ADA_PERUBAHAN != '1'
+        run: |
+          set -euo pipefail
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add pins.env
+          # Dua -m, bukan satu pesan multi-baris: indentasi blok YAML ini akan
+          # ikut terbawa ke badan commit kalau ditulis dalam satu string.
+          git commit \
+            -m "pins: ${NAMA} ${LAMA:0:9} -> ${BARU:0:9}" \
+            -m "Dinaikkan lewat workflow \"Naikkan pin\" oleh @${GITHUB_ACTOR}. Triase lolos: nol file sensitif tersentuh, atau paksa = true."
+          git push
+
+      # Commit dari GITHUB_TOKEN SENGAJA tidak memicu event push - itu aturan
+      # GitHub untuk mencegah workflow saling memicu tanpa henti. Jadi build
+      # dipanggil eksplisit di sini, bukan lewat `paths:` di workflow build.
+      - name: Panggil build
+        if: env.TIDAK_ADA_PERUBAHAN != '1' && inputs.bangun
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run build-kernel-ksu-v2.yml --ref "${GITHUB_REF_NAME}"
+          echo "Build dipanggil. Hasilnya terbit sebagai Release kalau hijau." >> "$GITHUB_STEP_SUMMARY"
