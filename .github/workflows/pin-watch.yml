@@ -49,13 +49,17 @@ jobs:
       - name: Bandingkan pin dengan upstream dan tulis laporan
         env:
           GH_TOKEN: ${{ github.token }}
-          WF: .github/workflows/build-kernel-ksu-v2.yml
+          # Revisi ke-26: pin pindah dari workflow build ke pins.env.
+          WF: pins.env
         run: |
           set -u
           test -f "$WF" || { echo "ERROR: $WF tidak ada"; exit 1; }
 
           # Pin dibaca DARI FILE, tidak pernah disalin ke sini, supaya laporan ini
           # tidak bisa basi sendiri kalau pin dinaikkan tanpa menyentuh workflow ini.
+          # Sejak revisi ke-26 filenya pins.env, bukan lagi workflow build:
+          # GITHUB_TOKEN dilarang menulis di .github/workflows/, jadi pin harus
+          # tinggal di luar sana supaya bisa dinaikkan oleh workflow.
           ambil() { grep -oiE "$1" "$WF" | head -1 | grep -oiE '[0-9a-f]{40}'; }
 
           # Pemisah field SENGAJA ';' bukan '|': regex jalur sensitif di kolom 4
@@ -80,14 +84,14 @@ jobs:
           #   - proton-clang   : apa pun = ganti compiler.
           #   - Build-Kernel_scripts: apa pun = ganti cara integrasi.
           KOMPONEN='
-          KERNEL_PIN="[0-9a-f]{40}";dlagia/android_kernel_xiaomi_rosemary;rosemary-13;^(fs/|arch/arm64/configs/);source kernel
-          KSU_PIN="[0-9a-f]{40}";ReSukiSU/ReSukiSU;main;^kernel/;ReSukiSU
-          SUSFS_PIN="[0-9a-f]{40}";JackA1ltman/NonGKI_Kernel_Build_2nd;mainline;(susfs_patch_to_4\.14\.patch|^scripts/|hook);SUSFS
-          NOMOUNT_PIN="[0-9a-f]{40}";maxsteeel/nomount;dev;^kernel/src/;NoMount driver
-          nomount/[0-9a-f]{40}/kernel/setup\.sh;maxsteeel/nomount;master;^kernel/setup\.sh;NoMount loader
-          CLANG_PIN="[0-9a-f]{40}";kdrag0n/proton-clang;master;.;proton-clang
-          AK3_PIN="[0-9a-f]{40}";vlxlxlv/AnyKernel3;mt6781;^tools/;AnyKernel3
-          Build-Kernel_scripts/[0-9a-f]{40};dlagia/Build-Kernel_scripts;main;.;Build-Kernel_scripts
+          ^KERNEL_PIN=[0-9a-f]{40};dlagia/android_kernel_xiaomi_rosemary;rosemary-13;^(fs/|arch/arm64/configs/);source kernel
+          ^KSU_PIN=[0-9a-f]{40};ReSukiSU/ReSukiSU;main;^kernel/;ReSukiSU
+          ^SUSFS_PIN=[0-9a-f]{40};JackA1ltman/NonGKI_Kernel_Build_2nd;mainline;(susfs_patch_to_4\.14\.patch|^scripts/|hook);SUSFS
+          ^NOMOUNT_PIN=[0-9a-f]{40};maxsteeel/nomount;dev;^kernel/src/;NoMount driver
+          ^NOMOUNT_LOADER_PIN=[0-9a-f]{40};maxsteeel/nomount;master;^kernel/setup\.sh;NoMount loader
+          ^CLANG_PIN=[0-9a-f]{40};kdrag0n/proton-clang;master;.;proton-clang
+          ^AK3_PIN=[0-9a-f]{40};vlxlxlv/AnyKernel3;mt6781;^tools/;AnyKernel3
+          ^SCRIPTS_PIN=[0-9a-f]{40};dlagia/Build-Kernel_scripts;main;.;Build-Kernel_scripts
           '
 
           TABEL=/tmp/tabel.md
@@ -172,7 +176,7 @@ jobs:
                 echo "$berkas" | grep -E "$sensitif" | head -20 | sed 's/^/  - `/; s/$/`/'
               fi
               printf -- '- diff: https://github.com/%s/compare/%s...%s\n' "$repo" "$pin" "$head"
-              printf -- '- cara menaikkan: ganti `%s` -> `%s` di `%s`, commit, push. Build jalan sendiri.\n' \
+              printf -- '- cara menaikkan: ganti `%s` -> `%s` di `%s`, commit. Build jalan sendiri.\n' \
                 "${pin:0:9}" "${head:0:9}" "$WF"
             } >> "$RINCI"
           done
