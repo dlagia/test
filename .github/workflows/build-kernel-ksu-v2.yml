@@ -837,6 +837,17 @@
 # ada satu huruf pun bergeser, jadi artefak revisi ini wajib seukuran artefak
 # revisi ke-25a. Daftar sekali-pakai itu dicabut di revisi berikutnya.
 #
+# REVISI KE-27 (2026-09-14) - daftar sekali-pakai di step pemuat dicabut (sudah
+# membuktikan tugasnya di run 34772090899), dan workflow KETIGA lahir:
+# .github/workflows/naikkan-pin.yml, tombol yang menulis pins.env. Sejak ini,
+# menaikkan pin = buka Actions, pilih komponen dari dropdown, tekan Run - tanpa
+# menyentuh berkas, bisa dari HP. Pembagian tugasnya: pin-watch MEMBACA dan
+# memvonis, naikkan-pin MENULIS, workflow ini MENG-COMPILE.
+#
+# Tombol itu menolak sendiri kenaikan yang menyentuh file sensitif (fs/, patch
+# SUSFS, kernel/src/, defconfig, ...) kecuali penekannya mencentang "paksa",
+# jadi jalur cepat ini tidak bisa dipakai untuk melewati audit diam-diam.
+#
 # Dua hal yang sengaja dipilih di step pemuat:
 #   - dibaca lewat API pada $GITHUB_SHA, bukan actions/checkout - job ini tidak
 #     pernah punya .git di workspace (lihat revisi ke-25a), dan membaca pada
@@ -932,28 +943,17 @@ jobs:
           echo "== pin yang dipakai build ini =="
           grep -E '^[A-Z0-9_]+=[0-9a-f]{40}$' /tmp/pins.env | sed 's/^/  /'
 
-          # SEKALI PAKAI (revisi ke-26). pins.env baru saja dipisah dari workflow
-          # ini, jadi build ini wajib membuktikan nilainya identik dengan yang
-          # dulu tertanam - kalau ada satu huruf bergeser, yang terbangun bukan
-          # kernel yang sama dan perbandingan ukuran artefak jadi omong kosong.
-          # Blok ini DICABUT di revisi berikutnya: begitu tombol "Naikkan pin"
-          # hidup, pins.env memang harus boleh berubah.
-          for h in \
-            KERNEL_PIN=602782dabb7a9b5925400f64ec00db7c632098a6 \
-            SCRIPTS_PIN=10f1480b39418e885d4402e78a5ec7721d5040d3 \
-            KSU_PIN=c04159fcbdfdb71b0c3765ecaaf23c4e0a498c93 \
-            SUSFS_PIN=57022dd56f1dbae45750ff5bf00f09457e3f2b8d \
-            NOMOUNT_PIN=7919faf2ab574110e388a4f444e5fef909c24e16 \
-            NOMOUNT_LOADER_PIN=016375cd4a9e7da07b0519dd7bc492101de2a834 \
-            CLANG_PIN=9fb011b183fe7e69b04b873ef6533b4b077e3c5e \
-            AK3_PIN=a9fe54faa683daa54868687e701ca2a7b1fe68fc; do
-            grep -qxF "$h" /tmp/pins.env || {
-              echo "ERROR: $h tidak cocok dengan pins.env."
-              echo "       Revisi ke-26 hanya MEMINDAHKAN pin, tidak menaikkannya."
-              exit 1
-            }
-          done
-          echo "OK: kedelapan pin identik dengan yang dulu tertanam di workflow."
+          # Daftar delapan nilai yang diharapkan SUDAH DICABUT di revisi ke-27.
+          # Ia hanya perlu sekali, untuk membuktikan revisi ke-26 memindahkan pin
+          # tanpa mengubah satu huruf pun (terbukti di run 34772090899). Sejak
+          # tombol "Naikkan pin" hidup, pins.env memang HARUS boleh berubah -
+          # daftar itu justru akan menggagalkan setiap kenaikan yang sah.
+          #
+          # Yang menjaga kebenaran pin sekarang bukan daftar di sini, melainkan:
+          #   - step triase di naikkan-pin.yml, yang menolak kenaikan menyentuh
+          #     file sensitif sebelum sebaris pun ditulis ke pins.env;
+          #   - assert per komponen di step-step di bawah (KERNEL_ACT vs
+          #     KERNEL_PIN, SUSFS_HIT, self-heal clang/AK3, dan seterusnya).
 
       - name: Pasang dependency build
         run: |
