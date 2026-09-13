@@ -688,6 +688,42 @@
 #         section fs/super.c ikut hilang.
 #      3. KSU_PIN f4c4923e -> 3380d41f (revisi ke-20, TERBUKTI BOOT).
 #      Loader NoMount 016375cd -> 0c4b2dbd tidak perlu: byte-identik.
+#
+# PENYEMPURNAAN (revisi ke-22, 2026-09-13) - perbaikan build GAGAL 34760665407.
+#
+# A. APA YANG TERJADI: revisi ke-21 di-push, step 04 berhenti di assert pin
+#    ReSukiSU: "diharapkan f4c4923e, aktual c04159fc". Penyebabnya BUKAN patch
+#    SUSFS (patch + audit reject + keenam-plus-dua fixer semuanya lolos di log
+#    itu), melainkan ReSukiSU/ReSukiSU ME-REBASE branch main sekitar 2 jam
+#    setelah audit revisi ke-21: commit f4c4923e (11:03Z) hilang dari main dan
+#    isinya muncul kembali sebagai 601f6d2a (12:17Z). API compare
+#    f4c4923e...main menjawab status=diverged (ahead 2, behind 1) = pin sudah
+#    ORPHAN. `git clone` biasa tidak mengambil commit tak-terjangkau, dan
+#    setup.sh menutup checkout-nya dengan `|| echo "[-] Checkout default
+#    branch"` sehingga kegagalannya tidak terasa - HEAD nyangkut di main HEAD.
+#
+# B. DUA PERBAIKAN:
+#      1. KSU_PIN f4c4923e -> c04159fc (main HEAD sekarang, TERJANGKAU).
+#         Dibanding 3380d41f yang terbukti boot: 3 commit / 32 file, semuanya
+#         di manager/. Nol file kernel/ -> tidak ada audit yang perlu diulang.
+#      2. SELF-HEAL di step 04: kalau HEAD != pin, workflow menarik commit itu
+#         sendiri dengan `git fetch origin <sha>` lalu checkout FETCH_HEAD.
+#         GitHub melayani fetch-by-sha bahkan untuk commit orphan - diuji di
+#         luar CI atas f4c4923e yang sudah orphan: berhasil. Efeknya pin tetap
+#         terpasang walau upstream me-rebase lagi besok. Fetch tanpa --depth
+#         supaya `rev-list --count` (dasar KSU_VERSION) tidak jadi 1.
+#
+# C. YANG TIDAK DIUBAH: SUSFS_PIN c231ef5d, loader NoMount 016375cd, driver
+#    NoMount 7919faf2, dan kedua fixer IDA baru (#7 fs/super.c, #8
+#    fs/namespace.c) - log build membuktikan semuanya berjalan: "OK: sanitizer
+#    patch SUSFS terbukti dijalankan", "OK: hanya fs/proc/task_mmu.c yang
+#    reject", dan fs/super.c ter-patch tanpa fuzz persis seperti simulasi.
+#    Pin NoMount 7919faf2 diperiksa ulang: masih terjangkau (dev HEAD),
+#    jadi tidak kena masalah rebase yang sama.
+#
+# D. URUTAN BACK-OUT kalau gagal boot: sama seperti revisi ke-21 (fixer #8 ->
+#    SUSFS_PIN -> KSU_PIN), dengan catatan KSU_PIN sekarang turun ke 3380d41f
+#    langsung karena f4c4923e tidak bisa lagi dipakai sebagai titik balik.
 # ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
@@ -828,7 +864,19 @@ jobs:
           # Tidak satu pun file di kernel/, jadi setup.sh, Kbuild, Kconfig dan
           # hook TIDAK berubah -> seluruh audit di atas tetap sahih. Efek di
           # build: KSU_VERSION +2 (rev-list count naik dua).
-          KSU_PIN="f4c4923e1884050b072be8cefe876746c07f0e8c"
+          # DINAIKKAN LAGI di revisi ke-22 (2026-09-13): f4c4923e -> c04159fc.
+          # BUKAN karena ada fitur baru, tapi karena f4c4923e SUDAH TIDAK ADA di
+          # main: upstream me-rebase branch itu ~2 jam setelah audit revisi ke-21,
+          # sehingga commit pin jadi ORPHAN (isi yang sama sekarang bernama
+          # 601f6d2a). Build 34760665407 GAGAL tepat di assert pin di bawah:
+          # diharapkan f4c4923e, aktual c04159fc. Assert itu bekerja seperti
+          # seharusnya - kode salah tidak ikut ter-compile.
+          # c04159fc = main HEAD (2026-09-13T13:25Z, "manager: improve superuser
+          # sort (#405)"). Dibanding 3380d41f yang TERBUKTI BOOT: 3 commit, 32
+          # file, SEMUANYA di manager/ (Kotlin + strings.xml terjemahan). Nol file
+          # di kernel/, jadi audit Kconfig/Kbuild/setup.sh/hook di atas tetap sahih
+          # dan satu-satunya efek di build adalah KSU_VERSION +3.
+          KSU_PIN="c04159fcbdfdb71b0c3765ecaaf23c4e0a498c93"
           sed -i "s|ReSukiSU/ReSukiSU/main/kernel/setup.sh|ReSukiSU/ReSukiSU/${KSU_PIN}/kernel/setup.sh|" integrate_ksu_susfs.sh
           sed -i "s#setup.sh\" | bash >#setup.sh\" | bash -s ${KSU_PIN} >#" integrate_ksu_susfs.sh
           # PENTING: URL dan `| bash >` ada di BARIS YANG SAMA (baris 11), jadi di sini
@@ -1078,6 +1126,25 @@ jobs:
           # lanjut memakai branch main. Assert di bawah ini satu-satunya yang
           # menangkap kondisi itu sebelum kode salah ikut ter-compile.
           KSU_HEAD="$(git -C KernelSU rev-parse HEAD)"
+          # SELF-HEAL (revisi ke-22): jangan bergantung pada niat baik setup.sh.
+          # Pada build 34760665407 checkout-nya gagal dalam diam karena commit pin
+          # ter-rebase jadi orphan sehingga `git clone` biasa tidak membawanya.
+          # GitHub tetap melayani fetch-by-sha untuk commit orphan (uploadpack
+          # allowAnySHA1InWant) - SUDAH DIUJI di luar CI: `git fetch --depth 1
+          # origin f4c4923e` atas commit orphan itu berhasil. Jadi kalau HEAD
+          # tidak sama dengan pin, pin diambil sendiri dari sha-nya. Fetch
+          # SENGAJA tanpa --depth: clone setup.sh penuh, dan KSU_VERSION =
+          # 30000 + `git rev-list --count HEAD` + 700, jadi riwayat dangkal akan
+          # memelintir angka versi. Kalau fetch juga gagal (commit benar-benar
+          # dihapus), assert di bawah yang menghentikan build - bukan kompilasi
+          # sumber yang salah.
+          if [ "$KSU_HEAD" != "$KSU_PIN" ]; then
+            echo "[!] KernelSU di $KSU_HEAD, bukan pin $KSU_PIN - setup.sh gagal checkout"
+            echo "[!] coba ambil langsung per-sha (commit bisa orphan akibat rebase upstream)"
+            git -C KernelSU fetch origin "$KSU_PIN" && git -C KernelSU checkout -q FETCH_HEAD || true
+            KSU_HEAD="$(git -C KernelSU rev-parse HEAD)"
+            echo "[+] KernelSU sekarang di $KSU_HEAD"
+          fi
           test "$KSU_HEAD" = "$KSU_PIN" || {
             echo "ERROR: KernelSU tidak ter-checkout ke commit pin."
             echo "  diharapkan: $KSU_PIN"
