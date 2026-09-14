@@ -856,6 +856,46 @@
 #     pins.env masuk ke lingkungan semua step sesudahnya, jadi apa pun yang
 #     bukan NAMA=<40 hex kecil> ditolak di sana.
 # ============================================================
+# REVISI KE-28 (2026-09-14) - audit ulang. Satu pin bergerak, tujuh diam.
+#
+# ReSukiSU c04159fc -> 7741f878 ("kernel: retain capabilities across execve for
+# non-root profiles", port dari tiann/KernelSU#3710). Robot pantau pin memvonis
+# PERLU AUDIT karena menyentuh ^kernel/. Hasil auditnya:
+#   - diff-nya 1 berkas, +4/-0, semuanya di kernel/policy/app_profile.c di dalam
+#     escape_with_root_profile(): cap_inheritable dan cap_ambient ikut diisi dari
+#     profile->capabilities.effective, TAPI hanya kalau profile->uid != 0.
+#   - profil root bawaan build ini ber-uid 0, jadi jalur yang benar-benar
+#     dipakai di sini BYTE-IDENTIK dengan c04159fc. Yang berubah cuma profil
+#     non-root, dan arahnya menambah kemampuan yang bertahan lewat execve.
+#   - 4.14 punya kedua field: di tree 602782da, include/linux/cred.h baris 133
+#     cap_ambient (ada sejak 4.3) dan baris 129 cap_inheritable. Lebarnya sama
+#     dengan tiga memcpy di atasnya (kernel_cap_t = 8 byte), jadi aman.
+#   - invarian ambient - security/commoncap.c baris 740, WARN_ON di dalam
+#     cap_bprm_set_creds() - berbunyi ambient <= permitted & inheritable. Di
+#     sini ketiganya disalin dari nilai yang sama persis, jadi invariannya tepat
+#     terpenuhi dan tidak ada WARN yang bisa meletus saat execve.
+#   - workflow ini tidak pernah menambal app_profile.c (grep "app_profile" nol
+#     di seluruh YAML), jadi tidak ada anchor atau fixer yang bisa patah. Satu-
+#     satunya efek build: KSU_VERSION naik 1 dari rev-list --count.
+#   - pin baru itu HEAD main dan TERJANGKAU: compare menjawab "ahead", bukan
+#     "diverged", jadi jebakan orphan revisi ke-22 tidak berlaku di sini.
+#
+# Tujuh pin lain identik dengan HEAD upstream (compare: identical, 0 berkas):
+# source kernel 602782da, Build-Kernel_scripts 10f1480b, SUSFS 57022dd5,
+# NoMount driver 7919faf2, NoMount loader 016375cd, proton-clang 9fb011b1,
+# AnyKernel3 a9fe54fa.
+#
+# Satu cacat perkakas ditemukan dan diperbaiki di luar YAML ini: sejak revisi
+# ke-26 memindahkan pin ke pins.env, tabel pin preflight.sh (dan wrapper
+# ~/bin/pincheck) masih mencari pola KERNEL_PIN="<40 hex>" DI DALAM file ini.
+# Kedelapan polanya kini nol hit, jadi gerbang pra-push itu berhenti memeriksa
+# apa pun dan malah keluar 1 dengan "POLA TAK KETEMU" - lint tetap jalan, cek
+# pin mati diam-diam. Keduanya sekarang membaca pins.env dan sudah lengkap
+# delapan baris (loader NoMount dulu cuma catatan, sekarang pin penuh).
+# Pelajarannya sama dengan catatan di pin-watch.yml: satu baris komponen hidup
+# di LIMA tempat - pins.env, pin-watch.yml, naikkan-pin.yml, step pemuat di file
+# ini, dan preflight.sh - jadi memindahkan sumbernya berarti memperbarui semua.
+# ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
 
