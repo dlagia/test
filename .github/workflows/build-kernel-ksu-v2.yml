@@ -931,6 +931,15 @@
 # 4. Pesan ambigu di step patch selinux/hooks.c dipisah (lihat komentar
 #    revisi ke-29 di sana): "pemanggilan + extern sudah ada" dan "pemanggilan
 #    tidak ada sama sekali" dulu sama-sama mencetak "Tidak perlu ditambal."
+#    Begitu dipisah, build 34842849770 langsung memperlihatkan bahwa build ini
+#    SELALU berada di cabang kedua - dan penelusurannya menutup satu tanda
+#    tanya lama: ReSukiSU tidak punya ksu_hide_setprocattr sama sekali (nol
+#    kemunculan di seluruh pohon), ia memasang proteksi setprocattr lewat hook
+#    LSM di kernel/feature/selinux_hide.c. susfs_inline_hook_patches.sh baris
+#    243 memang sengaja melewati penambalan itu kalau simbolnya tak ada. Jadi
+#    tidak ada yang rusak; cabang itu sekarang mencetak alasan sebenarnya dan
+#    sekalian meng-assert keberadaan pengganti LSM-nya, supaya kalau ReSukiSU
+#    suatu saat berubah bentuk, build berhenti alih-alih diam.
 #
 # 5. Delapan belas blok `run:` di file ini dibaca ulang satu per satu dan
 #    tidak ada temuan baru: semua assert pin, sentinel _ran/_failed, audit
@@ -1384,15 +1393,36 @@ jobs:
             echo "Tidak perlu ditambal: pemanggilan DAN extern-nya sudah ada."
           else
             # Revisi ke-29: dulu kedua keadaan ini sama-sama mencetak "Tidak perlu
-            # ditambal." Padahal yang satu berarti hook SUSFS terpasang lengkap,
-            # yang satu lagi berarti pemanggilannya TIDAK ADA sama sekali - gejala
-            # patch SUSFS gagal mendarat di hooks.c. Keduanya memang tidak butuh
-            # tambalan extern, tapi hanya yang pertama yang berarti sehat, jadi
-            # log-nya tidak boleh menyamakan mereka. Bukan exit 1: blok
-            # "Verifikasi integrasi" di bawah yang berwenang memvonis hook hilang.
-            echo "CATATAN: pemanggilan ksu_hide_setprocattr TIDAK ADA di hooks.c."
-            echo "  Extern memang tak perlu ditambal, tapi ini bisa berarti hook"
-            echo "  SUSFS gagal mendarat. Lihat verifikasi hook di bawah."
+            # ditambal." - padahal artinya berbeda, dan yang ini yang sebenarnya
+            # terjadi di build kita. Ditelusuri sampai sumbernya:
+            #   susfs_inline_hook_patches.sh baris 243 menjaga seluruh penambalan
+            #   dengan `grep -rq "ksu_hide_setprocattr" drivers/kernelsu/`, lalu
+            #   mencetak "[-] KernelSU needn't ksu_hide_setprocattr, Skipped."
+            #   kalau tidak ketemu. Seluruh pohon ReSukiSU 7e92d45e memang NOL
+            #   kali menyebut ksu_hide_setprocattr: ia memasang proteksi yang
+            #   sama lewat hook LSM (KSU_LSM_HOOK_INIT(setprocattr, ...) ->
+            #   ksu_handle_selinux_setprocattr di kernel/feature/selinux_hide.c),
+            #   bukan lewat panggilan yang disisipkan ke security/selinux/hooks.c
+            #   seperti fork KernelSU lain. Jadi ketiadaannya BENAR, dan menambal
+            #   extern ke fungsi yang tak pernah didefinisikan justru akan mati
+            #   saat link.
+            # Keluaran skrip SUSFS sendiri dibuang ke /dev/null oleh
+            # integrate_ksu_susfs.sh, jadi baris inilah satu-satunya tempat
+            # keadaan ini terlihat di log - dan sekarang ia sekalian membuktikan
+            # penggantinya ada, bukan sekadar mengumumkan yang tidak ada.
+            echo "Tidak perlu ditambal: ReSukiSU memakai hook LSM, bukan panggilan di hooks.c."
+            if [ -d KernelSU/kernel ]; then
+              grep -rq 'ksu_handle_selinux_setprocattr' KernelSU/kernel/ || {
+                echo "ERROR: pemanggilan ksu_hide_setprocattr tidak ada DAN pengganti"
+                echo "  LSM-nya (ksu_handle_selinux_setprocattr) juga tidak ada."
+                echo "  Berarti tidak ada satu pun proteksi setprocattr yang terpasang -"
+                echo "  ReSukiSU berubah bentuk, penambalan hooks.c perlu ditinjau ulang."
+                exit 1
+              }
+              echo "OK: ksu_handle_selinux_setprocattr ada di KernelSU/kernel (pengganti yang sah)"
+            else
+              echo "CATATAN: KernelSU/kernel belum ada di titik ini, cek pengganti dilewati."
+            fi
           fi
 
           echo ""
