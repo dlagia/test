@@ -973,6 +973,22 @@
 #    sekalian: build-kernel-ksu-v2-19082026.yml yang dipindah ke SUSFS/ masih
 #    tercatat sebagai "D + untracked" padahal isinya byte-identik (keduanya
 #    hash ea6816ab) - sekarang dicatat sebagai rename.
+#
+# 4. REVISI KE-29c, beberapa jam kemudian: robot pantau pin dijalankan manual
+#    untuk menyegarkan issue #1 yang masih memajang foto era rev-27, dan ia
+#    justru menangkap ReSukiSU bergerak LAGI dalam ~45 menit: a5bb612a ->
+#    833edb0e, satu commit "manager: Restrict floating bottom bar to Android
+#    12+", dua berkas Kotlin di manager/, nol di kernel/. Vonis robot AMAN,
+#    dinaikkan. Efek di build cuma KSU_VERSION +1.
+#    Sekalian jadi uji hidup tambalan rev-29: robot mencetak "Issue #1
+#    diperbarui" - bukan menutupnya - persis karena memang ADA drift. Jalur
+#    "diam-diam menutup issue" yang ditambal itu belum teruji di sini; yang
+#    teruji adalah jalur normalnya tetap utuh.
+#    Catatan untuk pembaca berikutnya: manager/ adalah aplikasi Android
+#    ReSukiSU dan TIDAK pernah ikut dikompilasi ke kernel, jadi rentetan
+#    commit manager/ boleh dikumpulkan dulu - menaikkannya satu per satu cuma
+#    menghabiskan satu build ~9 menit per commit tanpa mengubah satu byte pun
+#    di Image.gz-dtb selain KSU_VERSION.
 # ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
