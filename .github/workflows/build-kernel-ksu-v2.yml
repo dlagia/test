@@ -896,6 +896,49 @@
 # di LIMA tempat - pins.env, pin-watch.yml, naikkan-pin.yml, step pemuat di file
 # ini, dan preflight.sh - jadi memindahkan sumbernya berarti memperbarui semua.
 # ============================================================
+# REVISI KE-29 (2026-09-14) - audit menyeluruh: bukan cuma kedelapan pin, tapi
+# seluruh logika ketiga workflow. Satu pin naik, satu bug nyata ditambal.
+#
+# 1. ReSukiSU 7741f878 -> 7e92d45e, SATU commit: "ksud, ksuinit: use our forks
+#    for dependencies (#412)". Alasan upstream menulisnya: org Kernel-SU
+#    di-flag GitHub, jadi seluruh dependency Rust dipindah ke fork milik
+#    ReSukiSU sendiri (android_bootimg, java-properties, adb_client, ksu_props,
+#    rustix, kernlog). Diverifikasi lewat API compare, bukan dari judulnya:
+#    berkas yang berubah HANYA EMPAT dan semuanya userspace/ -
+#      userspace/ksud/Cargo.toml, userspace/ksud/Cargo.lock,
+#      userspace/ksuinit/Cargo.toml, userspace/ksuinit/Cargo.lock
+#    Nol berkas di kernel/. Artinya seluruh audit lama (Kconfig, Kbuild, hook,
+#    sucompat, app_profile, TIF bit 61) tetap sahih tanpa diulang satu pun.
+#    ksud dan ksuinit adalah binary userspace yang TIDAK ikut dikompilasi ke
+#    kernel di workflow ini. Perlu dicatat: rev yang dipin di Cargo.toml TIDAK
+#    berubah (mis. android_bootimg tetap 150425b0) - yang berpindah cuma nama
+#    pemilik repo. Efek satu-satunya yang terlihat di build: KSU_VERSION naik
+#    +1 karena `git rev-list --count HEAD` bertambah satu.
+#    Pin baru terjangkau dari main (compare menjawab "ahead", bukan
+#    "diverged") - pelajaran orphan revisi ke-22 tetap dijaga.
+#
+# 2. Tujuh pin lain persis di HEAD, tidak disentuh.
+#
+# 3. BUG NYATA di pin-watch.yml, ditambal: syarat "tidak usah lapor" dulu cuma
+#    `ADA_DRIFT = 0`, padahal PERLU_AUDIT bisa menyala TANPA drift - lewat
+#    POLA TAK KETEMU, GAGAL AMBIL, atau TAK BISA DIBANDINGKAN. Di keadaan itu
+#    robot mencetak "Semua pin di HEAD", tidak membuka issue, DAN menutup issue
+#    yang sedang terbuka. Jadi justru kegagalan yang paling perlu dilihat
+#    manusia-lah yang paling rapi disembunyikan. GAGAL AMBIL bukan kasus
+#    teoretis: saat audit ini berjalan, API commits untuk repo kernel meleset
+#    sekali lalu normal di percobaan kedua.
+#
+# 4. Pesan ambigu di step patch selinux/hooks.c dipisah (lihat komentar
+#    revisi ke-29 di sana): "pemanggilan + extern sudah ada" dan "pemanggilan
+#    tidak ada sama sekali" dulu sama-sama mencetak "Tidak perlu ditambal."
+#
+# 5. Delapan belas blok `run:` di file ini dibaca ulang satu per satu dan
+#    tidak ada temuan baru: semua assert pin, sentinel _ran/_failed, audit
+#    reject, dan kedelapan fixer Python masih berpasangan dengan anchor-nya.
+#    Gerbang pra-push (preflight.sh) yang mati di revisi ke-26 dan diperbaiki
+#    di revisi ke-28 sekarang benar-benar membaca pins.env - dipastikan lagi
+#    di sini dengan menjalankannya sebelum push.
+# ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
 
@@ -1337,8 +1380,19 @@ jobs:
               echo "ERROR: penyisipan extern ksu_hide_setprocattr GAGAL walau anchor cocok."
               exit 1
             fi
+          elif grep -q 'ksu_hide_setprocattr(name, value, size);' security/selinux/hooks.c; then
+            echo "Tidak perlu ditambal: pemanggilan DAN extern-nya sudah ada."
           else
-            echo "Tidak perlu ditambal."
+            # Revisi ke-29: dulu kedua keadaan ini sama-sama mencetak "Tidak perlu
+            # ditambal." Padahal yang satu berarti hook SUSFS terpasang lengkap,
+            # yang satu lagi berarti pemanggilannya TIDAK ADA sama sekali - gejala
+            # patch SUSFS gagal mendarat di hooks.c. Keduanya memang tidak butuh
+            # tambalan extern, tapi hanya yang pertama yang berarti sehat, jadi
+            # log-nya tidak boleh menyamakan mereka. Bukan exit 1: blok
+            # "Verifikasi integrasi" di bawah yang berwenang memvonis hook hilang.
+            echo "CATATAN: pemanggilan ksu_hide_setprocattr TIDAK ADA di hooks.c."
+            echo "  Extern memang tak perlu ditambal, tapi ini bisa berarti hook"
+            echo "  SUSFS gagal mendarat. Lihat verifikasi hook di bawah."
           fi
 
           echo ""

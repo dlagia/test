@@ -203,6 +203,11 @@ jobs:
                 printf 'Semua drift kelas **AMAN**: tidak ada file sensitif yang tersentuh. '
                 printf 'Naikkan sendiri, push, lalu flash kalau build hijau.\n'
               fi
+            elif [ "$PERLU_AUDIT" = "1" ]; then
+              # Revisi ke-29: keadaan ini nyata dan dulu tidak punya kalimat sendiri.
+              printf '\nTidak ada pin yang bergerak, TAPI ada baris yang gagal dinilai '
+              printf '(POLA TAK KETEMU / GAGAL AMBIL / TAK BISA DIBANDINGKAN). '
+              printf 'Lihat kolom Status: laporan ini belum tentu lengkap.\n'
             else
               printf '\nSemua pin di HEAD. Tidak ada yang perlu dikerjakan.\n'
             fi
@@ -211,7 +216,18 @@ jobs:
           nomor=$(gh issue list --state open --search "$JUDUL in:title" \
             --json number,title --jq "[.[]|select(.title==\"$JUDUL\")][0].number // empty" || true)
 
-          if [ "$ADA_DRIFT" = "0" ]; then
+          # Revisi ke-29 - LUBANG YANG DITAMBAL DI SINI:
+          # syaratnya dulu cuma ADA_DRIFT. Padahal PERLU_AUDIT bisa menyala TANPA
+          # drift sama sekali, lewat tiga jalur di atas: POLA TAK KETEMU (nama
+          # variabel di pins.env berubah), GAGAL AMBIL (repo hilang/privat, atau
+          # sekadar API meleset sesaat - ini betul-betul terjadi saat audit
+          # revisi ke-29), dan TAK BISA DIBANDINGKAN. Di ketiga keadaan itu robot
+          # dulu mencetak "Semua pin di HEAD", tidak membuka issue apa pun, DAN
+          # menutup issue yang sedang terbuka dengan alasan "kembali di HEAD" -
+          # justru membuang satu-satunya laporan yang bilang ada yang rusak.
+          # Sekarang: diam hanya kalau benar-benar tidak ada drift DAN tidak ada
+          # baris yang gagal dinilai.
+          if [ "$ADA_DRIFT" = "0" ] && [ "$PERLU_AUDIT" = "0" ]; then
             if [ -n "$nomor" ]; then
               gh issue comment "$nomor" --body-file "$BODY"
               gh issue close "$nomor" --comment "Semua pin kembali di HEAD, ditutup otomatis."
