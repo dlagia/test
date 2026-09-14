@@ -948,6 +948,32 @@
 #    di revisi ke-28 sekarang benar-benar membaca pins.env - dipastikan lagi
 #    di sini dengan menjalankannya sebelum push.
 # ============================================================
+# REVISI KE-29b (2026-09-14) - audit menyeluruh kedua di hari yang sama.
+#
+# 1. ReSukiSU bergerak lagi, 7e92d45e -> a5bb612a, TIGA commit: "manager: Add
+#    floating navigation bar with a customization toggle (#334)", "manager:
+#    update translations from Weblate (#404)", dan "ksubot: fix release".
+#    Diverifikasi lewat API compare: 24 berkas, 23 di manager/ (Kotlin +
+#    res/values-*/strings.xml) dan satu di scripts/ksubot.py. NOL di kernel/.
+#    scripts/ksubot.py itu bot Telegram CI milik ReSukiSU sendiri; diff-nya dua
+#    baris identik `if BRANCH != "main"` -> `if BRANCH != "main" and
+#    GITHUB_REF_TYPE != "tag"`, murni soal caption pengumuman rilis mereka, dan
+#    tidak pernah ikut ter-checkout ke pohon kernel ini. Efek di build: hanya
+#    KSU_VERSION +3. Pin terjangkau (compare: ahead).
+#
+# 2. Tujuh pin lain tetap di HEAD.
+#
+# 3. Temuan proses, bukan kode: revisi ke-29 dan ke-29a DI-PUSH tapi TIDAK
+#    pernah di-commit di repo arsip lokal - HEAD lokal masih tertinggal di
+#    rev-28 (ecdf5e4) sementara dlagia/test sudah dua commit di depan. Push
+#    lewat Git Data API memang tidak menyentuh index lokal, jadi kebiasaan
+#    "push saja" diam-diam memecah riwayat. Ini persis kelas kegagalan yang
+#    bikin tabel pin preflight.sh basi tanpa terlihat di revisi ke-26..28:
+#    perubahan yang tidak masuk riwayat tidak bisa diaudit. Ikut dibereskan
+#    sekalian: build-kernel-ksu-v2-19082026.yml yang dipindah ke SUSFS/ masih
+#    tercatat sebagai "D + untracked" padahal isinya byte-identik (keduanya
+#    hash ea6816ab) - sekarang dicatat sebagai rename.
+# ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
 

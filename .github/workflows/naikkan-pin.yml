@@ -119,6 +119,15 @@ jobs:
           CMP="$(gh api "repos/$REPO/compare/$LAMA...$BARU" 2>/dev/null || true)"
           test -n "$CMP" || { echo "ERROR: tidak bisa membandingkan $LAMA...$BARU"; exit 1; }
 
+          # STATUS dicetak tapi SENGAJA tidak dipakai untuk menolak, tidak seperti
+          # di pin-watch.yml yang memvonis "diverged" sebagai ORPHAN (revisi
+          # ke-29b, supaya pembaca berikutnya tahu ini pilihan, bukan kelupaan).
+          # Alasannya: di sana "diverged" berarti pin yang SEDANG dipakai sudah
+          # lepas dari branch - keadaan yang harus diperbaiki, dan memperbaikinya
+          # justru dengan menaikkan pin. Menolak di sini malah mengunci pohon di
+          # commit orphan. Triase-nya tetap sahih: compare tiga-titik memulangkan
+          # diff dari merge-base ke tujuan, jadi .files tetap berisi "apa yang
+          # baru di tujuan", persis yang dipakai untuk menghitung file sensitif.
           STATUS="$(echo "$CMP" | jq -r .status)"
           MAJU="$(echo "$CMP" | jq -r .ahead_by)"
           BERKAS="$(echo "$CMP" | jq -r '.files[]?.filename')"
