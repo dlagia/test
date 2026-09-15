@@ -990,6 +990,48 @@
 #    menghabiskan satu build ~9 menit per commit tanpa mengubah satu byte pun
 #    di Image.gz-dtb selain KSU_VERSION.
 # ============================================================
+# ============================================================
+# REVISI KE-30 (2026-09-15) - "audit semua" sesudah rev-29d boot normal.
+# Dua pin bergerak, enam tetap di HEAD, tidak ada yang ORPHAN (compare
+# kedua-duanya 'ahead', behind=0 - jadi jalur fetch-by-SHA tidak terpakai).
+#
+# 1. ReSukiSU 833edb0e -> b22a46e6. DUA commit, TIGA berkas: satu Kotlin
+#    (manager/.../ui/activity/component/NavigationBar.kt) dan dua workflow CI
+#    milik ReSukiSU sendiri (build-manager.yml, lints-check.yml). NOL di
+#    kernel/. Efek di build: KSU_VERSION +2, Image.gz-dtb sisanya identik.
+#
+# 2. SUSFS 57022dd5 -> 426ff004. TIGA commit, tapi untuk 4.14 hanya +3/-3
+#    baris dan SEMUANYA di section fs/super.c: penjaga #include susfs_def.h
+#    + jump_label.h dilonggarkan dari CONFIG_KSU_SUSFS_SUS_MOUNT menjadi
+#    CONFIG_KSU_SUSFS. Isi section-nya (blok get_anon_bdev) tetap di bawah
+#    SUS_MOUNT dan tidak berubah sebaris pun. Defconfig dlagia menyalakan
+#    KEDUA symbol (CONFIG_KSU_SUSFS=y dan CONFIG_KSU_SUSFS_SUS_MOUNT=y),
+#    jadi hasil akhirnya identik - pelonggaran itu baru terasa kalau
+#    seseorang mematikan SUS_MOUNT sendirian.
+#    Dua commit sisanya di luar jalur build ini: Bin/clean_hook.sh TIDAK
+#    dipakai workflow ini sama sekali, dan susfs_inline_hook_patches.sh cuma
+#    menaikkan PATCH_LEVEL "2.2.00" -> "2.3.00" plus satu baris komentar -
+#    variabel itu hanya di-echo, tidak pernah dibandingkan dengan apa pun,
+#    jadi daftar patch_files dan seluruh logika hook-nya utuh.
+#
+# 3. Disimulasikan di luar CI (template audit revisi ke-17) terhadap tree
+#    602782da dengan patch LAMA dan patch BARU berdampingan: 20 berkas
+#    ter-patch di kedua sisi, fuzz/offset identik baris per baris, reject
+#    tetap HANYA fs/proc/task_mmu.c hunk #1/#5/#6, dan satu-satunya beda
+#    hasil akhir adalah empat baris #ifdef di fs/super.c itu. Kedua fixer
+#    Python yang tertanam di file ini lalu dijalankan atas KEDUA pohon:
+#    vonisnya sama persis dan exit 0 - termasuk fixer #7, yang anchor-nya
+#    (dev = ida_simple_get(&unnamed_dev_ida, DEFAULT_KSU_MNT_MINOR_DEV, ...))
+#    duduk di dalam blok SUS_MOUNT dan tidak tersentuh perubahan penjaga.
+#    Tidak ada assert di workflow ini yang menghitung jumlah section patch
+#    atau membaca bentuk #ifdef di fs/super.c, jadi tak ada yang perlu
+#    disesuaikan.
+#
+# 4. Kelima salinan tabel komponen (pins.env, pin-watch.yml, naikkan-pin.yml,
+#    preflight.sh, daftar wajib-ada di loader step 00) dicek ulang: kedelapan
+#    nama pin cocok di semua tempat. preflight bersih (actionlint 0, 18 blok
+#    run shellcheck 0).
+# ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
 
