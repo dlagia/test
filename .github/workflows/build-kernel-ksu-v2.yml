@@ -1212,6 +1212,38 @@
 # membuka seluruh isi repo ke publik - jadi itu keputusan pemilik, bukan
 # keputusan yang boleh diambil sendiri oleh alat.
 # ============================================================
+# REVISI KE-36 (2026-09-15) - pemilik menjawab "jadikan publik", dan repo ini
+# jadi publik beberapa menit sesudah revisi ke-35 terbit. Yang diperiksa lebih
+# dulu, karena publik itu tidak bisa betul-betul ditarik kembali (isi dan
+# seluruh riwayat commit langsung bisa di-index dan di-cache): empat berkas
+# yang terbuka tidak memuat token, kunci, maupun jalur lokal, dan dua issue
+# isinya cuma tabel pin. Satu hal yang memang ikut terbuka dan pantas
+# disebut: email author commit jadi terlihat publik. Sesudah diubah, tautan
+# `browser_download_url` rilis build-20260915-153241 diuji tanpa autentikasi
+# sama sekali: HTTP 200, 13.858.435 B - sama persis dengan ukuran aset, jadi
+# keluhan "tidak bisa diunduh" selesai di akarnya.
+#
+# Tapi perubahan itu seketika membuat teks revisi ke-35 BOHONG: catatan rilis
+# dan ringkasan build menghafal kalimat "Repo ini PRIVAT ... menjawab 404".
+# Itu cacat yang sama dengan yang dicatat di kepala pin-watch.yml pada revisi
+# ke-34 - salinan kedua yang basi, dan kali ini salinannya berupa PROSA, yang
+# tidak dilihat actionlint maupun shellcheck. Privat/publik adalah setelan
+# yang bisa berubah kapan saja di luar berkas ini, jadi sekarang tidak
+# dihafal: step rilis menanyakannya saat run (`gh api repos/... --jq
+# .private`) dan mencetak cabang yang sesuai. Jawaban yang tidak berbentuk
+# `true|false` - badan error `gh api` di STDOUT, pelajaran revisi ke-34 -
+# dianggap PRIVAT, karena memberi peringatan yang tidak perlu jauh lebih
+# murah daripada menjanjikan unduhan yang menjawab 404.
+#
+# Diuji kering di luar CI untuk KEDUA nilai: private=false mencetak "Cara
+# unduh" (tautan jalan tanpa login + `gh release download`), private=true
+# mencetak "Kalau unduhannya 404" dengan tiga jalur seperti revisi ke-35.
+# Dry-run itu juga menangkap kesalahan suntingan saya sendiri: penggantian
+# blok menelan `}` penutup tapi meninggalkan `{` pembuka, dan step-nya mati
+# dengan `syntax error: unexpected end of file`. actionlint tidak melihatnya
+# karena run: tetap string yang sah; yang melihatnya hanya menjalankan
+# skripnya. Itu alasan harness dry-run ini ada.
+# ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
 
@@ -2747,24 +2779,46 @@ jobs:
             exit 1
           }
 
-          {
-            printf -- '\n### Kalau unduhannya 404\n\n'
-            printf -- 'Repo ini privat, jadi tautan aset di atas hanya jalan untuk sesi\n'
-            printf -- 'yang sudah login dan punya akses. GitHub menjawab **404**, bukan\n'
-            printf -- '401, jadi gejalanya menipu - asetnya utuh. Tiga jalur yang jalan:\n\n'
-            printf -- '1. **HP** - buka lewat app GitHub, atau browser yang sudah login\n'
-            printf -- '   ke akun pemilik repo.\n'
-            printf -- '2. **PC** - `gh release download %s --repo %s --pattern "*.zip"`\n' \
-              "$TAG" "$GITHUB_REPOSITORY"
-            printf -- '3. **Tautan langsung tanpa login** - pra-tandatangan, umurnya\n'
-            printf -- '   pendek, jadi cetak saat mau dipakai dan jangan disimpan:\n'
-            printf -- '   ```\n'
-            printf -- '   gh api repos/%s/releases/assets/%s \\\n' \
-              "$GITHUB_REPOSITORY" "$ASET_ID"
-            printf -- '     -H "Accept: application/octet-stream" --include --silent \\\n'
-            printf -- '     | grep -i "^location:"\n'
-            printf -- '   ```\n'
-          } >> /tmp/notes.md
+          # Privat atau publik itu setelan yang bisa diubah kapan saja di luar
+          # repo ini - pemiliknya membuat repo ini publik beberapa menit sesudah
+          # revisi ke-35 terbit - jadi kalimatnya TIDAK boleh dihafal di sini.
+          # Ditanyakan saat run. Kalau jawabannya tidak berbentuk true/false,
+          # anggap privat: memberi peringatan yang tidak perlu jauh lebih murah
+          # daripada menjanjikan unduhan yang menjawab 404.
+          PRIVAT="$(gh api "repos/${GITHUB_REPOSITORY}" --jq .private 2>/dev/null || true)"
+          printf '%s' "$PRIVAT" | grep -qE '^(true|false)$' || PRIVAT=true
+          echo "visibilitas: private=$PRIVAT"
+
+          if [ "$PRIVAT" = "false" ]; then
+            {
+              printf -- '\n### Cara unduh\n\n'
+              printf -- 'Repo ini publik, jadi tautan aset di atas jalan tanpa login -\n'
+              printf -- 'buka langsung dari browser HP. Alternatif di PC:\n\n'
+              printf -- '```\n'
+              printf -- 'gh release download %s --repo %s --pattern "*.zip"\n' \
+                "$TAG" "$GITHUB_REPOSITORY"
+              printf -- '```\n'
+            } >> /tmp/notes.md
+          else
+            {
+              printf -- '\n### Kalau unduhannya 404\n\n'
+              printf -- 'Repo ini privat, jadi tautan aset di atas hanya jalan untuk sesi\n'
+              printf -- 'yang sudah login dan punya akses. GitHub menjawab **404**, bukan\n'
+              printf -- '401, jadi gejalanya menipu - asetnya utuh. Tiga jalur yang jalan:\n\n'
+              printf -- '1. **HP** - buka lewat app GitHub, atau browser yang sudah login\n'
+              printf -- '   ke akun pemilik repo.\n'
+              printf -- '2. **PC** - `gh release download %s --repo %s --pattern "*.zip"`\n' \
+                "$TAG" "$GITHUB_REPOSITORY"
+              printf -- '3. **Tautan langsung tanpa login** - pra-tandatangan, umurnya\n'
+              printf -- '   pendek, jadi cetak saat mau dipakai dan jangan disimpan:\n'
+              printf -- '   ```\n'
+              printf -- '   gh api repos/%s/releases/assets/%s \\\n' \
+                "$GITHUB_REPOSITORY" "$ASET_ID"
+              printf -- '     -H "Accept: application/octet-stream" --include --silent \\\n'
+              printf -- '     | grep -i "^location:"\n'
+              printf -- '   ```\n'
+            } >> /tmp/notes.md
+          fi
           gh release edit "$TAG" --notes-file /tmp/notes.md
 
           URL="$(gh release view "$TAG" --json url --jq .url)"
@@ -2773,9 +2827,13 @@ jobs:
             echo "### Unduh"
             echo "[$ZIP]($URL) - zip AnyKernel3 siap flash (bukan artifact dobel-zip)."
             echo ""
-            echo "Repo ini PRIVAT: tautan di atas menjawab 404 kalau sesinya belum"
-            echo "login, dan itu terbaca seperti file hilang. Jalur yang jalan ada"
-            echo "di badan rilis, bagian \"Kalau unduhannya 404\"."
+            if [ "$PRIVAT" = "false" ]; then
+              echo "Repo publik: tautan di atas jalan tanpa login."
+            else
+              echo "Repo ini PRIVAT: tautan di atas menjawab 404 kalau sesinya belum"
+              echo "login, dan itu terbaca seperti file hilang. Jalur yang jalan ada"
+              echo "di badan rilis, bagian \"Kalau unduhannya 404\"."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
       # Kalau build gagal, step "Compile" hanya mencetak ~120 baris error +
