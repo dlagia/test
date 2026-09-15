@@ -8,7 +8,9 @@
 # dan bisa dikerjakan CI.
 #
 # Workflow ini TIDAK pernah meng-compile, TIDAK pernah mengubah pin, dan TIDAK
-# pernah mendorong commit. Ia cuma membaca build-kernel-ksu-v2.yml, membandingkan
+# pernah mendorong commit. Ia cuma membaca pins.env di akar repo (sejak revisi
+# ke-26; kalimat ini sendiri masih menyebut build-kernel-ksu-v2.yml sampai
+# revisi ke-34 - prosa pun bisa jadi salinan kedua yang basi), membandingkan
 # kedelapan pin dengan upstream, lalu menulis satu issue berisi tabel + vonis per
 # komponen. Naik-turun pin tetap keputusan pemilik.
 #
@@ -21,6 +23,43 @@
 #                   tahu.
 #   3. KELAS APA?   file apa yang tersentuh di antara pin dan HEAD. Ini inti
 #                   triase-nya - lihat tabel JALUR_SENSITIF di bawah.
+#
+# ------------------------------------------------------------
+# REVISI KE-34 (2026-09-15) - audit ulang sesudah revisi ke-33 hijau. Kedelapan
+# pin di HEAD, jadi tidak ada yang tertinggal dan ORPHAN mustahil (pin yang sama
+# dengan ujung branch terjangkau menurut definisi); auditnya jatuh ke LOGIKA.
+#
+# Yang dikerjakan: menguji dua jalur yang paling penting dan belum SEKALI PUN
+# menyala sejak ditulis - vonis ORPHAN dan jalur API-gagal - dengan menjalankan
+# blok run: ini di luar CI, `gh issue`/`gh workflow` distub, KSU_PIN diganti
+# orphan sungguhan dari revisi ke-22 (f4c4923e, sampai hari ini masih dijawab
+# `diverged` oleh compare API).
+#
+# Jalur ORPHAN: SEHAT. Ia mencetak "**ORPHAN** (diverged, maju 15 mundur 1)"
+# plus "**PERLU AUDIT** - 1 file sensitif", tujuh baris lain "di HEAD".
+#
+# Jalur API-gagal: CACAT, dan cacatnya kelas terburuk - gagal yang berbunyi
+# menenangkan. `gh api` mencetak BADAN error-nya (JSON 401/403/404/5xx) ke
+# STDOUT, bukan stderr, dan exit code-nya hilang di dalam $( ). Jadi penjaga
+# lama `[ -z "$head" ]` MUSTAHIL menyala: $head berisi '{ "message": "Bad
+# credentials", ... }' - 112 byte, lulus -z - lalu dipakai sebagai SHA tujuan.
+# Karena badan error tidak punya field .files, n_berkas=0 dan kena=0, sehingga
+# vonisnya jadi **AMAN dinaikkan** dan laporan menyuruh pemilik menaikkan pin ke
+# `{ "mes`. Hal yang sama pada cmp_json: badan error adalah JSON yang sah, jadi
+# -z lolos dan .status terbaca null.
+#
+# Obatnya bukan "tidak kosong" melainkan BENTUK: $head wajib cocok
+# ^[0-9a-f]{40}$, dan compare dinyatakan terjawab hanya kalau .status ada
+# (field yang tidak dimiliki badan error). Sesudah ditambal, input yang sama
+# memberi delapan baris **GAGAL AMBIL** dan kalimat "laporan ini belum tentu
+# lengkap" - jalur revisi ke-29 yang sudah ada, yang dulu tidak pernah bisa
+# dicapai. Lubang yang sama ditambal di naikkan-pin.yml (di sana ujungnya masih
+# gagal-aman di assert 1/1, tapi sesudah menulis sampah ke pins.env) dan di
+# ~/bin/pincheck (di sana ia melaporkan "TERTINGGAL" palsu).
+#
+# Catatan alat: GAGAL AMBIL bukan teori - API commits untuk repo kernel pernah
+# meleset satu kali waktu audit revisi ke-29 dan berhasil di percobaan ulang.
+# ------------------------------------------------------------
 # ============================================================
 name: Pantau pin upstream
 
@@ -138,8 +177,19 @@ jobs:
             fi
 
             head=$(gh api "repos/$repo/commits/$ref" --jq .sha 2>/dev/null || true)
-            if [ -z "$head" ]; then
-              printf '| %s | `%s` | - | **GAGAL AMBIL** | repo hilang/privat? |\n' \
+            # WAJIB 40 hex, bukan cuma "tidak kosong". `gh api` mencetak BADAN
+            # error-nya (JSON 401/403/404/5xx) ke STDOUT, bukan stderr, jadi
+            # penjaga `-z` yang lama MUSTAHIL menyala: sekali API tersendat,
+            # $head berisi '{ "message": "Bad credentials", ... }' - 112 byte,
+            # lulus `-z`, lalu dipakai sebagai SHA tujuan. Akibatnya laporan
+            # menyuruh menaikkan pin ke `{ "mes` dan - karena .files tidak ada
+            # di badan error sehingga n_berkas=0 dan kena=0 - memvonisnya
+            # **AMAN dinaikkan**. Ditemukan di audit revisi ke-34 lewat dry-run
+            # jalur ORPHAN dengan token sengaja dibuat salah, dan dibuktikan
+            # ulang di luar stub. Justru vonis paling menenangkan yang keluar
+            # dari kegagalan paling tidak kelihatan.
+            if ! printf '%s' "$head" | grep -qE '^[0-9a-f]{40}$'; then
+              printf '| %s | `%s` | - | **GAGAL AMBIL** | repo hilang/privat, atau API tersendat |\n' \
                 "$nama" "${pin:0:9}" >> "$TABEL"
               echo 1 > /tmp/perlu_audit
               continue
@@ -154,14 +204,17 @@ jobs:
 
             # Satu panggilan compare memberi status keterjangkauan DAN daftar file.
             cmp_json=$(gh api "repos/$repo/compare/$pin...$ref" 2>/dev/null || true)
-            if [ -z "$cmp_json" ]; then
-              printf '| %s | `%s` | `%s` | **TAK BISA DIBANDINGKAN** | pin mungkin sudah dihapus total |\n' \
+            # Alasan yang sama seperti $head di atas: badan error juga JSON yang
+            # sah, jadi `-z` lolos dan jq membaca .status sebagai null. Yang
+            # dipakai sebagai penjaga karena itu bukan "ada isinya" melainkan
+            # "ada .status yang berarti" - badan error tidak punya field itu.
+            status=$(echo "$cmp_json" | jq -r '.status // empty' 2>/dev/null || true)
+            if [ -z "$status" ]; then
+              printf '| %s | `%s` | `%s` | **TAK BISA DIBANDINGKAN** | pin dihapus total, atau API tersendat |\n' \
                 "$nama" "${pin:0:9}" "${head:0:9}" >> "$TABEL"
               echo 1 > /tmp/perlu_audit
               continue
             fi
-
-            status=$(echo "$cmp_json" | jq -r '.status')
             maju=$(echo "$cmp_json" | jq -r '.ahead_by')
             mundur=$(echo "$cmp_json" | jq -r '.behind_by')
             berkas=$(echo "$cmp_json" | jq -r '.files[]?.filename')

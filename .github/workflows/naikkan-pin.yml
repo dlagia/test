@@ -91,18 +91,39 @@ jobs:
           esac
           IFS=';' read -r NAMA REPO REF SENSITIF <<< "$BARIS"
 
+          # Wajib PERSIS SATU baris, bukan cuma ada. Nama ganda membuat $LAMA
+          # berisi dua SHA berbaris dua, dan sed di bawah tidak akan cocok -
+          # gagal, tapi dengan pesan yang menyesatkan. Penjaga yang sama sudah
+          # dipasang di step pemuat build dan di preflight.sh pada revisi ke-33;
+          # penulisnya sendiri justru terlewat waktu itu.
+          N_LAMA="$(grep -cE "^${NAMA}=[0-9a-f]{40}$" pins.env || true)"
+          test "$N_LAMA" = "1" || {
+            echo "ERROR: $NAMA muncul $N_LAMA kali di pins.env (wajib persis 1)"
+            exit 1
+          }
           LAMA="$(grep -oE "^${NAMA}=[0-9a-f]{40}$" pins.env | cut -d= -f2)"
-          test -n "$LAMA" || { echo "ERROR: $NAMA tidak ada di pins.env"; exit 1; }
 
           if [ -n "$SHA_MINTA" ]; then
             # SHA diketik tangan: wajib 40 hex DAN benar-benar ada di repo itu.
             echo "$SHA_MINTA" | grep -qE '^[0-9a-f]{40}$' \
               || { echo "ERROR: '$SHA_MINTA' bukan SHA 40 hex huruf kecil"; exit 1; }
-            BARU="$(gh api "repos/$REPO/commits/$SHA_MINTA" --jq .sha)" \
-              || { echo "ERROR: $SHA_MINTA tidak ada di $REPO"; exit 1; }
+            BARU="$(gh api "repos/$REPO/commits/$SHA_MINTA" --jq .sha 2>/dev/null || true)"
           else
-            BARU="$(gh api "repos/$REPO/commits/$REF" --jq .sha)"
+            BARU="$(gh api "repos/$REPO/commits/$REF" --jq .sha 2>/dev/null || true)"
           fi
+          # `gh api` menaruh BADAN error-nya (JSON 401/403/404/5xx) di STDOUT,
+          # jadi kegagalan API tidak terlihat sebagai nilai kosong maupun exit
+          # code di dalam $( ): $BARU berisi '{ "message": ... }' dan diproses
+          # terus seperti SHA. Di sini ujungnya masih gagal-aman - `git diff
+          # --numstat` tidak akan berbunyi 1/1 - tapi baru sesudah menulis
+          # sampah ke pins.env di workspace, dan dengan pesan yang menyesatkan.
+          # Penjaga yang sebenarnya karena itu adalah bentuknya. (Kembarannya di
+          # pin-watch.yml lebih ganas: di sana ia memvonis AMAN. Revisi ke-34.)
+          printf '%s' "$BARU" | grep -qE '^[0-9a-f]{40}$' || {
+            echo "ERROR: gagal mengambil SHA tujuan dari $REPO@${SHA_MINTA:-$REF}."
+            echo "       jawaban API: ${BARU:0:120}"
+            exit 1
+          }
 
           echo "komponen : $KOMPONEN ($NAMA)"
           echo "repo     : $REPO@$REF"
@@ -117,7 +138,16 @@ jobs:
 
           # ---------- triase ----------
           CMP="$(gh api "repos/$REPO/compare/$LAMA...$BARU" 2>/dev/null || true)"
-          test -n "$CMP" || { echo "ERROR: tidak bisa membandingkan $LAMA...$BARU"; exit 1; }
+          # Bukan `test -n "$CMP"`: badan error pun JSON yang sah dan tidak
+          # kosong. Yang membuktikan compare betul-betul terjawab adalah adanya
+          # .status - field yang tidak dimiliki badan error. Tanpa ini .files
+          # ikut kosong, sehingga "$KENA sensitif" berbunyi 0 dan triase lolos
+          # justru ketika ia tidak tahu apa-apa. (Revisi ke-34.)
+          test -n "$(echo "$CMP" | jq -r '.status // empty' 2>/dev/null || true)" || {
+            echo "ERROR: tidak bisa membandingkan $LAMA...$BARU di $REPO."
+            echo "       jawaban API: ${CMP:0:120}"
+            exit 1
+          }
 
           # STATUS dicetak tapi SENGAJA tidak dipakai untuk menolak, tidak seperti
           # di pin-watch.yml yang memvonis "diverged" sebagai ORPHAN (revisi
