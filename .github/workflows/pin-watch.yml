@@ -157,7 +157,16 @@ jobs:
               ket="tertinggal $maju commit"
             fi
 
-            if [ "$kena" -gt 0 ]; then
+            # API compare MEMOTONG .files di 300 berkas (terbukti: torvalds/linux
+            # v5.10...v5.11 -> total_commits 10000, .commits 250, .files 300,
+            # dan ?page=2 mengembalikan 0 berkas). Jadi untuk drift besar, "nol
+            # file sensitif" cuma berarti "nol di antara 300 pertama" - berkas
+            # ke-301 bisa saja fs/ atau kernel/ dan vonis AMAN-nya bohong.
+            # Karena itu daftar yang mentok di 300 tidak pernah dinilai AMAN.
+            if [ "$n_berkas" -ge 300 ]; then
+              vonis="**PERLU AUDIT** - daftar file terpotong di $n_berkas (batas API), $kena sensitif di antara yang terlihat"
+              echo 1 > /tmp/perlu_audit
+            elif [ "$kena" -gt 0 ]; then
               vonis="**PERLU AUDIT** - $kena file sensitif"
               echo 1 > /tmp/perlu_audit
             else
@@ -171,6 +180,9 @@ jobs:
               printf '\n### %s (`%s`)\n\n' "$nama" "$repo"
               printf -- '- naik: `%s` -> `%s` (%s commit)\n' "${pin:0:9}" "${head:0:9}" "$maju"
               printf -- '- file tersentuh: %s, yang sensitif (`%s`): **%s**\n' "$n_berkas" "$sensitif" "$kena"
+              if [ "$n_berkas" -ge 300 ]; then
+                printf -- '- **daftar file terpotong di 300 oleh API compare** - jumlah sensitif di atas TIDAK bisa dipakai; buka diff-nya sendiri.\n'
+              fi
               if [ "$kena" -gt 0 ]; then
                 printf -- '- file sensitifnya:\n'
                 echo "$berkas" | grep -E "$sensitif" | head -20 | sed 's/^/  - `/; s/$/`/'

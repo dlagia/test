@@ -137,6 +137,20 @@ jobs:
 
           echo "status   : $STATUS, maju $MAJU commit, $N_BERKAS file, $KENA sensitif"
 
+          # API compare memotong .files di 300 berkas (terbukti di torvalds/linux
+          # v5.10...v5.11: .files 300 padahal total_commits 10000, dan ?page=2
+          # kosong). Kalau daftar mentok di situ, "KENA=0" hanya berlaku untuk 300
+          # berkas pertama - berkas ke-301 bisa saja ^kernel/ atau ^fs/. Jalur cepat
+          # ini tidak boleh dipakai untuk melewati audit hanya karena diff-nya besar.
+          if [ "$N_BERKAS" -ge 300 ] && [ "$PAKSA" != "true" ]; then
+            echo ""
+            echo "DITOLAK: daftar file dari API compare terpotong di $N_BERKAS berkas,"
+            echo "jadi hitungan '$KENA sensitif' tidak bisa dipercaya untuk kenaikan ini."
+            echo "Buka diff-nya sendiri: https://github.com/$REPO/compare/$LAMA...$BARU"
+            echo "Sesudah diaudit, jalankan ulang dengan paksa = true."
+            exit 1
+          fi
+
           if [ "$KENA" -gt 0 ]; then
             echo ""
             echo "File sensitif yang tersentuh:"

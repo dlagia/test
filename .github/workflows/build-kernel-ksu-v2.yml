@@ -990,7 +990,6 @@
 #    menghabiskan satu build ~9 menit per commit tanpa mengubah satu byte pun
 #    di Image.gz-dtb selain KSU_VERSION.
 # ============================================================
-# ============================================================
 # REVISI KE-30 (2026-09-15) - "audit semua" sesudah rev-29d boot normal.
 # Dua pin bergerak, enam tetap di HEAD, tidak ada yang ORPHAN (compare
 # kedua-duanya 'ahead', behind=0 - jadi jalur fetch-by-SHA tidak terpakai).
@@ -1031,6 +1030,49 @@
 #    preflight.sh, daftar wajib-ada di loader step 00) dicek ulang: kedelapan
 #    nama pin cocok di semua tempat. preflight bersih (actionlint 0, 18 blok
 #    run shellcheck 0).
+# ============================================================
+# REVISI KE-31 (2026-09-15) - audit LOGIKA, bukan pin. Kedelapan pin tetap di
+# HEAD (tidak ada yang bergerak sejak revisi ke-30 beberapa jam sebelumnya),
+# jadi yang diperiksa kali ini isi ketiga workflow: 18 blok run: di sini,
+# 1 di pin-watch.yml, 3 di naikkan-pin.yml. Dua cacat nyata ketemu, keduanya
+# di kelas yang sama: pengaman yang tampak bekerja padahal tidak.
+#
+# 1. API compare MEMOTONG daftar berkas di 300 - dan kedua robot memakai
+#    daftar itu untuk memutuskan "sensitif atau tidak". Dibuktikan langsung:
+#    torvalds/linux v5.10...v5.11 memulangkan total_commits 10000, .commits
+#    250, dan .files TEPAT 300, sedangkan ?page=2 memulangkan 0 berkas - jadi
+#    sisanya benar-benar tidak terlihat, bukan cuma perlu halaman berikutnya.
+#    Akibatnya, untuk drift besar pin-watch bisa mencetak "AMAN dinaikkan -
+#    300 file, nol menyentuh bagian yang diaudit" padahal berkas ke-301
+#    adalah ^kernel/ atau ^fs/, dan naikkan-pin akan MELOLOSKAN kenaikan itu
+#    tanpa paksa=true. Sekarang daftar yang mentok di 300 tidak pernah dinilai
+#    AMAN: pin-watch memvonisnya PERLU AUDIT dengan alasan "daftar terpotong",
+#    naikkan-pin menolaknya kecuali paksa=true. Diuji kering untuk n=3/300/301
+#    x kena=0/1 x paksa=false/true; satu-satunya jalur yang berubah adalah
+#    n>=300, sisanya berperilaku persis seperti dulu.
+#
+# 2. Kunci cache toolchain masih SHA KETIKAN TANGAN ('proton-clang-9fb011b1')
+#    sejak revisi ke-23, padahal revisi ke-26 memindahkan pin ke pins.env.
+#    Artinya tombol "Naikkan pin" bisa menaikkan CLANG_PIN tanpa mengubah
+#    kunci cache - salinan kedua yang harus diingat manusia, persis penyakit
+#    yang membuat tabel pin preflight.sh basi di revisi ke-26..28. Kuncinya
+#    sekarang ${{ env.CLANG_PIN }}, diisi step pertama job ini.
+#    Lubang kembarannya ditutup sekalian: cabang "cache tanpa .git" dulu cuma
+#    mencetak CATATAN lalu LANJUT MENGOMPILASI - satu-satunya jalur di seluruh
+#    workflow yang memakai compiler tanpa membuktikan SHA-nya. Sekarang fatal
+#    dengan perintah pembuangan cache-nya. Aman: log run 34962524218
+#    menunjukkan cache hit pun membawa .git ("proton-clang commit: 9fb011b18..."
+#    lalu "OK: proton-clang ter-pin"), dan tidak ada langkah yang menghapus
+#    .git di clang-proton - beda dengan AnyKernel3 yang memang di-rm.
+#
+# 3. Yang DIPERIKSA dan bersih: loader pins.env (format + kedelapan nama),
+#    assert materialisasi KSU/SUSFS + sentinel _ran/_failed, audit reject
+#    (kunci rej_before/rej_after sama-sama relatif, comm -13 sah), cabang
+#    selinux hooks.c bertiga, verifikasi 7 hook inline, self-heal fetch-by-SHA
+#    di KSU/clang/AnyKernel3, perbaikan duplikasi fs/Kconfig NoMount, assert
+#    residu Re:Kernel/Baseband-guard, 14 assert .config (KSU/SUSFS/NOMOUNT/
+#    BBR+fq), make -k di balik pipefail+tee, pemilihan Image, pengemasan zip,
+#    dan rilis GH_REPO+--target. Tidak ada temuan baru di ketiganya.
 # ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
@@ -2147,10 +2189,19 @@ jobs:
         uses: actions/cache@v6
         with:
           path: clang-proton
-          # Revisi ke-23: key memuat SHA pin (lihat CLANG_PIN di step bawah), jadi
-          # menaikkan pin otomatis jadi cache miss. Sebelumnya 'proton-clang-master-v1'
-          # dan sinkronisasinya diserahkan ke ingatan manusia.
-          key: proton-clang-9fb011b1
+          # Revisi ke-23: key memuat SHA pin, jadi menaikkan pin otomatis jadi
+          # cache miss. Sebelumnya 'proton-clang-master-v1' dan sinkronisasinya
+          # diserahkan ke ingatan manusia.
+          # Revisi ke-31: SHA itu dulu DIKETIK di sini ('proton-clang-9fb011b1'),
+          # padahal sejak revisi ke-26 pin sebenarnya tinggal di pins.env. Jadi
+          # tombol "Naikkan pin" bisa menaikkan CLANG_PIN tanpa mengubah key -
+          # persis kelas kerusakan yang membuat tabel pin preflight.sh basi di
+          # revisi ke-26..28. Sekarang key membaca env yang diisi step "Muat
+          # pins.env" (step pertama job ini), jadi tidak ada lagi salinan kedua
+          # yang harus diingat. Kalau env-nya kosong, key jadi 'proton-clang-'
+          # -> cache miss -> clone ulang, dan assert SHA di step bawah tetap
+          # menjaga: gagal ke arah aman.
+          key: proton-clang-${{ env.CLANG_PIN }}
 
       - name: Ambil toolchain proton-clang (dipakai penulis kernel ini di b.sh)
         run: |
@@ -2196,7 +2247,19 @@ jobs:
             }
             echo "OK: proton-clang ter-pin di $CLANG_PIN"
           else
-            echo "CATATAN: clang-proton dipulihkan dari cache tanpa .git - SHA tidak bisa diverifikasi."
+            # Revisi ke-31: dulu cuma CATATAN lalu lanjut. Itu satu-satunya jalur
+            # di seluruh workflow ini yang memakai compiler TANPA membuktikan
+            # SHA-nya - compiler menentukan setiap byte Image.gz-dtb, jadi
+            # "tidak bisa diverifikasi" setara dengan tidak di-pin. Clone di atas
+            # selalu membuat .git dan tidak ada langkah yang menghapusnya (beda
+            # dengan AnyKernel3 yang memang di-rm), jadi kalau .git hilang berarti
+            # isi cache-nya memang rusak - dan jawabannya membuangnya, bukan
+            # memakainya.
+            echo "ERROR: clang-proton dipulihkan dari cache TANPA .git, SHA tidak bisa diverifikasi."
+            echo "Isi cache rusak. Buang entry-nya lalu jalankan ulang:"
+            echo "  gh cache delete proton-clang-\$CLANG_PIN --repo \$GITHUB_REPOSITORY"
+            echo "(atau lewat Actions -> Caches di web). Build berikutnya akan clone ulang."
+            exit 1
           fi
 
       - name: Cache ccache
