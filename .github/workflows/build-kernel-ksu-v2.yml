@@ -1112,6 +1112,54 @@
 # build yang dipicunya tetap berguna: run revisi ke-31 baru membuktikan jalur
 # cache MISS untuk key proton-clang yang baru, run ini membuktikan jalur HIT-nya
 # (pulih dari cache, .git ada, assert SHA lolos).
+#
+# ============================================================
+# REVISI KE-33 (2026-09-15) - "audit semuanya" sesudah rev-32 boot normal di
+# perangkat. Satu pin bergerak, tujuh di HEAD, tidak ada yang ORPHAN.
+#
+# ReSukiSU b22a46e6 -> 6d674e50 (5 commit, 11 berkas). Diperiksa lewat compare
+# API, bukan dari judul commit: status `ahead`, behind=0 - jadi pin lama masih
+# di cabang, bukan orphan - dan daftar berkasnya 11, jauh di bawah batas
+# truncation 300 yang ditemukan audit revisi ke-31, jadi vonisnya sah. NOL
+# berkas di bawah kernel/: tiga workflow CI milik ReSukiSU sendiri (hanya
+# penghapusan setup-android), empat berkas terjemahan + libs.versions.toml di
+# bawah manager/, dan Cargo.lock/Cargo.toml userspace ksud & ksuinit (bump
+# crates + bitflags). Tidak satu pun dikompilasi workflow ini, jadi seluruh
+# audit Kconfig/Kbuild/hook terdahulu tetap berlaku utuh; satu-satunya efek
+# build adalah KSU_VERSION +5 dari `git rev-list --count`.
+#
+# Tiga cacat ditemukan, semuanya kelas yang sama seperti revisi ke-31 dan
+# ke-28: penjaga yang kelihatan bekerja dan sebenarnya tidak.
+#
+#   (a) Step pemuat di bawah ini hanya memastikan tiap nama pin ADA, bukan ada
+#       PERSIS SATU. Nama ganda membuat $GITHUB_ENV memakai baris terakhir
+#       sementara preflight.sh dan ~/bin/pincheck memakai baris pertama - audit
+#       pra-push dan kompilasi memakai SHA berbeda, dua-duanya hijau. Sekarang
+#       dihitung dan wajib 1. (naikkan-pin.yml sendiri sudah kebal: sed-nya
+#       menulis semua kecocokan lalu menuntut `git diff --numstat` = 1/1.)
+#
+#   (b) preflight.sh hanya me-lint SATU yaml per pemanggilan - defaultnya file
+#       ini. Sejak revisi ke-27 ada TIGA workflow, dan yang tidak pernah
+#       ter-lint justru naikkan-pin.yml, satu-satunya yang menulis pins.env.
+#       Sekarang tanpa argumen ia me-lint ketiganya, cek pin tetap sekali.
+#
+#   (c) ~/bin/pincheck diberi argumen berkas .yml (kebiasaan dari sebelum
+#       revisi ke-26) menjawab delapan baris "TAK ADA di pins.env" lalu keluar
+#       1 - laporan yang terbaca seperti pins.env rusak, padahal berkasnya
+#       salah. Sekarang berkas tanpa satu pun baris NAMA=<40 hex> ditolak
+#       dengan penjelasan, bukan delapan vonis palsu.
+#
+# Satu lagi yang bukan cacat tapi lubang audit: lokal CRLF, remote LF, jadi
+# membandingkan blob lokal dengan blob remote SELALU berbunyi "beda" (2639 CR,
+# persis satu per baris) dan pemeriksaan drift lokal-vs-remote tidak berguna.
+# Normalisasi CRLF->LF itu wajib - blok run: dengan CR gagal di bash Linux -
+# tapi sampai revisi ini ia tidak pernah masuk riwayat: tiap kali push lewat
+# Git Data API, skripnya ditulis ulang dari nol di direktori sementara. Itu
+# kelas kegagalan yang sama dengan tabel pin preflight.sh yang basi diam-diam
+# sepanjang revisi 26-28: apa yang tidak pernah masuk riwayat tidak bisa
+# diaudit. Sekarang ada push.sh yang ter-track di arsip lokal - ia
+# menormalkan, mendorong keempat berkas sebagai SATU commit, lalu memverifikasi
+# SHA blob remote terhadap byte lokal yang sudah dinormalkan.
 # ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
@@ -1187,12 +1235,22 @@ jobs:
             exit 1
           fi
 
+          # Bukan cuma "ada", tapi ADA PERSIS SATU. Kalau satu nama tertulis
+          # dua kali - mudah terjadi lewat sunting tangan di web GitHub, dan
+          # jalur itu memang sah (pins.env ada di paths:) - maka baris TERAKHIR
+          # yang menang di $GITHUB_ENV, sedangkan preflight.sh dan ~/bin/pincheck
+          # membacanya dengan `head -1` alias baris PERTAMA. Gerbang pra-push
+          # jadi mengaudit SHA yang berbeda dari yang benar-benar dikompilasi,
+          # dan dua-duanya tetap kelihatan hijau. Ketahuan di audit revisi ke-33.
           for n in KERNEL_PIN SCRIPTS_PIN KSU_PIN SUSFS_PIN \
                    NOMOUNT_PIN NOMOUNT_LOADER_PIN CLANG_PIN AK3_PIN; do
-            grep -qE "^${n}=[0-9a-f]{40}$" /tmp/pins.env || {
-              echo "ERROR: $n hilang atau cacat di pins.env"
+            N_BARIS="$(grep -cE "^${n}=[0-9a-f]{40}$" /tmp/pins.env || true)"
+            if [ "$N_BARIS" != "1" ]; then
+              echo "ERROR: $n muncul $N_BARIS kali di pins.env (wajib persis 1)"
+              echo "       baris yang cocok:"
+              grep -nE "^${n}=" /tmp/pins.env | sed 's/^/         /' || true
               exit 1
-            }
+            fi
           done
 
           grep -E '^[A-Z0-9_]+=[0-9a-f]{40}$' /tmp/pins.env >> "$GITHUB_ENV"
