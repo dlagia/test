@@ -1074,6 +1074,45 @@
 #    BBR+fq), make -k di balik pipefail+tee, pemilihan Image, pengemasan zip,
 #    dan rilis GH_REPO+--target. Tidak ada temuan baru di ketiganya.
 # ============================================================
+# REVISI KE-32 (2026-09-15) - pertanyaan pemilik: "issue Pantau pin upstream
+# tidak bisa menutup sendiri, atau sengaja dilewatkan?". Jawabannya: bisa, dan
+# tidak dilewatkan - tapi pertanyaannya menemukan cacat nyata, dan cacatnya ada
+# di WAKTU robot dijalankan, bukan di logika tutupnya.
+#
+# Buktinya di repo sendiri: issue #1 memang tertutup otomatis, tapi oleh run
+# 34864188373 yang event-nya workflow_dispatch - ditekan tangan. Issue #2
+# terbit 05:55Z menyuruh menaikkan KSU & SUSFS; keduanya sudah dinaikkan pada
+# 11:25Z lewat revisi ke-30, dan issue itu tetap terbuka berjam-jam sesudahnya
+# menyuruh mengerjakan pekerjaan yang sudah selesai. Sampai revisi ke-31 tidak
+# ada satu pun jalur yang menghubungkan "pin naik" dengan "laporan disegarkan":
+# pin-watch cuma punya schedule + workflow_dispatch. Laporan basi lebih buruk
+# daripada tidak ada laporan - ia melatih pembacanya mengabaikan issue ini,
+# justru issue yang suatu hari akan berkata ORPHAN.
+#
+# Dua jalur baru, karena satu saja tidak cukup:
+#   - pin-watch.yml dapat trigger `push: paths: pins.env`. Ini menangkap
+#     kenaikan yang didorong dengan PAT (Git Data API dari sini, atau sunting
+#     tangan lewat web GitHub).
+#   - naikkan-pin.yml memanggil `gh workflow run pin-watch.yml` sesudah commit.
+#     Wajib eksplisit dengan alasan yang sama seperti "Panggil build": commit
+#     dari GITHUB_TOKEN TIDAK memicu event push, jadi trigger di atas tidak
+#     akan menyala untuk tombol itu. Dipanggil tanpa syarat `bangun`, dan
+#     kegagalannya tidak menggagalkan kenaikan pin yang sudah sah ter-commit.
+#
+# Temuan sampingan: cron '0 1 * * *' berkomentar "01:00 UTC = 08:00 WIB",
+# padahal KEDUA run terjadwal yang pernah ada mulai 05:52Z dan 05:54Z - telat
+# ~4 jam 53 menit, dua-duanya, jadi bukan jitter melainkan antrean menit :00
+# yang memang paling padat di GitHub. Digeser ke '23 1 * * *'. Badan issue
+# selalu mencetak jam NYATA run, jadi laporannya sendiri tidak pernah
+# berbohong soal ini - yang berbohong cuma komentarnya.
+#
+# Kedelapan pin dicek ulang dan kedelapannya menjawab compare `identical`,
+# ahead=0 behind=0 - tidak ada yang tertinggal, tidak ada yang ORPHAN. Karena
+# tidak ada pin yang bergerak, file ini sendiri cuma bertambah blok riwayat;
+# build yang dipicunya tetap berguna: run revisi ke-31 baru membuktikan jalur
+# cache MISS untuk key proton-clang yang baru, run ini membuktikan jalur HIT-nya
+# (pulih dari cache, .git ada, assert SHA lolos).
+# ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
 

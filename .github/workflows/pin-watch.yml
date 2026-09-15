@@ -26,9 +26,30 @@ name: Pantau pin upstream
 
 on:
   schedule:
-    # 01:00 UTC = 08:00 WIB, tiap hari.
-    - cron: '0 1 * * *'
+    # Revisi ke-32: dulu '0 1 * * *' dengan komentar "01:00 UTC = 08:00 WIB".
+    # Kenyataannya KEDUA run terjadwal yang pernah ada mulai 05:52Z dan 05:54Z -
+    # telat ~4 jam 53 menit, dua-duanya, jadi bukan jitter. Menit :00 adalah
+    # menit paling padat di GitHub dan run terjadwal repo privat mengantre di
+    # belakang. Digeser ke menit ganjil supaya tidak ikut antre; kalaupun masih
+    # telat, laporan sekarang tidak lagi bergantung pada jadwal (lihat push: di
+    # bawah). Jam yang tertulis di badan issue selalu jam NYATA run, bukan jam
+    # jadwal, jadi laporannya sendiri tidak pernah berbohong soal ini.
+    - cron: '23 1 * * *'
   workflow_dispatch:
+  # Revisi ke-32 - LUBANG YANG DITAMBAL DI SINI. Sampai revisi ke-31 robot ini
+  # hanya jalan lewat jadwal dan tombol, sehingga TIDAK ADA yang menghubungkan
+  # "pin naik" dengan "laporan disegarkan": issue tetap menganga berisi drift
+  # yang sudah beres, sampai jadwal berikutnya. Nyata di issue #2 - laporan
+  # 05:55Z menyuruh menaikkan KSU & SUSFS, keduanya sudah dinaikkan 11:25Z di
+  # revisi ke-30, dan issue-nya tetap terbuka berjam-jam menyuruh mengerjakan
+  # pekerjaan yang sudah selesai. (Issue #1 memang tertutup sendiri, tapi oleh
+  # run workflow_dispatch 34864188373 - ditekan tangan, bukan oleh jadwal.)
+  # Laporan basi lebih berbahaya daripada tidak ada laporan: ia melatih
+  # pembacanya mengabaikan issue ini.
+  push:
+    branches: [ main ]
+    paths:
+      - 'pins.env'
 
 permissions:
   contents: read

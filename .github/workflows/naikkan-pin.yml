@@ -205,6 +205,24 @@ jobs:
             -m "Dinaikkan lewat workflow \"Naikkan pin\" oleh @${GITHUB_ACTOR}. Triase lolos: nol file sensitif tersentuh, atau paksa = true."
           git push
 
+      # Revisi ke-32: alasan yang sama dengan "Panggil build" di bawah. pin-watch
+      # sekarang punya trigger `push: paths: pins.env`, tapi trigger itu TIDAK
+      # menyala untuk commit di atas - commit dari GITHUB_TOKEN tidak memicu
+      # event push. Tanpa panggilan eksplisit ini, issue "Pantau pin upstream"
+      # akan tetap menganga menyuruh menaikkan pin yang baru saja dinaikkan oleh
+      # tombol ini sendiri. Dipanggil TANPA syarat `bangun`: laporan harus segar
+      # walau pemiliknya memilih tidak membangun sekarang. `|| true` karena
+      # menyegarkan laporan tidak boleh menggagalkan kenaikan pin yang sudah
+      # sah tertulis dan ter-commit - pin-watch akan jalan lagi besok pagi.
+      - name: Segarkan laporan pin-watch
+        if: env.TIDAK_ADA_PERUBAHAN != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run pin-watch.yml --ref "${GITHUB_REF_NAME}" \
+            || echo "CATATAN: gagal memanggil pin-watch; laporan disegarkan oleh jadwal."
+
       # Commit dari GITHUB_TOKEN SENGAJA tidak memicu event push - itu aturan
       # GitHub untuk mencegah workflow saling memicu tanpa henti. Jadi build
       # dipanggil eksplisit di sini, bukan lewat `paths:` di workflow build.
