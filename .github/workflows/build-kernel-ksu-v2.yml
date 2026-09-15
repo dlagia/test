@@ -1161,6 +1161,57 @@
 # menormalkan, mendorong keempat berkas sebagai SATU commit, lalu memverifikasi
 # SHA blob remote terhadap byte lokal yang sudah dinormalkan.
 # ============================================================
+# REVISI KE-34 (2026-09-15) - "audit kembali semuanya". Berkas ini TIDAK
+# disentuh: kedelapan pin di HEAD, jadi tidak ada yang bisa ORPHAN, dan
+# menyunting file ini hanya akan membakar 9 menit build tanpa sebab - filter
+# `paths:` revisi ke-24 bekerja persis seperti maksudnya. Yang berubah:
+# pin-watch.yml, naikkan-pin.yml, push.sh. Temuan pokoknya dicatat lengkap di
+# kepala pin-watch.yml - ringkasnya, `gh api` menulis badan error HTTP-nya ke
+# STDOUT dan exit code-nya hilang di dalam $( ), jadi setiap penjaga bergaya
+# `[ -z "$var" ]` tidak pernah bisa menyala, dan teks error itu lolos menjadi
+# SHA sasaran. Vonis yang keluar: **AMAN dinaikkan** ke `{ "mes`. Penjaga
+# sekarang menguji BENTUK, bukan kekosongan. Jalur ORPHAN sendiri dicoba
+# sungguhan untuk pertama kalinya (orphan asli revisi ke-22) dan sehat.
+# ============================================================
+# REVISI KE-35 (2026-09-15) - pertanyaan pemilik: "loh kok file zip
+# build-20260915-153241 tidak bisa di unduh". Bukan build yang gagal, bukan
+# aset yang rusak, dan bukan bug di workflow ini - tapi cacat laporan, dan
+# itu tetap cacat.
+#
+# Yang diperiksa: rilis build-20260915-153241 ada, asetnya satu, state
+# `uploaded`, 13.858.435 B - byte-nya utuh di server. Yang menipu: repo
+# dlagia/test PRIVAT, dan pada repo privat GitHub menjawab permintaan aset
+# tanpa login dengan **404**, bukan 401 dan bukan 403 - sengaja, supaya
+# keberadaan repo privat tidak bocor. Jadi tautan `browser_download_url`
+# yang dicetak rilis dan ringkasan build terbaca sebagai "file tidak ada"
+# bagi siapa pun yang membukanya dari sesi tanpa akses, misalnya browser HP
+# yang belum login. Dibuktikan juga arah sebaliknya: tautan
+# pra-tandatangan aset (id 565974052) berhasil tanpa autentikasi sama sekali
+# - HEAD 200, permintaan Range 206 - jadi asetnya betul-betul bisa diunduh,
+# hanya jalurnya yang tidak pernah disebutkan.
+#
+# Revisi ke-25 menulis "tautannya permanen, sekali unduh langsung
+# flashable". Kalimat pertama benar. Kalimat kedua hanya benar kalau sesinya
+# punya akses, dan tidak satu kata pun di rilis maupun ringkasan build
+# mengatakan syarat itu. Kelasnya sama dengan cacat revisi ke-28 dan ke-33:
+# keluaran yang terlihat betul dan diam soal syarat yang membuatnya betul.
+# Sekarang catatan rilis menyebut tiga jalur yang benar-benar jalan di repo
+# privat (app GitHub / browser yang sudah login; `gh release download`;
+# tautan pra-tandatangan berumur pendek, dicetak saat mau dipakai), dan
+# ringkasan build memperingatkan soal 404 itu alih-alih menyodorkan tautan
+# seolah tanpa syarat. Id numerik aset baru ada SESUDAH rilis terbit, jadi
+# catatannya dilengkapi lalu ditambal balik dengan `gh release edit`, dan
+# id-nya diuji bentuk `^[0-9]+$` - pelajaran revisi ke-34 dipakai langsung
+# pada kode baru, bukan cuma pada kode lama.
+#
+# Audit putaran ini: lint ketiga workflow 0 temuan, kedelapan pin masih di
+# HEAD (pin = HEAD, jadi divergensi mustahil - ORPHAN nihil), step rilis
+# dijalankan kering di luar CI dengan `gh` distub untuk melihat badan rilis
+# yang benar-benar terkirim. Yang TIDAK dilakukan: membuat repo ini publik.
+# Itu akan memberi tautan unduh permanen tanpa login - dan sekaligus
+# membuka seluruh isi repo ke publik - jadi itu keputusan pemilik, bukan
+# keputusan yang boleh diambil sendiri oleh alat.
+# ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
 
@@ -2639,6 +2690,17 @@ jobs:
       # hangus begitu masa retensi habis. Release menyimpan zip AnyKernel3-nya apa
       # adanya - sekali unduh langsung flashable, tautannya permanen, dan muncul di
       # halaman depan repo alih-alih terkubur di dalam satu run Actions.
+      #
+      # SATU HAL YANG TIDAK DIKATAKAN REVISI KE-25 DAN BARU KETAHUAN DI REVISI
+      # KE-35: repo ini PRIVAT, dan pada repo privat tautan aset menjawab 404
+      # untuk sesi yang belum login - bukan 401, bukan 403 - jadi gejalanya
+      # terbaca seperti "file tidak ada" padahal asetnya utuh (rilis
+      # build-20260915-153241 diperiksa: state=uploaded, 13.858.435 B, unduhan
+      # dari browser yang tidak login = 404). "Tautannya permanen" tetap benar;
+      # "sekali unduh langsung flashable" hanya benar kalau sesinya punya akses,
+      # dan tidak ada satu kata pun di rilis maupun ringkasan build yang
+      # mengatakannya. Karena itu catatan rilis sekarang menyebut tiga jalur
+      # unduh yang betul-betul jalan pada repo privat.
       # Hanya jalan untuk build yang sukses; `if: failure()` di step berikutnya
       # yang mengurus jalur gagal.
       - name: Terbitkan Release berisi zip siap-flash
@@ -2672,11 +2734,48 @@ jobs:
           # branch default. Kunci ke commit yang benar-benar dibangun.
           gh release create "$TAG" "$ZIP" \
             --title "$TAG" --notes-file /tmp/notes.md --target "$GITHUB_SHA"
+          # Id numerik aset baru ada SESUDAH rilisnya terbit, dan id itulah yang
+          # dipakai untuk mencetak tautan pra-tandatangan. Jadi catatannya
+          # dilengkapi lalu ditambal balik dengan `gh release edit`.
+          ASET_ID="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" \
+                       --jq '.assets[0].id' 2>/dev/null || true)"
+          # Bentuk, bukan "tidak kosong": `gh api` mencetak badan error-nya ke
+          # STDOUT dan exit code-nya hilang di dalam $( ) - pelajaran revisi
+          # ke-34 - jadi $ASET_ID bisa saja berisi JSON error.
+          printf '%s' "$ASET_ID" | grep -qE '^[0-9]+$' || {
+            echo "ERROR: id aset tidak terbaca (jawaban: ${ASET_ID:0:80})"
+            exit 1
+          }
+
+          {
+            printf -- '\n### Kalau unduhannya 404\n\n'
+            printf -- 'Repo ini privat, jadi tautan aset di atas hanya jalan untuk sesi\n'
+            printf -- 'yang sudah login dan punya akses. GitHub menjawab **404**, bukan\n'
+            printf -- '401, jadi gejalanya menipu - asetnya utuh. Tiga jalur yang jalan:\n\n'
+            printf -- '1. **HP** - buka lewat app GitHub, atau browser yang sudah login\n'
+            printf -- '   ke akun pemilik repo.\n'
+            printf -- '2. **PC** - `gh release download %s --repo %s --pattern "*.zip"`\n' \
+              "$TAG" "$GITHUB_REPOSITORY"
+            printf -- '3. **Tautan langsung tanpa login** - pra-tandatangan, umurnya\n'
+            printf -- '   pendek, jadi cetak saat mau dipakai dan jangan disimpan:\n'
+            printf -- '   ```\n'
+            printf -- '   gh api repos/%s/releases/assets/%s \\\n' \
+              "$GITHUB_REPOSITORY" "$ASET_ID"
+            printf -- '     -H "Accept: application/octet-stream" --include --silent \\\n'
+            printf -- '     | grep -i "^location:"\n'
+            printf -- '   ```\n'
+          } >> /tmp/notes.md
+          gh release edit "$TAG" --notes-file /tmp/notes.md
+
           URL="$(gh release view "$TAG" --json url --jq .url)"
           {
             echo ""
             echo "### Unduh"
             echo "[$ZIP]($URL) - zip AnyKernel3 siap flash (bukan artifact dobel-zip)."
+            echo ""
+            echo "Repo ini PRIVAT: tautan di atas menjawab 404 kalau sesinya belum"
+            echo "login, dan itu terbaca seperti file hilang. Jalur yang jalan ada"
+            echo "di badan rilis, bagian \"Kalau unduhannya 404\"."
           } >> "$GITHUB_STEP_SUMMARY"
 
       # Kalau build gagal, step "Compile" hanya mencetak ~120 baris error +
