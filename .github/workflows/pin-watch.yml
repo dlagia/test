@@ -65,14 +65,29 @@ name: Pantau pin upstream
 
 on:
   schedule:
-    # Revisi ke-32: dulu '0 1 * * *' dengan komentar "01:00 UTC = 08:00 WIB".
-    # Kenyataannya KEDUA run terjadwal yang pernah ada mulai 05:52Z dan 05:54Z -
-    # telat ~4 jam 53 menit, dua-duanya, jadi bukan jitter. Menit :00 adalah
-    # menit paling padat di GitHub dan run terjadwal repo privat mengantre di
-    # belakang. Digeser ke menit ganjil supaya tidak ikut antre; kalaupun masih
-    # telat, laporan sekarang tidak lagi bergantung pada jadwal (lihat push: di
-    # bawah). Jam yang tertulis di badan issue selalu jam NYATA run, bukan jam
-    # jadwal, jadi laporannya sendiri tidak pernah berbohong soal ini.
+    # Revisi ke-32 menggeser '0 1 * * *' -> '23 1 * * *' dengan dugaan: menit :00
+    # adalah menit terpadat di GitHub dan run terjadwal repo PRIVAT mengantre di
+    # belakangnya, jadi menit ganjil mestinya lolos.
+    #
+    # REVISI KE-37 - DUGAAN ITU SALAH, dan datanya sekarang cukup untuk bilang
+    # begitu. Keempat run terjadwal yang pernah ada:
+    #
+    #   cron :00  -> mulai 05:52Z (14 Sep), 05:54Z (15 Sep)
+    #   cron :23  -> mulai 06:14Z (16 Sep), 06:16Z (17 Sep)
+    #
+    # Telatnya ~4 jam 51 menit di KEEMPAT-empatnya. Menggeser jadwal 23 menit
+    # hanya menggeser waktu mulai 23 menit - offset-nya tidak bergerak sedikit
+    # pun. Dan dua run terakhir terjadi SESUDAH repo dijadikan publik (revisi
+    # ke-36), jadi "repo privat mengantre" juga bukan sebabnya. Ini antrean
+    # scheduler GitHub, di luar jangkauan berkas ini.
+    #
+    # Sengaja TIDAK dikompensasi dengan menggeser cron ~4j51m lebih awal:
+    # offset itu milik GitHub, bukan kontrak. Begitu mereka memperbaiki
+    # antreannya, laporan justru mendarat jam 3 pagi. Yang membuat keterlambatan
+    # ini tidak penting bukan jadwalnya, melainkan trigger `push: pins.env` dan
+    # panggilan eksplisit dari naikkan-pin.yml di bawah - jadwal cuma jaring
+    # terakhir. Jam di badan issue selalu jam NYATA run, jadi laporannya sendiri
+    # tidak pernah berbohong soal ini; yang dulu berbohong komentar ini.
     - cron: '23 1 * * *'
   workflow_dispatch:
   # Revisi ke-32 - LUBANG YANG DITAMBAL DI SINI. Sampai revisi ke-31 robot ini
@@ -168,6 +183,11 @@ jobs:
 
           echo "$KOMPONEN" | grep -v '^[[:space:]]*$' | while IFS=';' read -r pola repo ref sensitif nama; do
             pin=$(ambil "$pola")
+            # Nama variabel pins.env-nya, dikupas dari polanya sendiri
+            # (^KSU_PIN=[0-9a-f]{40} -> KSU_PIN) supaya tidak jadi salinan
+            # kesembilan dari tabel yang sama. Dipakai revisi ke-37 untuk
+            # mencetak baris pins.env yang siap disalin apa adanya.
+            pola_nama=$(printf '%s' "$pola" | sed 's/^[[:space:]]*\^\{0,1\}//; s/=.*$//')
 
             if [ -z "$pin" ]; then
               printf '| %s | - | - | **POLA TAK KETEMU** | workflow berubah, perbarui pin-watch.yml |\n' \
@@ -262,8 +282,31 @@ jobs:
                 echo "$berkas" | grep -E "$sensitif" | head -20 | sed 's/^/  - `/; s/$/`/'
               fi
               printf -- '- diff: https://github.com/%s/compare/%s...%s\n' "$repo" "$pin" "$head"
-              printf -- '- cara menaikkan: ganti `%s` -> `%s` di `%s`, commit. Build jalan sendiri.\n' \
-                "${pin:0:9}" "${head:0:9}" "$WF"
+              # Revisi ke-37 - DUA CACAT DI SATU BARIS, keduanya sampai ke produksi
+              # (issue #2 masih menyimpan buktinya).
+              #
+              # 1. Baris ini dulu mencetak SHA versi pendek: "ganti `833edb0e8` ->
+              #    `b22a46e6e` di `pins.env`". Padahal penjaga bentuk di step "Muat
+              #    pins.env" menuntut PERSIS 40 hex. Siapa pun yang menuruti kalimat
+              #    ini apa adanya - menyalin `b22a46e6e` lalu commit - menghasilkan
+              #    pins.env yang ditolak build dengan "tidak berbentuk NAMA=<40 hex
+              #    huruf kecil>". Satu-satunya kalimat di seluruh laporan yang
+              #    menyuruh berbuat sesuatu, dan ia tidak bisa diikuti. Yang
+              #    menyelamatkan selama ini cuma kebetulan: dua kenaikan yang pernah
+              #    terjadi dikerjakan dari sini dengan SHA penuh, bukan dari laporan.
+              #    Versi pendek tetap dipakai di baris "naik:" di atas - di sana ia
+              #    memang cuma tampilan, tidak untuk disalin.
+              #
+              # 2. Kalimatnya lahir di revisi ke-26, waktu menyunting berkas memang
+              #    satu-satunya cara. Sejak revisi ke-27 ada tombol "Naikkan pin"
+              #    yang men-triase dulu (menolak kalau menyentuh file sensitif) dan
+              #    jalan dari HP tanpa menyentuh berkas apa pun. Laporan ini tidak
+              #    pernah menyebutnya, jadi ia membimbing pembacanya ke jalur yang
+              #    lebih berbahaya justru ketika jalur aman sudah ada.
+              printf -- '- cara menaikkan (disarankan): Actions -> **Naikkan pin** -> komponen `%s` -> Run.\n' "$nama"
+              printf -- '  Tombol itu men-triase dulu dan menolak sendiri kalau menyentuh file sensitif.\n'
+              printf -- '- cara manual: di `%s`, ganti baris itu jadi persis - SHA WAJIB 40 hex penuh:\n' "$WF"
+              printf -- '  ```\n  %s=%s\n  ```\n' "${pola_nama}" "$head"
             } >> "$RINCI"
           done
 
@@ -287,7 +330,10 @@ jobs:
                 printf 'Jangan naikkan itu sendiri - patch/fixer bisa ikut patah.\n'
               else
                 printf 'Semua drift kelas **AMAN**: tidak ada file sensitif yang tersentuh. '
-                printf 'Naikkan sendiri, push, lalu flash kalau build hijau.\n'
+                # Revisi ke-37: dulu berbunyi "Naikkan sendiri, push, lalu flash".
+                # Itu kalimat zaman revisi ke-26, sebelum tombol "Naikkan pin" ada.
+                printf 'Naikkan lewat Actions -> **Naikkan pin** (triase jalan lagi di sana '
+                printf 'sebagai jaring kedua), lalu flash kalau build hijau.\n'
               fi
             elif [ "$PERLU_AUDIT" = "1" ]; then
               # Revisi ke-29: keadaan ini nyata dan dulu tidak punya kalimat sendiri.
