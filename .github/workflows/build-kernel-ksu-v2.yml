@@ -1312,6 +1312,29 @@
 #     hilang diam-diam justru waktu API bermasalah (aturan revisi ke-34,
 #     belum pernah diterapkan ke panggilan KEDUA ini).
 # ============================================================
+# REVISI KE-40a (18 September 2026) - lanjutan langsung dari (b) di atas.
+# Menolak image tanpa dtb di step pengemas memang menutup lubangnya, tapi
+# menutupnya SEMBILAN MENIT terlambat: kegagalannya sudah pasti sejak Kconfig
+# selesai resolve, namun baru diteriakkan sesudah seluruh kernel dikompilasi.
+# Sekarang di-assert di step Compile, bersama assert KSU/SUSFS/BBR yang sudah
+# ada, sedetik sesudah `make olddefconfig`.
+#
+# Dua simbol, dan ini bagian yang mengejutkan: hanya SATU dari keduanya yang
+# benar-benar tertulis di defconfig.
+#   - CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE=y ada di rosemary_defconfig.
+#   - CONFIG_BUILD_ARM64_APPENDED_KERNEL_IMAGE_NAME - yang menentukan NAMA
+#     berkas hasil - tidak ada di defconfig mana pun. Nilainya datang dari
+#     `default "Image.gz-dtb" if IMG_GZ_DTB` di arch/arm64/Kconfig, dan
+#     IMG_GZ_DTB sendiri sebuah pilihan yang juga tidak ditulis siapa pun.
+# arch/arm64/Makefile memakai simbol kedua itu apa adanya sebagai target
+# `all:`, jadi pergeseran diam-diam ke IMG_DTB akan menghasilkan Image-dtb -
+# nama yang tidak dicari step pengemas - tanpa satu pun baris error. Yang
+# di-pin di sini karena itu bukan cuma "dtb ikut", melainkan nama berkasnya.
+#
+# Diuji kering di luar CI atas empat .config: dua simbol benar -> keluar 0;
+# append dimatikan -> keluar 1; nama bergeser ke "Image-dtb" -> keluar 1;
+# simbol nama hilang sama sekali -> keluar 1.
+# ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
 
@@ -2633,6 +2656,41 @@ jobs:
             exit 1
           }
           echo "OK: BBR jadi congestion control default, fq jadi qdisc default."
+
+          # Revisi ke-40: nama berkas kernel yang dihasilkan ikut di-assert DI
+          # SINI, sedetik sesudah Kconfig resolve - bukan sembilan menit kemudian
+          # di step "Tentukan file kernel hasil". Dua simbol, dan hanya SATU dari
+          # keduanya yang benar-benar tertulis di defconfig:
+          #
+          #   CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE=y  -> ada di rosemary_defconfig
+          #   CONFIG_BUILD_ARM64_APPENDED_KERNEL_IMAGE_NAME -> TIDAK ada di mana
+          #     pun; nilainya datang dari `default "Image.gz-dtb" if IMG_GZ_DTB`
+          #     di arch/arm64/Kconfig, alias dari pilihan IMG_GZ_DTB vs IMG_DTB
+          #     yang juga tidak ditulis siapa pun.
+          #
+          # arch/arm64/Makefile memakai simbol kedua itu apa adanya sebagai
+          # target `all:`. Jadi kalau yang pertama hilang, atau pilihan itu
+          # bergeser ke IMG_DTB, `make` cuma membangun Image.gz (atau Image-dtb)
+          # dan TETAP keluar 0 - tidak ada satu pun baris error. Yang di-pin di
+          # sini bukan cuma "dtb ikut" tapi nama berkasnya, karena step pengemas
+          # menuntut persis Image.gz-dtb.
+          grep -q '^CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE=y$' out/.config || {
+            echo "ERROR: CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE bukan y."
+            echo "  Tanpa itu dtb tidak di-append ke image; hasilnya ter-flash"
+            echo "  mulus lalu bootloop, dan make tetap keluar 0."
+            grep -n 'APPENDED_DTB' out/.config || echo "  (simbolnya tidak ada sama sekali)"
+            exit 1
+          }
+          grep -q '^CONFIG_BUILD_ARM64_APPENDED_KERNEL_IMAGE_NAME="Image.gz-dtb"$' out/.config || {
+            echo "ERROR: nama image hasil bukan \"Image.gz-dtb\"."
+            grep -n 'APPENDED_KERNEL_IMAGE_NAME' out/.config || echo "  (simbolnya kosong/tidak ada)"
+            echo "PETUNJUK: nilainya berasal dari pilihan IMG_GZ_DTB vs IMG_DTB di"
+            echo "          arch/arm64/Kconfig, yang tidak ditulis di defconfig mana"
+            echo "          pun - jadi kalau source kernel bergeser, default-nya"
+            echo "          yang bergeser. Step pengemas menuntut Image.gz-dtb."
+            exit 1
+          }
+          echo "OK: hasil compile akan bernama Image.gz-dtb dengan dtb ter-append."
 
           # Lapis kedua penjamin "tidak ada residu" (revisi ke-11): apa pun yang
           # lolos dari step pembersihan, ketahuan di sini setelah Kconfig
