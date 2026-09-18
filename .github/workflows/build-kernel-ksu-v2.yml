@@ -1259,8 +1259,12 @@
 # SUSFS TETAP DITAHAN di 426ff004. HEAD upstream masih f15603b2 - SHA yang
 # sama yang diaudit dan DITOLAK di revisi ke-38 karena __lookup_hash()
 # membaca dentry->d_inode SEBELUM penjaga !IS_ERR(dentry) && dentry->d_inode,
-# alias NULL-deref di setiap stat() atas path yang tidak ada. Penahanannya
-# terikat ke SHA itu, jadi begitu upstream bergerak ia kedaluwarsa sendiri.
+# alias NULL-deref. Penahanannya terikat ke SHA itu, jadi begitu upstream
+# bergerak ia kedaluwarsa sendiri. Alasan lengkapnya di pins.env; revisi ke-40a
+# memperbaiki kalimatnya di sana karena versi lama ("setiap stat() path yang
+# tidak ada") meremehkan: lewat filename_create() dentry negatif adalah jalur
+# sukses normal mkdir/mknod/symlink/link, jadi radiusnya pembuatan berkas
+# biasa, bukan cuma jalur error.
 #
 # (a) STEP "Muat pins.env" MENGEKSPOR NAMA APA PUN, bukan cuma delapan yang
 #     diverifikasi. Penjaga bentuk menolak apa saja yang bukan
