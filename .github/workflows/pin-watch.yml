@@ -244,9 +244,16 @@ jobs:
             # kosong -> `[ "$kena" -gt 0 ]` mati dengan "integer expected".
             : "${n_berkas:=0}" "${kena:=0}"
 
+            # aman=1 artinya laporan boleh menyerahkan baris salin-tempel untuk
+            # menaikkan pin ini sendiri. Setiap cabang yang menulis
+            # /tmp/perlu_audit WAJIB juga menurunkannya jadi 0 - lihat alasannya
+            # di blok "cara menaikkan" di bawah.
+            aman=1
+
             if [ "$status" = "diverged" ]; then
               ket="**ORPHAN** (diverged, maju $maju mundur $mundur)"
               echo 1 > /tmp/perlu_audit
+              aman=0
             else
               ket="tertinggal $maju commit"
             fi
@@ -260,9 +267,11 @@ jobs:
             if [ "$n_berkas" -ge 300 ]; then
               vonis="**PERLU AUDIT** - daftar file terpotong di $n_berkas (batas API), $kena sensitif di antara yang terlihat"
               echo 1 > /tmp/perlu_audit
+              aman=0
             elif [ "$kena" -gt 0 ]; then
               vonis="**PERLU AUDIT** - $kena file sensitif"
               echo 1 > /tmp/perlu_audit
+              aman=0
             else
               vonis="AMAN dinaikkan - $n_berkas file, nol menyentuh bagian yang diaudit"
             fi
@@ -303,10 +312,37 @@ jobs:
               #    jalan dari HP tanpa menyentuh berkas apa pun. Laporan ini tidak
               #    pernah menyebutnya, jadi ia membimbing pembacanya ke jalur yang
               #    lebih berbahaya justru ketika jalur aman sudah ada.
-              printf -- '- cara menaikkan (disarankan): Actions -> **Naikkan pin** -> komponen `%s` -> Run.\n' "$nama"
-              printf -- '  Tombol itu men-triase dulu dan menolak sendiri kalau menyentuh file sensitif.\n'
-              printf -- '- cara manual: di `%s`, ganti baris itu jadi persis - SHA WAJIB 40 hex penuh:\n' "$WF"
-              printf -- '  ```\n  %s=%s\n  ```\n' "${pola_nama}" "$head"
+              #
+              # 3. Revisi ke-38: kedua baris di bawah dulu dicetak untuk SETIAP
+              #    baris yang drift, termasuk yang vonisnya sendiri **PERLU
+              #    AUDIT** atau **ORPHAN**. Jadi laporan ini menutup satu pintu
+              #    lalu membukakan pintu sebelahnya: tombol "Naikkan pin"
+              #    men-triase dan MENOLAK kenaikan yang menyentuh file sensitif
+              #    (kecuali `paksa` dicentang), tapi "cara manual" di bawahnya
+              #    menyerahkan baris `NAMA=<40 hex>` yang siap disalin ke
+              #    `pins.env` - dan jalur itu tidak melewati triase apa pun.
+              #    Vonisnya benar, penjaganya benar, tapi kalimat terakhirnya
+              #    mengajari cara melewati keduanya. Ditemukan saat SUSFS
+              #    f15603b24 (regresi NULL-deref upstream di `__lookup_hash`)
+              #    divonis PERLU AUDIT dan laporan yang sama tetap menawarkan
+              #    baris salin-tempelnya.
+              #    Sekarang baris salin-tempel hanya muncul untuk vonis AMAN.
+              if [ "$aman" = 1 ]; then
+                printf -- '- cara menaikkan (disarankan): Actions -> **Naikkan pin** -> komponen `%s` -> Run.\n' "$nama"
+                printf -- '  Tombol itu men-triase dulu dan menolak sendiri kalau menyentuh file sensitif.\n'
+                printf -- '- cara manual: di `%s`, ganti baris itu jadi persis - SHA WAJIB 40 hex penuh:\n' "$WF"
+                printf -- '  ```\n  %s=%s\n  ```\n' "${pola_nama}" "$head"
+              else
+                printf -- '- **JANGAN naikkan dulu.** Vonis di atas bukan AMAN, jadi laporan ini sengaja\n'
+                printf -- '  TIDAK memberi baris salin-tempelnya: menyalinnya ke `%s` akan melewati\n' "$WF"
+                printf -- '  triase tombol "Naikkan pin", yang justru akan menolak kenaikan ini.\n'
+                printf -- '- yang harus dikerjakan lebih dulu: baca diff di atas, simulasikan di luar CI\n'
+                printf -- '  (template audit revisi ke-17), lalu catat hasilnya sebagai baris `# TAHAN`\n'
+                printf -- '  di `%s` kalau ditolak. Baris itu dibaca `preflight.sh`, BUKAN robot ini:\n' "$WF"
+                printf -- '  laporan ini akan tetap menyebut baris ini sampai upstream bergerak lagi.\n'
+                printf -- '- kalau audit itu sudah dikerjakan dan hasilnya lolos: Actions -> **Naikkan pin**\n'
+                printf -- '  -> komponen `%s` -> centang `paksa` -> Run. SHA tujuannya `%s`.\n' "$nama" "$head"
+              fi
             } >> "$RINCI"
           done
 
