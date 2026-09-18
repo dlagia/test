@@ -254,6 +254,20 @@ jobs:
               ket="**ORPHAN** (diverged, maju $maju mundur $mundur)"
               echo 1 > /tmp/perlu_audit
               aman=0
+            elif [ "$status" = "behind" ]; then
+              # Revisi ke-39: keadaan ketiga yang selama ini jatuh ke `else`.
+              # 'behind' = ujung branch ada DI BELAKANG pin - upstream force-push
+              # mundur, atau branch-nya di-reset. Yang membuatnya berbahaya sama
+              # persis dengan jalur API-gagal revisi ke-34: ia berbunyi
+              # menenangkan. Untuk 'behind' API compare mengembalikan .files
+              # KOSONG, jadi n_berkas=0 dan kena=0, jadi vonisnya dulu keluar
+              # "**AMAN dinaikkan** - 0 file, nol menyentuh bagian yang diaudit"
+              # lengkap dengan baris salin-tempel - padahal yang disuruh salin
+              # adalah SHA yang LEBIH TUA dari pin sekarang. Dan keterangannya
+              # berbunyi "tertinggal 0 commit", karena ahead_by memang 0.
+              ket="**MUNDUR** (ujung branch di belakang pin, mundur $mundur)"
+              echo 1 > /tmp/perlu_audit
+              aman=0
             else
               ket="tertinggal $maju commit"
             fi
@@ -264,7 +278,14 @@ jobs:
             # file sensitif" cuma berarti "nol di antara 300 pertama" - berkas
             # ke-301 bisa saja fs/ atau kernel/ dan vonis AMAN-nya bohong.
             # Karena itu daftar yang mentok di 300 tidak pernah dinilai AMAN.
-            if [ "$n_berkas" -ge 300 ]; then
+            if [ "$status" = "behind" ]; then
+              # Wajib cabang pertama: untuk 'behind' daftar file kosong, jadi
+              # dua cabang di bawah ini sama-sama lolos dan menjatuhkan vonis
+              # AMAN atas hitungan yang tidak pernah diisi API.
+              vonis="**PERLU AUDIT** - upstream mundur; \"menaikkan\" pin ini justru MENURUNKANNYA"
+              echo 1 > /tmp/perlu_audit
+              aman=0
+            elif [ "$n_berkas" -ge 300 ]; then
               vonis="**PERLU AUDIT** - daftar file terpotong di $n_berkas (batas API), $kena sensitif di antara yang terlihat"
               echo 1 > /tmp/perlu_audit
               aman=0
@@ -381,8 +402,44 @@ jobs:
             fi
           } > "$BODY"
 
-          nomor=$(gh issue list --state open --search "$JUDUL in:title" \
-            --json number,title --jq "[.[]|select(.title==\"$JUDUL\")][0].number // empty" || true)
+          # Revisi ke-39 - DUA LUBANG DI SATU BARIS, keduanya melanggar satu-satunya
+          # invarian robot ini: TEPAT SATU issue berjudul "$JUDUL".
+          #
+          # 1. Panggilan ini dulu berakhir `|| true` dan hasilnya dipakai apa
+          #    adanya. Kalau `gh issue list` meleset sesaat - dan API meleset
+          #    bukan teori, itu tercatat di audit revisi ke-29 - $nomor kosong,
+          #    persis sama bentuknya dengan "tidak ada issue terbuka", lalu
+          #    cabang terakhir di bawah MEMBUAT ISSUE BARU. Hasilnya dua issue
+          #    berjudul sama, dan mulai saat itu setiap run hanya menyunting
+          #    salah satunya; yang satu lagi menganga selamanya berisi laporan
+          #    beku. Ini kelas revisi ke-34 lagi: kegagalan `gh` dibaca sebagai
+          #    jawaban yang sah. Penjaganya harus BENTUK - hasilnya wajib array
+          #    JSON - dan kalau tidak terbaca, lebih baik step ini mati berisik
+          #    daripada menerbitkan laporan kembar yang diam-diam.
+          # 2. `--search "$JUDUL in:title"` memakai indeks pencarian GitHub, yang
+          #    telat beberapa detik sampai beberapa menit sesudah issue dibuat.
+          #    Robot ini sengaja punya tiga pemicu yang bisa beruntun rapat
+          #    (push pins.env, panggilan dari naikkan-pin, jadwal), jadi run
+          #    kedua bisa datang sebelum issue run pertama terindeks - dan
+          #    membuat kembarannya. Daftar issue terbuka repo ini cukup pendek
+          #    untuk disaring jq, yang membaca keadaan sebenarnya, bukan indeks.
+          issue_json=$(gh issue list --state open --limit 100 --json number,title 2>/dev/null || true)
+          if ! printf '%s' "$issue_json" | jq -e 'type == "array"' >/dev/null 2>&1; then
+            echo "ERROR: daftar issue tidak terbaca (jawaban: ${issue_json:0:120})."
+            echo "Dihentikan dengan sengaja: menebak \"belum ada issue\" di sini berarti"
+            echo "membuat issue kembar yang tidak akan pernah disegarkan lagi."
+            echo "--- laporan yang seharusnya terbit ---"
+            cat "$BODY"
+            exit 1
+          fi
+          cocok=$(printf '%s' "$issue_json" | jq -r --arg j "$JUDUL" '[.[]|select(.title==$j)]|length')
+          nomor=$(printf '%s' "$issue_json" | jq -r --arg j "$JUDUL" \
+            '[.[]|select(.title==$j)]|sort_by(.number)|.[0].number // empty')
+          if [ "$cocok" -gt 1 ]; then
+            echo "PERINGATAN: ada $cocok issue terbuka berjudul \"$JUDUL\" - invarian satu-issue"
+            echo "sudah pernah dilanggar. Yang disunting run ini nomor terkecil (#$nomor);"
+            echo "tutup sisanya dengan tangan."
+          fi
 
           # Revisi ke-29 - LUBANG YANG DITAMBAL DI SINI:
           # syaratnya dulu cuma ADA_DRIFT. Padahal PERLU_AUDIT bisa menyala TANPA

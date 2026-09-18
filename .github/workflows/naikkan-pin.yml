@@ -125,6 +125,45 @@ jobs:
             exit 1
           }
 
+          # Revisi ke-39 - TOMBOL INI BUTA TERHADAP `# TAHAN`, dan itu lubang
+          # kelas revisi ke-38 satu tingkat lebih dalam. Revisi ke-38 menutup
+          # pintu "salin-tempel baris pins.env dari laporan" supaya kenaikan
+          # yang divonis PERLU AUDIT tidak bisa lewat tanpa triase. Tapi
+          # penulis pins.env yang sah - tombol ini - tidak pernah membaca
+          # catatan audit yang justru disimpan DI DALAM pins.env. Hari ini
+          # baris "# TAHAN SUSFS f15603b24 ..." mencatat audit yang MENOLAK SHA
+          # itu (NULL-deref di __lookup_hash), dan `paksa = true` tetap akan
+          # menuliskannya. Artinya `paksa`, yang maknanya "sudah saya audit",
+          # bisa dipakai untuk menimpa audit yang sudah tercatat hasilnya.
+          #
+          # Karena itu penahanan MENOLAK TANPA PEDULI `paksa`. Jalan keluarnya
+          # bukan centang, melainkan MENGHAPUS baris `# TAHAN` - suntingan
+          # eksplisit yang tercatat di riwayat git dan bisa ditinjau, bukan
+          # kotak yang bisa dicentang tanpa jejak alasan.
+          #
+          # Kuncinya SHA, bukan nama komponen: nama pendek di baris TAHAN
+          # (KERNEL/KSU/SUSFS/NMLOADER...) milik preflight.sh dan BUKAN nama di
+          # dropdown ini maupun nama variabel pins.env. Mencocokkan nama akan
+          # menjadi salinan kelima dari tabel komponen yang sama - persis cara
+          # revisi ke-28 membusuk. SHA 40 hex unik lintas repo, jadi mencocokkan
+          # SHA memberi jawaban yang sama tanpa tabel baru.
+          TAHAN="$(grep -oE "^# TAHAN [A-Za-z0-9_-]+ ${BARU}( .*)?$" pins.env | head -1 || true)"
+          if [ -n "$TAHAN" ]; then
+            echo ""
+            echo "DITOLAK: SHA tujuan $BARU sudah pernah diaudit dan DITOLAK."
+            echo "  $TAHAN"
+            echo ""
+            echo "Penahanan ini TIDAK bisa dilewati dengan paksa = true: 'paksa' berarti"
+            echo "\"sudah saya audit\", dan berkas ini mencatat bahwa auditnya sudah"
+            echo "dikerjakan dan hasilnya menolak."
+            echo ""
+            echo "Kalau audit itu sudah diulang dan hasilnya sekarang lolos: hapus baris"
+            echo "'# TAHAN' di atas dari pins.env, commit, lalu jalankan tombol ini lagi."
+            echo "Kalau upstream sudah bergerak melewati SHA ini, penahanannya kedaluwarsa"
+            echo "sendiri - tidak ada yang perlu dihapus."
+            exit 1
+          fi
+
           echo "komponen : $KOMPONEN ($NAMA)"
           echo "repo     : $REPO@$REF"
           echo "lama     : $LAMA"
@@ -166,6 +205,22 @@ jobs:
           : "${N_BERKAS:=0}" "${KENA:=0}"
 
           echo "status   : $STATUS, maju $MAJU commit, $N_BERKAS file, $KENA sensitif"
+          # Revisi ke-39: status 'behind' berarti tujuan ada DI BELAKANG pin
+          # sekarang - ini penurunan pin, bukan kenaikan. Terjadi kalau upstream
+          # force-push mundur, atau kalau SHA diketik tangan ke kolom `sha`.
+          # Berbahaya justru karena tampak bersih: untuk 'behind' API compare
+          # mengembalikan .files KOSONG, jadi N_BERKAS=0 dan KENA=0 dan seluruh
+          # triase di bawah ini lolos tanpa satu pun peringatan. Jalur yang sama
+          # dengan revisi ke-34: kegagalan yang berbunyi menenangkan.
+          if [ "$STATUS" = "behind" ] && [ "$PAKSA" != "true" ]; then
+            echo ""
+            echo "DITOLAK: $BARU ada DI BELAKANG pin sekarang ($LAMA)."
+            echo "Ini MENURUNKAN pin, bukan menaikkannya, dan daftar file di atas kosong"
+            echo "karena API compare memang tidak mengisi .files untuk arah mundur -"
+            echo "jadi '0 sensitif' di sini tidak berarti apa-apa."
+            echo "Kalau penurunan ini memang disengaja (rollback), jalankan ulang dengan paksa = true."
+            exit 1
+          fi
 
           # API compare memotong .files di 300 berkas (terbukti di torvalds/linux
           # v5.10...v5.11: .files 300 padahal total_commits 10000, dan ?page=2
