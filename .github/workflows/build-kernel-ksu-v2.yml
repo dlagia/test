@@ -1244,6 +1244,74 @@
 # karena run: tetap string yang sah; yang melihatnya hanya menjalankan
 # skripnya. Itu alasan harness dry-run ini ada.
 # ============================================================
+# REVISI KE-40 (18 September 2026) - audit ulang: satu pin naik, tiga lubang
+# "penjaga yang kelihatan bekerja padahal tidak" ditutup.
+#
+# PIN. ReSukiSU 6ec8d9a8 -> 487b32da. status=ahead, behind=0 (jadi TIDAK
+# orphan), 2 commit / 12 berkas - jauh di bawah batas potong 300 berkas, jadi
+# vonisnya sah. NOL berkas di bawah kernel/: dua commit itu menyentuh
+# manager/ (nama paket & nama aplikasi bisa dikustom), userspace/ksud
+# (backup stock image saat patch dari berkas), dan dua workflow CI milik
+# ReSukiSU sendiri. Tidak satu pun dikompilasi ke dalam kernel ini, jadi
+# seluruh audit Kconfig/Kbuild/hook sebelumnya tetap berlaku apa adanya;
+# efek build satu-satunya KSU_VERSION +2. Tujuh pin lain persis di HEAD.
+#
+# SUSFS TETAP DITAHAN di 426ff004. HEAD upstream masih f15603b2 - SHA yang
+# sama yang diaudit dan DITOLAK di revisi ke-38 karena __lookup_hash()
+# membaca dentry->d_inode SEBELUM penjaga !IS_ERR(dentry) && dentry->d_inode,
+# alias NULL-deref di setiap stat() atas path yang tidak ada. Penahanannya
+# terikat ke SHA itu, jadi begitu upstream bergerak ia kedaluwarsa sendiri.
+#
+# (a) STEP "Muat pins.env" MENGEKSPOR NAMA APA PUN, bukan cuma delapan yang
+#     diverifikasi. Penjaga bentuk menolak apa saja yang bukan
+#     NAMA=<40 hex>, dan itu memang menahan injeksi perintah - nilai 40 hex
+#     tidak bisa jadi perintah. Tapi bagian NAMA-nya tidak dibatasi sama
+#     sekali: baris kesembilan macam PATH=<40 hex> lolos bentuk, lolos loop
+#     "wajib ada persis satu" (loop itu cuma memeriksa delapan nama yang
+#     dicarinya, tidak pernah melihat yang lain), lalu mendarat di
+#     $GITHUB_ENV - yaitu di lingkungan SETIAP step sesudahnya. Sekarang
+#     daftar delapan nama itu hidup di satu variabel $WAJIB yang dipakai dua
+#     kali: sekali untuk menuntut tiap nama muncul persis sekali, sekali lagi
+#     sebagai satu-satunya yang boleh diekspor. Baris berbentuk sah di luar
+#     delapan itu bukan error - pins.env boleh lebih dulu memuat pin untuk
+#     step yang belum ditulis - tapi dicetak sebagai CATATAN, karena
+#     diabaikan diam-diam persis cara salinan kedua jadi basi (revisi
+#     ke-26..28). Diuji kering: normal -> 8 baris diekspor; + PATH=<40 hex>
+#     -> tetap 8, CATATAN muncul; nama ganda -> tetap ERROR; nilai bercelah
+#     -> tetap ERROR.
+#
+# (b) STEP "Tentukan file kernel hasil" MENERIMA IMAGE TANPA DTB, DIAM-DIAM.
+#     Loop-nya menerima Image.gz-dtb, lalu Image.gz, lalu Image - yang
+#     pertama ada menang - dan tidak mengatakan apa pun tentang mana yang
+#     menang. rosemary (MT6785) butuh dtb yang DI-APPEND ke image; setiap
+#     revisi yang terbukti boot memakai Image.gz-dtb. Kalau
+#     CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE hilang dari defconfig, target itu
+#     tidak dibangun, `make` TETAP keluar 0, dan step ini akan mengemas
+#     Image.gz tanpa dtb: zip-nya ter-flash mulus lalu bootloop. Satu siklus
+#     flash terbuang untuk kesalahan yang sudah kelihatan di log CI. Simbol
+#     itu tidak pernah di-assert di mana pun. Sekarang Image.gz-dtb WAJIB;
+#     cadangannya tetap dideteksi, tapi hanya supaya pesan errornya bisa
+#     menyebut apa yang sebenarnya ada, dan hasilnya fatal. Lima kasus diuji
+#     kering (ada / ada+dtbo / cuma Image.gz dengan simbol / tanpa simbol /
+#     kosong), termasuk memastikan `if` utuh dipakai di loop pendeteksi:
+#     `[ -f x ] && VAR=...` sebagai perintah terakhir akan membunuh step di
+#     bawah `bash -e` pada jalur "tidak ada" - jebakan yang sama seperti di
+#     pin-watch.yml.
+#
+# (c) DI LUAR BERKAS INI: ~/bin/pincheck buta terhadap `# TAHAN`. Salinan
+#     KELIMA dari tabel komponen, telat dua revisi - ia melaporkan SUSFS
+#     TERTINGGAL setiap hari atas keputusan yang sudah diambil dan dicatat.
+#     Laporan yang selalu merah sama tak bergunanya dengan laporan yang basi:
+#     pembacanya belajar melewatinya, lalu suatu hari melewatkan ORPHAN.
+#     Dicocokkan ke SHA seperti di naikkan-pin.yml, bukan ke nama komponen -
+#     nama pendek di baris TAHAN ("SUSFS") bukan nama variabel ("SUSFS_PIN"),
+#     jadi mengunci ke nama berarti menyalin tabel komponen untuk keenam
+#     kalinya. Sekalian: hasil `gh api .../compare` di sana divonis lewat
+#     `*)` -> "TERTINGGAL", padahal badan error `gh api` keluar di STDOUT dan
+#     --jq .status atasnya menghasilkan "null" - jadi vonis ORPHAN/MUNDUR
+#     hilang diam-diam justru waktu API bermasalah (aturan revisi ke-34,
+#     belum pernah diterapkan ke panggilan KEDUA ini).
+# ============================================================
 
 name: Build Kernel Rosemary (KSU + SuSFS dlagia)
 
@@ -1325,8 +1393,13 @@ jobs:
           # membacanya dengan `head -1` alias baris PERTAMA. Gerbang pra-push
           # jadi mengaudit SHA yang berbeda dari yang benar-benar dikompilasi,
           # dan dua-duanya tetap kelihatan hijau. Ketahuan di audit revisi ke-33.
-          for n in KERNEL_PIN SCRIPTS_PIN KSU_PIN SUSFS_PIN \
-                   NOMOUNT_PIN NOMOUNT_LOADER_PIN CLANG_PIN AK3_PIN; do
+          # Revisi ke-40: delapan nama ini dulu dieja di dua tempat - sekali di
+          # kepala loop ini, sekali lagi (secara tersirat, sebagai pola
+          # [A-Z0-9_]+) di baris yang mengekspor ke $GITHUB_ENV. Sekarang satu
+          # daftar dipakai keduanya.
+          WAJIB="KERNEL_PIN SCRIPTS_PIN KSU_PIN SUSFS_PIN
+                 NOMOUNT_PIN NOMOUNT_LOADER_PIN CLANG_PIN AK3_PIN"
+          for n in $WAJIB; do
             N_BARIS="$(grep -cE "^${n}=[0-9a-f]{40}$" /tmp/pins.env || true)"
             if [ "$N_BARIS" != "1" ]; then
               echo "ERROR: $n muncul $N_BARIS kali di pins.env (wajib persis 1)"
@@ -1336,10 +1409,32 @@ jobs:
             fi
           done
 
-          grep -E '^[A-Z0-9_]+=[0-9a-f]{40}$' /tmp/pins.env >> "$GITHUB_ENV"
+          # Revisi ke-40: baris ini dulu menyalin SETIAP baris berbentuk
+          # NAMA=<40 hex> ke $GITHUB_ENV - bukan cuma delapan nama yang barusan
+          # diverifikasi. Penjaga bentuk di atas menahan injeksi perintah (nilai
+          # 40 hex tidak bisa jadi perintah), tapi NAMA-nya tidak dibatasi sama
+          # sekali, sehingga baris kesembilan macam PATH=<40 hex> ikut mendarat
+          # di lingkungan SETIAP step sesudahnya. Daftarnya sudah ada di $WAJIB;
+          # tidak ada alasan mengekspor di luar itu.
+          : > /tmp/pins.export
+          for n in $WAJIB; do
+            grep -E "^${n}=[0-9a-f]{40}$" /tmp/pins.env >> /tmp/pins.export
+          done
+
+          # Baris yang lolos bentuk tapi bukan salah satu dari delapan bukan
+          # error - pins.env boleh lebih dulu memuat pin untuk step yang belum
+          # ditulis - tapi WAJIB kelihatan. Diabaikan diam-diam persis cara
+          # sebuah salinan kedua jadi basi tanpa ketahuan (revisi ke-26..28).
+          if ASING="$(grep -E '^[A-Z0-9_]+=[0-9a-f]{40}$' /tmp/pins.env \
+                      | grep -vxF -f /tmp/pins.export)"; then
+            echo "CATATAN: baris berbentuk sah tapi DI LUAR delapan nama - tidak diekspor:"
+            printf '%s\n' "$ASING" | sed 's/^/  /'
+          fi
+
+          cat /tmp/pins.export >> "$GITHUB_ENV"
 
           echo "== pin yang dipakai build ini =="
-          grep -E '^[A-Z0-9_]+=[0-9a-f]{40}$' /tmp/pins.env | sed 's/^/  /'
+          sed 's/^/  /' /tmp/pins.export
 
           # Daftar delapan nilai yang diharapkan SUDAH DICABUT di revisi ke-27.
           # Ia hanya perlu sekali, untuk membuktikan revisi ke-26 memindahkan pin
@@ -2599,18 +2694,47 @@ jobs:
       - name: Tentukan file kernel hasil
         id: kimg
         run: |
-          FOUND=""
-          for f in Image.gz-dtb Image.gz Image; do
-            p="kernel/out/arch/arm64/boot/$f"
-            if [ -f "$p" ]; then
-              echo "path=$p" >> "$GITHUB_OUTPUT"
-              echo "name=$f" >> "$GITHUB_OUTPUT"
-              FOUND=1
-              break
+          # Revisi ke-40: loop ini dulu menerima Image.gz-dtb, lalu Image.gz,
+          # lalu Image - yang pertama ada menang - dan tidak mengatakan apa pun
+          # tentang mana yang menang. rosemary (MT6785) butuh dtb yang DI-APPEND
+          # ke dalam image; setiap revisi yang terbukti boot memakai
+          # Image.gz-dtb. Kalau CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE hilang
+          # dari defconfig, target itu tidak dibangun, `make` tetap keluar 0,
+          # dan langkah ini diam-diam mengemas Image.gz TANPA dtb: zip-nya
+          # ter-flash mulus lalu bootloop - satu siklus flash terbuang untuk
+          # kesalahan yang sudah kelihatan di log CI. Cadangannya tetap dideteksi
+          # supaya pesan errornya bisa menyebut apa yang sebenarnya ada, tapi
+          # sekarang fatal, bukan diterima diam-diam.
+          BOOT="kernel/out/arch/arm64/boot"
+          IMG="Image.gz-dtb"
+          if [ ! -f "$BOOT/$IMG" ]; then
+            echo "ERROR: $BOOT/$IMG tidak ada."
+            ADA=""
+            for f in Image.gz Image; do
+              # `[ -f x ] && VAR=...` sebagai perintah terakhir loop akan
+              # MEMBUNUH step ini di bawah `bash -e` pada jalur "tidak ada" -
+              # jebakan yang sama seperti di pin-watch.yml. Wajib `if` utuh.
+              if [ -f "$BOOT/$f" ]; then ADA="$ADA $f"; fi
+            done
+            if [ -n "$ADA" ]; then
+              echo "  yang ada cuma:$ADA - itu image TANPA dtb ter-append."
+              echo "  Mengemasnya menghasilkan zip yang ter-flash mulus lalu bootloop."
+              echo "PETUNJUK: periksa CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE di out/.config."
+              echo "          Tanpa simbol itu target Image.gz-dtb memang tidak dibangun"
+              echo "          dan make tetap keluar 0 - jadi kegagalannya tidak"
+              echo "          kelihatan di step Compile, hanya di sini."
+              grep -n 'APPENDED_DTB' kernel/out/.config \
+                || echo "          (simbolnya tidak ada sama sekali di .config)"
+            else
+              echo "  tidak ada image sama sekali - step Compile lolos tanpa hasil?"
             fi
-          done
-          [ -n "$FOUND" ] || { echo "Kernel image tidak ditemukan"; exit 1; }
-          DTBO="kernel/out/arch/arm64/boot/dtbo.img"
+            ls -la "$BOOT" || true
+            exit 1
+          fi
+          echo "path=$BOOT/$IMG" >> "$GITHUB_OUTPUT"
+          echo "name=$IMG" >> "$GITHUB_OUTPUT"
+          echo "OK: $IMG ada, $(stat -c%s "$BOOT/$IMG") byte."
+          DTBO="$BOOT/dtbo.img"
           if [ -f "$DTBO" ]; then
             echo "dtbo=$DTBO" >> "$GITHUB_OUTPUT"
             echo "dtbo.img ditemukan: $DTBO"
