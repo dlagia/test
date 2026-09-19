@@ -50,7 +50,15 @@
 #
 # Obatnya bukan "tidak kosong" melainkan BENTUK: $head wajib cocok
 # ^[0-9a-f]{40}$, dan compare dinyatakan terjawab hanya kalau .status ada
-# (field yang tidak dimiliki badan error). Sesudah ditambal, input yang sama
+# (field yang tidak dimiliki badan error).
+#   ^-- REVISI KE-41: kalimat dalam kurung itu SALAH dan sudah diperbaiki di
+#   tempatnya (cari "REVISI KE-41" di step "Bandingkan"). Badan error GitHub
+#   JUSTRU punya field `status` berisi kode HTTP sebagai string ("404"), jadi
+#   penjaga revisi ke-34 untuk compare tidak pernah menyala selama tujuh
+#   revisi. Yang dipakai sekarang: status wajib salah satu dari
+#   ahead|behind|identical|diverged. Penjaga $head sendiri (40 hex) memang
+#   benar sejak awal - yang cacat cuma penjaga compare-nya.
+# Sesudah ditambal, input yang sama
 # memberi delapan baris **GAGAL AMBIL** dan kalimat "laporan ini belum tentu
 # lengkap" - jalur revisi ke-29 yang sudah ada, yang dulu tidak pernah bisa
 # dicapai. Lubang yang sama ditambal di naikkan-pin.yml (di sana ujungnya masih
@@ -225,10 +233,33 @@ jobs:
             # Satu panggilan compare memberi status keterjangkauan DAN daftar file.
             cmp_json=$(gh api "repos/$repo/compare/$pin...$ref" 2>/dev/null || true)
             # Alasan yang sama seperti $head di atas: badan error juga JSON yang
-            # sah, jadi `-z` lolos dan jq membaca .status sebagai null. Yang
-            # dipakai sebagai penjaga karena itu bukan "ada isinya" melainkan
-            # "ada .status yang berarti" - badan error tidak punya field itu.
+            # sah, jadi `-z` lolos dan jq membaca .status sebagai null.
+            #
+            # REVISI KE-41 - PENJAGA REVISI KE-34 DI BARIS INI TIDAK PERNAH
+            # MENYALA. Kalimat lamanya berbunyi "badan error tidak punya field
+            # .status". Itu SALAH, dan dibuktikan salah hari ini: badan error
+            # GitHub berisi persis
+            #     {"message":"Not Found","documentation_url":"...","status":"404"}
+            # - ada field `status`, isinya kode HTTP sebagai STRING. Jadi
+            # `.status // empty` pulang "404", `[ -z ]` tidak menyala, dan
+            # baris-baris di bawah berjalan di atas badan error: .ahead_by null,
+            # .files kosong -> n_berkas 0, kena 0 -> kedua rantai `if` jatuh ke
+            # `else` -> vonisnya "AMAN dinaikkan - 0 file, nol menyentuh bagian
+            # yang diaudit", lengkap dengan baris salin-tempel pins.env. Persis
+            # kerusakan yang revisi ke-34 dikira sudah menutupnya: sekali API
+            # tersendat (rate limit 403, repo dihapus 404, 5xx), laporan ini
+            # menyuruh menaikkan pin yang tidak pernah ia periksa.
+            #
+            # Penjaganya karena itu bukan "ada .status" melainkan "status-nya
+            # salah satu dari EMPAT nilai yang sah" - bentuk yang tidak bisa
+            # dipalsukan badan error, karena "404" bukan salah satunya. Cara
+            # yang sama sudah dipakai pincheck sejak revisi ke-40 lewat `case`
+            # ber-daftar-putih; di sinilah seharusnya sejak dulu.
             status=$(echo "$cmp_json" | jq -r '.status // empty' 2>/dev/null || true)
+            case "$status" in
+              ahead|behind|identical|diverged) ;;
+              *) status="" ;;
+            esac
             if [ -z "$status" ]; then
               printf '| %s | `%s` | `%s` | **TAK BISA DIBANDINGKAN** | pin dihapus total, atau API tersendat |\n' \
                 "$nama" "${pin:0:9}" "${head:0:9}" >> "$TABEL"

@@ -141,26 +141,103 @@ jobs:
           # eksplisit yang tercatat di riwayat git dan bisa ditinjau, bukan
           # kotak yang bisa dicentang tanpa jejak alasan.
           #
-          # Kuncinya SHA, bukan nama komponen: nama pendek di baris TAHAN
+          # Revisi ke-41 - PENAHANAN YANG KEDALUWARSA PADAHAL ALASANNYA MASIH ADA.
+          # Sampai revisi ke-40 ketiga pembaca `# TAHAN` (tombol ini, preflight.sh,
+          # pincheck) menyamakan "SHA tujuan != SHA yang ditahan" dengan "penahanan
+          # sudah kedaluwarsa". Itu benar HANYA kalau upstream membuang commit itu
+          # (rebase/force-push). Kalau upstream cuma menumpuk commit BARU di atasnya,
+          # commit yang ditolak tetap ada di dalam pohon tujuan - kodenya masih
+          # ikut terbawa - tapi penahanannya diam-diam menguap.
+          #
+          # Ini bukan hipotesis: hari ini SUSFS f15603b24 (NULL-deref di
+          # __lookup_hash) ada 10 commit DI BELAKANG mainline HEAD ac370f5de -
+          # status `ahead`, behind_by 0 - jadi gerbang di bawah ini akan melewatkan
+          # kenaikan yang membawa persis commit yang auditnya sudah menolak. Yang
+          # menyelamatkan kali ini cuma kebetulan: upstream memperbaiki sendiri
+          # urutan tiga barisnya di commit menyusul. Kebetulan bukan gerbang.
+          # Kelas yang sama dengan revisi ke-34 dan ke-39: penjaga yang berhenti
+          # menjaga dengan cara yang terbaca seperti keberhasilan.
+          #
+          # Jadi penahanan berlaku kalau SHA-nya TERKANDUNG di tujuan: sama persis,
+          # atau leluhurnya (`status` ahead/identical DAN `behind_by` = 0). Ia
+          # kedaluwarsa sendiri hanya kalau commit itu benar-benar lepas dari
+          # cabang (diverged / tak lagi bisa dibandingkan) - yaitu ketika alasannya
+          # memang ikut hilang.
+          #
+          # Kuncinya tetap SHA, bukan nama komponen: nama pendek di baris TAHAN
           # (KERNEL/KSU/SUSFS/NMLOADER...) milik preflight.sh dan BUKAN nama di
           # dropdown ini maupun nama variabel pins.env. Mencocokkan nama akan
           # menjadi salinan kelima dari tabel komponen yang sama - persis cara
-          # revisi ke-28 membusuk. SHA 40 hex unik lintas repo, jadi mencocokkan
-          # SHA memberi jawaban yang sama tanpa tabel baru.
-          TAHAN="$(grep -oE "^# TAHAN [A-Za-z0-9_-]+ ${BARU}( .*)?$" pins.env | head -1 || true)"
+          # revisi ke-28 membusuk. Baris TAHAN milik repo LAIN disaring tanpa tabel
+          # apa pun: compare-nya dijawab 404, `.status` kosong, barisnya dilewati.
+          grep -E "^# TAHAN [A-Za-z0-9_-]+ [0-9a-f]{40}([[:space:]].*)?$" pins.env \
+            > /tmp/baris_tahan.txt || true
+          TAHAN=""
+          RELASI=""
+          # Redirect, bukan pipe: `while` harus jalan di shell ini supaya TAHAN
+          # yang di-set di dalamnya masih terbaca sesudah loop.
+          while read -r BARIS_TAHAN; do
+            [ -n "$BARIS_TAHAN" ] || continue
+            SHA_TAHAN="$(printf '%s' "$BARIS_TAHAN" | grep -oE '[0-9a-f]{40}' | head -1)"
+            if [ "$SHA_TAHAN" = "$BARU" ]; then
+              TAHAN="$BARIS_TAHAN"
+              RELASI="SHA tujuan PERSIS SHA yang ditahan"
+              break
+            fi
+            CMP_TAHAN="$(gh api "repos/$REPO/compare/${SHA_TAHAN}...${BARU}" 2>/dev/null || true)"
+            ST_TAHAN="$(echo "$CMP_TAHAN" | jq -r '.status // empty' 2>/dev/null || true)"
+            # Tiga keadaan, dan HANYA yang pertama boleh berarti "lewati baris
+            # ini". $REPO sendiri sudah terbukti bisa di-compare beberapa baris
+            # di atas, jadi 404 di sini berarti SHA-nya yang tidak ada di repo
+            # ini - baris TAHAN itu menahan komponen lain. Status lain yang
+            # bukan salah satu dari empat nilai sah (403 rate limit, 5xx,
+            # jawaban kosong) berarti penahanan ini TIDAK BISA DINILAI, dan
+            # penahanan yang tidak bisa dinilai tidak boleh dianggap kedaluwarsa
+            # - itu akan jadi kegagalan yang berbunyi menenangkan untuk ketiga
+            # kalinya (revisi ke-34, ke-39, dan penjaga compare di bawah).
+            case "$ST_TAHAN" in
+              404) continue ;;
+              ahead|behind|identical|diverged) ;;
+              *)
+                echo ""
+                echo "DITOLAK: tidak bisa menilai baris penahanan berikut karena API"
+                echo "compare tidak menjawab dengan semestinya."
+                echo "  $BARIS_TAHAN"
+                echo "  status yang terbaca: '${ST_TAHAN:-(tidak ada)}'"
+                echo ""
+                echo "Penahanan yang tidak bisa diperiksa TIDAK dianggap kedaluwarsa."
+                echo "Coba lagi setelah API pulih (rate limit biasanya pulih dalam 1 jam)."
+                exit 1
+                ;;
+            esac
+            MUNDUR_TAHAN="$(echo "$CMP_TAHAN" | jq -r '.behind_by // empty' 2>/dev/null || true)"
+            if { [ "$ST_TAHAN" = "ahead" ] || [ "$ST_TAHAN" = "identical" ]; } \
+               && [ "$MUNDUR_TAHAN" = "0" ]; then
+              TAHAN="$BARIS_TAHAN"
+              RELASI="SHA itu masih LELUHUR tujuan ($ST_TAHAN, behind_by 0) - kodenya ikut terbawa"
+              break
+            fi
+            echo "catatan  : penahanan ${SHA_TAHAN:0:9} kedaluwarsa (status $ST_TAHAN terhadap tujuan) - commit itu sudah lepas dari cabang."
+          done < /tmp/baris_tahan.txt
+
           if [ -n "$TAHAN" ]; then
             echo ""
-            echo "DITOLAK: SHA tujuan $BARU sudah pernah diaudit dan DITOLAK."
+            echo "DITOLAK: kenaikan ini membawa SHA yang sudah diaudit dan DITOLAK."
             echo "  $TAHAN"
+            echo "  alasan penolakan sekarang: $RELASI"
             echo ""
             echo "Penahanan ini TIDAK bisa dilewati dengan paksa = true: 'paksa' berarti"
             echo "\"sudah saya audit\", dan berkas ini mencatat bahwa auditnya sudah"
             echo "dikerjakan dan hasilnya menolak."
             echo ""
-            echo "Kalau audit itu sudah diulang dan hasilnya sekarang lolos: hapus baris"
-            echo "'# TAHAN' di atas dari pins.env, commit, lalu jalankan tombol ini lagi."
-            echo "Kalau upstream sudah bergerak melewati SHA ini, penahanannya kedaluwarsa"
-            echo "sendiri - tidak ada yang perlu dihapus."
+            echo "Satu-satunya jalan keluar: audit ULANG SHA tujuannya - termasuk apakah"
+            echo "upstream sudah memperbaiki cacat yang dicatat di baris itu - lalu HAPUS"
+            echo "baris '# TAHAN' di atas dari pins.env, commit, dan jalankan tombol ini"
+            echo "lagi. Penghapusan itu tercatat di riwayat git dan bisa ditinjau;"
+            echo "centang tidak meninggalkan jejak alasan."
+            echo ""
+            echo "Penahanan kedaluwarsa SENDIRI hanya kalau upstream membuang commit itu"
+            echo "(rebase/force-push) - bukan sekadar karena upstream bergerak maju."
             exit 1
           fi
 
@@ -182,11 +259,29 @@ jobs:
           # .status - field yang tidak dimiliki badan error. Tanpa ini .files
           # ikut kosong, sehingga "$KENA sensitif" berbunyi 0 dan triase lolos
           # justru ketika ia tidak tahu apa-apa. (Revisi ke-34.)
-          test -n "$(echo "$CMP" | jq -r '.status // empty' 2>/dev/null || true)" || {
-            echo "ERROR: tidak bisa membandingkan $LAMA...$BARU di $REPO."
-            echo "       jawaban API: ${CMP:0:120}"
-            exit 1
-          }
+          # REVISI KE-41: penjaga di atas SALAH PREMIS dan karena itu tidak
+          # pernah menyala. Badan error GitHub berbentuk
+          #     {"message":"Not Found","documentation_url":"...","status":"404"}
+          # - ADA field `status`, isinya kode HTTP sebagai string. Jadi
+          # `.status // empty` pulang "404", `test -n` lolos, dan seluruh triase
+          # di bawah berjalan di atas badan error: STATUS="404" (bukan "behind",
+          # jadi gerbang mundur diam), .files kosong -> N_BERKAS=0 dan KENA=0
+          # (jadi gerbang 300 dan gerbang sensitif ikut diam) -> pin DITULIS
+          # tanpa satu pun pemeriksaan yang benar-benar terjadi. Di pin-watch
+          # akibatnya laporan yang bohong; DI SINI akibatnya commit.
+          # Penjaganya sekarang bentuk yang tidak bisa dipalsukan badan error:
+          # status wajib salah satu dari empat nilai compare yang sah.
+          STATUS_CEK="$(echo "$CMP" | jq -r '.status // empty' 2>/dev/null || true)"
+          case "$STATUS_CEK" in
+            ahead|behind|identical|diverged) ;;
+            *)
+              echo "ERROR: tidak bisa membandingkan $LAMA...$BARU di $REPO."
+              echo "       status yang terbaca: '${STATUS_CEK:-(tidak ada)}' - bukan"
+              echo "       ahead/behind/identical/diverged, jadi ini bukan jawaban compare."
+              echo "       jawaban API: ${CMP:0:120}"
+              exit 1
+              ;;
+          esac
 
           # STATUS dicetak tapi SENGAJA tidak dipakai untuk menolak, tidak seperti
           # di pin-watch.yml yang memvonis "diverged" sebagai ORPHAN (revisi
