@@ -2175,6 +2175,11 @@ jobs:
           # boot gagal: (b). Ia MELEBARKAN cakupan d_revalidate - persis jalur
           # yang catatan revisi ke-15 di atas sebut sebagai tersangka pertama
           # kalau stuck di logo kembali. Mundurnya: NOMOUNT_PIN -> 7919faf2.
+          # SUDAH DIUJI: rilis build-20260920-073811 diflash dan boot normal
+          # (dikonfirmasi pemilik 2026-09-20), jadi (b) tidak terbukti merusak
+          # boot di pohon ini. Catatan risikonya sengaja TIDAK dihapus - yang
+          # dibuktikan flash itu satu SHA pada satu perangkat, bukan bahwa
+          # jalur d_revalidate berhenti jadi tersangka di kenaikan berikutnya.
           # Keempat penjaga revisi ke-20 diuji ulang terhadap d6cb7158:
           # kernel/setup.sh md5 tetap deb7713c88a51e4c37ed88411ca2b95a alias
           # BYTE-IDENTIK dengan pin loader 016375cd; nomount_srcu tetap ada (11
