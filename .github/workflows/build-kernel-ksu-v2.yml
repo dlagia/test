@@ -2111,9 +2111,81 @@ jobs:
           # userspace/src tetap hanya nm.c + nm.h; `_start` tetap inline asm di
           # nm.h:25 (arm64), jadi -nostdlib -static -Wl,-e,_start di step "Compile
           # nm" tetap sahih.
+          # DINAIKKAN LAGI di revisi ke-42 (2026-09-20): 7919faf2 -> d6cb7158,
+          # 4 commit / 5 berkas. Yang masuk kernel cuma dua - kernel/src/nomount.c
+          # (+35/-22) dan nomount.h (+1/-1); dua sisanya module/webroot (WebUI,
+          # lokalisasi Arab) yang tidak pernah dikompilasi ke dalam Image. Robot
+          # memvonisnya PERLU AUDIT karena keduanya kena ^kernel/src/. Auditnya
+          # dikerjakan per commit, bukan dipercaya dari judulnya:
+          #
+          #   002157ad "kernel: initializate srcu struct manually"
+          #     DEFINE_STATIC_SRCU(nomount_srcu) di nomount.h diganti
+          #     `static struct srcu_struct nomount_srcu;`, dengan
+          #     init_srcu_struct() di awal nomount_init() dan
+          #     cleanup_srcu_struct() baik di jalur gagal register_key_type()
+          #     maupun di nomount_exit(). Diperiksa untuk 4.14:
+          #       - init_srcu_struct()/cleanup_srcu_struct() ada di 4.14 dan
+          #         sah dipanggil dari fs_initcall - alokasi per-CPU yang
+          #         dipakai TREE_SRCU sudah hidup jauh sebelum initcall itu;
+          #       - nomount.h hanya di-include nomount.c (satu-satunya .c di
+          #         kernel/src), jadi `static` di header tidak menggandakan
+          #         struct;
+          #       - pemakaian pertama nomount_srcu (srcu_read_lock di
+          #         nomount_get_rule_info) baru terjangkau sesudah ada rule,
+          #         jadi tidak ada jalur yang memakainya sebelum init.
+          #     Yang benar-benar berubah: jaminannya pindah dari linker ke satu
+          #     baris kode yang bisa hilang di kenaikan berikutnya. Penjaga
+          #     `grep -q nomount_srcu` di bawah TIDAK melihat bedanya, karena
+          #     kedua bentuk sama-sama memuat kata itu - jadi penjaganya
+          #     ditambah, lihat blok "srcu" di step ini.
+          #
+          #   d6cb7158 "kernel: fix dcache invalidation and ghost files on exclusions"
+          #     (a) nm_d_revalidate(): cek `!inode && has_rule` PINDAH dari
+          #         cabang uid-normal ke cabang uid-diblokir. Di tempat lamanya
+          #         ia KODE MATI - kalau has_rule true, blok `if (has_rule)` di
+          #         atasnya sudah return atau goto lebih dulu, jadi baris itu
+          #         tidak pernah dicapai dengan has_rule true. Di cabang
+          #         diblokir ia justru hidup: dentry negatif yang punya rule
+          #         di-drop supaya uid lain tetap melihat berkas injeksinya
+          #         (inilah "ghost files on exclusions"). Perilaku uid normal
+          #         TIDAK berubah sama sekali.
+          #     (b) nomount_hijack_dentry_ops(): DCACHE_OP_REVALIDATE kini
+          #         dipasang tanpa syarat, bukan cuma saat `injected`, dan
+          #         jalur keluar-awal "d_op sudah milik kita" dibuang sehingga
+          #         dentry yang sudah dibajak tetap kebagian flag-nya.
+          #         Diperiksa: setiap cabang yang tersisa tetap menulis d_op ke
+          #         nm_dops atau fake_dops SEBELUM flag dipasang, jadi flag itu
+          #         tidak pernah menyala di dentry yang d_revalidate-nya bukan
+          #         milik NoMount; d_flags tetap diubah di bawah d_lock; dan
+          #         kelima pemanggilnya semuanya jalur lookup, bukan jalur yang
+          #         sudah memegang d_lock, jadi hilangnya keluar-awal sebelum
+          #         spin_lock() tidak menimbulkan deadlock.
+          #     (c) shrink_dcache_parent() dipanggil sesudah hijack di
+          #         nomount_generate_virtual_topology(). Ada di 4.14
+          #         (include/linux/dcache.h:250, EXPORT_SYMBOL di fs/dcache.c)
+          #         dan boleh tidur - fungsi pemanggilnya sudah memakai
+          #         kern_path() dan kmalloc(GFP_KERNEL) di badan yang sama, jadi
+          #         konteksnya memang konteks yang bisa tidur.
+          #     DCACHE_DONTCACHE tetap tidak ada di 4.14, dan nomount.h masih
+          #     menutupnya dengan `#ifndef DCACHE_DONTCACHE / #define ... 0`,
+          #     jadi `d_flags |= DCACHE_DONTCACHE` tetap no-op seperti sebelum
+          #     kenaikan ini - bukan perilaku baru yang menyelinap masuk.
+          #
+          # PALING BERISIKO di kenaikan ini, dan yang pertama dibatalkan kalau
+          # boot gagal: (b). Ia MELEBARKAN cakupan d_revalidate - persis jalur
+          # yang catatan revisi ke-15 di atas sebut sebagai tersangka pertama
+          # kalau stuck di logo kembali. Mundurnya: NOMOUNT_PIN -> 7919faf2.
+          # Keempat penjaga revisi ke-20 diuji ulang terhadap d6cb7158:
+          # kernel/setup.sh md5 tetap deb7713c88a51e4c37ed88411ca2b95a alias
+          # BYTE-IDENTIK dengan pin loader 016375cd; nomount_srcu tetap ada (11
+          # kemunculan, dulu 8); userspace/src tetap cuma nm.c + nm.h dan tidak
+          # tersentuh kenaikan ini sama sekali; `_start` tetap inline asm di
+          # nm.h, jadi -nostdlib -static -Wl,-e,_start tetap sahih.
+          #
           # NOMOUNT_PIN dari pins.env (revisi ke-26). Nilai saat ini
-          # 7919faf2 = HEAD dev & master (2026-09-12T14:32Z), ART + perbaikan
-          # + memset-compat.
+          # d6cb7158 = HEAD dev (2026-09-20). Branch master TIDAK ikut ke sana -
+          # master masih 016375cd, dan itu memang NOMOUNT_LOADER_PIN; isi
+          # kernel/setup.sh di kedua commit byte-identik.
 
           # pipefail: tanpa ini, exit code pipeline = exit code `bash` saja,
           # sehingga HTTP 404/500 dari curl tidak pernah menggagalkan step.
@@ -2198,6 +2270,30 @@ jobs:
             echo "ERROR: fs/nomount/nomount.c tidak mengandung nomount_srcu"
             exit 1
           }
+
+          # Revisi ke-42: penjaga di atas cuma memastikan KATA nomount_srcu ada,
+          # dan itu sudah tidak cukup sejak upstream 002157ad. Sampai 7919faf2
+          # struct-nya dibuat DEFINE_STATIC_SRCU() - terinisialisasi saat link,
+          # jadi tidak ada yang bisa lupa menginisialisasinya. Sekarang ia
+          # `static struct srcu_struct nomount_srcu;` biasa yang bergantung pada
+          # satu baris init_srcu_struct() di nomount_init(). Kedua bentuk lolos
+          # penjaga di atas. Kalau baris init itu hilang di kenaikan berikutnya,
+          # srcu_read_lock() atas struct yang belum diinisialisasi TIDAK gagal
+          # saat kompilasi - ia merusak memori saat boot, dan gejalanya adalah
+          # stuck di logo tanpa satu pun pesan yang menyebut SRCU. Jadi yang
+          # di-assert adalah pertanyaan yang sebenarnya: siapa yang
+          # menginisialisasi struct ini?
+          if grep -q 'DEFINE_STATIC_SRCU(nomount_srcu)' fs/nomount/nomount.h; then
+            echo "OK: nomount_srcu statis (DEFINE_STATIC_SRCU) - init saat link"
+          elif grep -q 'init_srcu_struct(&nomount_srcu)' fs/nomount/nomount.c; then
+            echo "OK: nomount_srcu diinisialisasi manual (init_srcu_struct di nomount_init)"
+          else
+            echo "ERROR: nomount_srcu dipakai tapi tidak ada yang menginisialisasinya."
+            echo "       Tidak ada DEFINE_STATIC_SRCU(nomount_srcu) di nomount.h DAN"
+            echo "       tidak ada init_srcu_struct(&nomount_srcu) di nomount.c."
+            echo "       Ini tidak akan gagal saat kompilasi - jadi dihentikan di sini."
+            exit 1
+          fi
 
           # Entry fs/Makefile. setup.sh menambahkannya dengan penjaga longgar:
           #     if ! grep -q "nomount" "$FS_MAKEFILE"; then
