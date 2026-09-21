@@ -1374,7 +1374,116 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Revisi ke-45. Push apa pun ke pins.env membangun ulang kernel dan
+  # MENERBITKAN RILIS BARU - termasuk push yang cuma mengubah komentar. Itu
+  # bukan sekadar boros lima menit CI: rilis paling atas jadi bukan rilis yang
+  # tertulis TERBUKTI BOOT di kepala pins.env, padahal orang yang panik
+  # mengambil rilis paling atas. Kelas yang sama dengan "kalimat basi lebih
+  # berbahaya daripada tidak ada kalimat", cuma pindah ke halaman Releases.
+  # Ketahuan di revisi ke-45 sendiri: satu push komentar, satu build penuh.
+  #
+  # Gerbang ini menjawab satu pertanyaan: adakah yang benar-benar berubah bagi
+  # kernel hasil build? Yang dihitung cuma dua - berkas selain pins.env
+  # (workflow ini sendiri termasuk) dan NILAI kedelapan SHA. Komentar pins.env
+  # bukan salah satunya.
+  #
+  # SETIAP jalur ragu berakhir lanjut=1, tidak pernah 0: token gagal, compare
+  # tak terbaca, daftar berkas terpotong di 300, push pertama atau force-push
+  # (before = nol semua). Membangun tanpa perlu cuma boros; TIDAK membangun
+  # padahal perlu berarti rilis tertinggal diam-diam, dan build yang tidak
+  # pernah jalan tidak meninggalkan satu pun tanda merah.
+  gerbang:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    outputs:
+      lanjut: ${{ steps.nilai.outputs.lanjut }}
+    steps:
+      - name: Perlu dibangun ulang?
+        id: nilai
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PEMICU: ${{ github.event_name }}
+          SEBELUM: ${{ github.event.before }}
+        run: |
+          # Sengaja TANPA set -e: gerbang yang mati di tengah harus tetap
+          # pulang membawa lanjut=1, bukan menggagalkan job dan ikut mengubur
+          # build.
+          set -uo pipefail
+
+          lanjut=1
+          alasan="pemicu '$PEMICU' bukan push - selalu dibangun"
+
+          if [ "$PEMICU" = "push" ]; then
+            alasan="ada yang berubah - dibangun"
+            if ! printf '%s' "${SEBELUM:-}" | grep -qE '^[0-9a-f]{40}$' ||
+               [ "$SEBELUM" = "0000000000000000000000000000000000000000" ]; then
+              alasan="commit sebelumnya tak diketahui (push pertama/force) - dibangun"
+            else
+              # gh api mencetak badan error (401/403/404/5xx) ke STDOUT dan kode
+              # keluarnya tertelan $( ), jadi yang diperiksa BENTUKNYA, bukan
+              # kosong-tidaknya. Badan error pun punya .status - isinya kode HTTP
+              # sebagai string. Pelajaran revisi ke-34 dan ke-41.
+              CMP=$(gh api "repos/${GITHUB_REPOSITORY}/compare/${SEBELUM}...${GITHUB_SHA}" 2>/dev/null || true)
+              ST=$(printf '%s' "$CMP" | jq -r '.status // empty' 2>/dev/null || true)
+              case "$ST" in
+                ahead|behind|identical|diverged) ;;
+                *) ST="" ;;
+              esac
+              if [ -z "$ST" ]; then
+                alasan="compare tak terbaca - dibangun"
+              else
+                N_BERKAS=$(printf '%s' "$CMP" | jq -r '.files | length' 2>/dev/null || echo 0)
+                BUKAN_PINS=$(printf '%s' "$CMP" | jq -r '.files[].filename' 2>/dev/null | grep -vcx 'pins.env' || true)
+                if [ "${N_BERKAS:-0}" -ge 300 ]; then
+                  alasan="daftar berkas terpotong di 300 oleh API - dibangun"
+                elif [ "${BUKAN_PINS:-1}" != "0" ]; then
+                  alasan="$BUKAN_PINS berkas selain pins.env berubah - dibangun"
+                else
+                  # Cuma pins.env yang tersentuh. Yang menentukan sekarang NILAI
+                  # SHA-nya, bukan diff-nya: komentar boleh berubah sebanyak apa
+                  # pun. Kedua sisi disaring pola yang SAMA dengan penjaga bentuk
+                  # di step "Muat pins.env", lalu diurutkan supaya baris yang
+                  # cuma pindah tempat tidak terbaca sebagai perubahan.
+                  ambil() {
+                    gh api "repos/${GITHUB_REPOSITORY}/contents/pins.env?ref=$1" --jq .content 2>/dev/null |
+                      base64 -d 2>/dev/null |
+                      tr -d '\r' |
+                      grep -E '^[A-Z0-9_]+=[0-9a-f]{40}$' | sort
+                  }
+                  PIN_LAMA=$(ambil "$SEBELUM")
+                  PIN_BARU=$(ambil "$GITHUB_SHA")
+                  N_BARU=$(printf '%s\n' "$PIN_BARU" | grep -c . || true)
+                  if [ "${N_BARU:-0}" -lt 8 ]; then
+                    alasan="pins.env sesudah push cuma terbaca ${N_BARU:-0} baris pin - dibangun, biar step 'Muat pins.env' yang memvonis"
+                  elif [ "$PIN_LAMA" = "$PIN_BARU" ]; then
+                    lanjut=0
+                    alasan="hanya komentar pins.env yang berubah; kedelapan SHA sama persis - TIDAK dibangun"
+                  else
+                    alasan="nilai pin berubah - dibangun"
+                  fi
+                fi
+              fi
+            fi
+          fi
+
+          echo "lanjut=$lanjut" >> "$GITHUB_OUTPUT"
+          echo "[gerbang] $alasan"
+          {
+            printf '## Gerbang build\n\n'
+            if [ "$lanjut" = "1" ]; then
+              printf -- '- **DIBANGUN** - %s\n' "$alasan"
+            else
+              printf -- '- **DILEWATI** - %s\n' "$alasan"
+              printf -- '- Rilis paling atas tetap rilis terakhir yang benar-benar dikompilasi.\n'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
   build:
+    needs: gerbang
+    # '!cancelled()' + "bukan 0", bukan "sama dengan 1": kalau job gerbang
+    # sendiri gagal, outputs.lanjut KOSONG - dan kosong harus berarti dibangun.
+    # Dengan "== '1'" kegagalan gerbang justru mengubur build tanpa tanda merah.
+    if: ${{ !cancelled() && needs.gerbang.outputs.lanjut != '0' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
