@@ -127,7 +127,7 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Bandingkan pin dengan upstream dan tulis laporan
         env:
@@ -205,6 +205,21 @@ jobs:
             fi
 
             head=$(gh api "repos/$repo/commits/$ref" --jq .sha 2>/dev/null || true)
+            # Revisi ke-43: SEKALI ulang, bukan lebih. Panggilan pertama ke
+            # gh api gagal sendirian di sini pada 2026-09-21 (pincheck lokal:
+            # satu baris GAGAL AMBIL, tujuh sisanya mulus, dan pengulangan
+            # utuh langsung hijau) - di CI bentuk yang sama adalah 5xx atau
+            # rate limit sesaat. Tanpa ulangan, satu kedipan API menerbitkan
+            # laporan "belum tentu lengkap" yang menuntut ditindak padahal tak
+            # ada apa-apa, dan laporan yang sesekali merah tanpa sebab
+            # mengajari pembacanya melewatinya - persis kerusakan yang revisi
+            # ke-32 dan ke-40 perbaiki. Yang TIDAK ditutupi ulangan ini: repo
+            # yang benar-benar hilang/privat tetap gagal dua kali dan tetap
+            # dilaporkan GAGAL AMBIL.
+            if ! printf '%s' "$head" | grep -qE '^[0-9a-f]{40}$'; then
+              sleep 5
+              head=$(gh api "repos/$repo/commits/$ref" --jq .sha 2>/dev/null || true)
+            fi
             # WAJIB 40 hex, bukan cuma "tidak kosong". `gh api` mencetak BADAN
             # error-nya (JSON 401/403/404/5xx) ke STDOUT, bukan stderr, jadi
             # penjaga `-z` yang lama MUSTAHIL menyala: sekali API tersendat,
@@ -328,6 +343,65 @@ jobs:
               vonis="AMAN dinaikkan - $n_berkas file, nol menyentuh bagian yang diaudit"
             fi
 
+            # REVISI KE-43 - ROBOT INI TADINYA SATU-SATUNYA PEMBACA pins.env
+            # YANG BUTA TERHADAP '# TAHAN'. preflight.sh membacanya sejak
+            # revisi ke-38, naikkan-pin.yml sejak ke-39, pincheck sejak ke-40 -
+            # dan yang tertinggal justru yang laporannya dibaca tiap hari.
+            # Akibatnya persis kerusakan revisi ke-40 di pincheck: keputusan
+            # "SHA ini sudah diaudit dan DITOLAK" diteriakkan ulang tiap pagi
+            # sebagai pekerjaan yang belum dikerjakan. Vonisnya memang tidak
+            # sampai berbunyi AMAN (diff kumulatif dari pin tetap menyentuh
+            # file sensitif), jadi baris salin-tempelnya tidak pernah terbit -
+            # tapi laporan yang selalu merah tanpa menyebut bahwa putusannya
+            # sudah ada sama tidak bergunanya dengan laporan yang basi.
+            #
+            # Dicocokkan ke SHA, bukan ke nama komponen, dengan alasan yang
+            # sama seperti di pincheck dan naikkan-pin.yml: nama pendek di
+            # baris TAHAN ("SUSFS") bukan nama variabel pins.env ("SUSFS_PIN").
+            # Penahanan yang SHA-nya milik repo lain dijawab 404 oleh compare
+            # dan dilewati - repo itu sendiri yang menjawab, jadi tidak perlu
+            # salinan ketujuh dari tabel komponen.
+            #
+            # Kedaluwarsanya mengikuti aturan revisi ke-41: penahanan hanya
+            # lepas kalau commit-nya benar-benar jatuh dari cabang, BUKAN
+            # begitu upstream bergerak maju. Selama SHA yang ditahan masih
+            # leluhur HEAD, kodenya ikut terbawa kalau pin dinaikkan.
+            tahan_info=""
+            while read -r baris_tahan; do
+              [ -n "$baris_tahan" ] || continue
+              sha_tahan=$(printf '%s' "$baris_tahan" | grep -oE '[0-9a-f]{40}' | head -1)
+              relasi=""
+              if [ "$sha_tahan" = "$head" ]; then
+                relasi="HEAD PERSIS SHA yang ditahan"
+              else
+                cmp_tahan=$(gh api "repos/$repo/compare/${sha_tahan}...${head}" 2>/dev/null || true)
+                st_tahan=$(printf '%s' "$cmp_tahan" | jq -r '.status // empty' 2>/dev/null || true)
+                # Penjaga bentuk, bukan penjaga kosong: badan error GitHub PUNYA
+                # field .status berisi kode HTTP sebagai string (revisi ke-41).
+                case "$st_tahan" in
+                  404) continue ;;
+                  ahead|behind|identical|diverged) ;;
+                  *)
+                    vonis="**PERLU AUDIT** - penahanan \`${sha_tahan:0:9}\` TAK BISA DINILAI (compare menjawab '${st_tahan:-kosong}')"
+                    echo 1 > /tmp/perlu_audit
+                    aman=0
+                    tahan_info="$baris_tahan"
+                    break
+                    ;;
+                esac
+                mundur_tahan=$(printf '%s' "$cmp_tahan" | jq -r '.behind_by // empty' 2>/dev/null || true)
+                if { [ "$st_tahan" = "ahead" ] || [ "$st_tahan" = "identical" ]; } && [ "$mundur_tahan" = "0" ]; then
+                  relasi="SHA itu masih LELUHUR HEAD ($st_tahan, behind_by 0) - kodenya ikut terbawa"
+                fi
+              fi
+              [ -n "$relasi" ] || continue
+              vonis="**DITAHAN** - audit sudah MENOLAK \`${sha_tahan:0:9}\`; $relasi"
+              echo 1 > /tmp/perlu_audit
+              aman=0
+              tahan_info="$baris_tahan"
+              break
+            done < <(grep -E "^# TAHAN [A-Za-z0-9_-]+ [0-9a-f]{40}([[:space:]].*)?$" "$WF" || true)
+
             printf '| %s | `%s` | `%s` | %s | %s |\n' \
               "$nama" "${pin:0:9}" "${head:0:9}" "$ket" "$vonis" >> "$TABEL"
 
@@ -343,6 +417,12 @@ jobs:
                 echo "$berkas" | grep -E "$sensitif" | head -20 | sed 's/^/  - `/; s/$/`/'
               fi
               printf -- '- diff: https://github.com/%s/compare/%s...%s\n' "$repo" "$pin" "$head"
+              if [ -n "$tahan_info" ]; then
+                printf -- '- **baris penahanan yang mengunci kenaikan ini** (ada di `%s`):\n' "$WF"
+                printf -- '  ```\n  %s\n  ```\n' "$tahan_info"
+                printf -- '  Tombol "Naikkan pin" MENOLAK kenaikan ini tanpa peduli `paksa`. Jalan\n'
+                printf -- '  keluarnya cuma audit ULANG lalu menghapus baris itu dari `%s`.\n' "$WF"
+              fi
               # Revisi ke-37 - DUA CACAT DI SATU BARIS, keduanya sampai ke produksi
               # (issue #2 masih menyimpan buktinya).
               #
@@ -390,8 +470,9 @@ jobs:
                 printf -- '  triase tombol "Naikkan pin", yang justru akan menolak kenaikan ini.\n'
                 printf -- '- yang harus dikerjakan lebih dulu: baca diff di atas, simulasikan di luar CI\n'
                 printf -- '  (template audit revisi ke-17), lalu catat hasilnya sebagai baris `# TAHAN`\n'
-                printf -- '  di `%s` kalau ditolak. Baris itu dibaca `preflight.sh`, BUKAN robot ini:\n' "$WF"
-                printf -- '  laporan ini akan tetap menyebut baris ini sampai upstream bergerak lagi.\n'
+                printf -- '  di `%s` kalau ditolak. Sejak revisi ke-43 baris itu dibaca `preflight.sh`,\n' "$WF"
+                printf -- '  `pincheck`, tombol "Naikkan pin" DAN robot ini: begitu barisnya ada,\n'
+                printf -- '  laporan besok memvonisnya **DITAHAN** selama SHA itu masih terkandung di HEAD.\n'
                 printf -- '- kalau audit itu sudah dikerjakan dan hasilnya lolos: Actions -> **Naikkan pin**\n'
                 printf -- '  -> komponen `%s` -> centang `paksa` -> Run. SHA tujuannya `%s`.\n' "$nama" "$head"
               fi
