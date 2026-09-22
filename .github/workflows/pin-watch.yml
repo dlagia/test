@@ -397,6 +397,11 @@ jobs:
             # begitu upstream bergerak maju. Selama SHA yang ditahan masih
             # leluhur HEAD, kodenya ikut terbawa kalau pin dinaikkan.
             tahan_info=""
+            # Revisi ke-47: `tahan_info` saja tidak cukup untuk memilih kalimat
+            # penutup laporan - ia juga terisi saat penahanan TAK BISA DINILAI,
+            # yang vonisnya PERLU AUDIT, bukan DITAHAN. Flag ini menyala hanya
+            # di cabang DITAHAN yang benar-benar terbukti.
+            ditahan=0
             while read -r baris_tahan; do
               [ -n "$baris_tahan" ] || continue
               sha_tahan=$(printf '%s' "$baris_tahan" | grep -oE '[0-9a-f]{40}' | head -1)
@@ -429,6 +434,7 @@ jobs:
               echo 1 > /tmp/perlu_audit
               aman=0
               tahan_info="$baris_tahan"
+              ditahan=1
               break
             done < <(grep -E "^# TAHAN [A-Za-z0-9_-]+ [0-9a-f]{40}([[:space:]].*)?$" "$WF" || true)
 
@@ -494,6 +500,25 @@ jobs:
                 printf -- '  Tombol itu men-triase dulu dan menolak sendiri kalau menyentuh file sensitif.\n'
                 printf -- '- cara manual: di `%s`, ganti baris itu jadi persis - SHA WAJIB 40 hex penuh:\n' "$WF"
                 printf -- '  ```\n  %s=%s\n  ```\n' "${pola_nama}" "$head"
+              elif [ "$ditahan" = 1 ]; then
+                # 4. Revisi ke-47: cabang ini dulu ikut memakai kalimat "kalau
+                #    audit itu sudah dikerjakan dan hasilnya lolos ... centang
+                #    `paksa`". Untuk vonis DITAHAN kalimat itu SALAH DUA KALI:
+                #    auditnya memang sudah dikerjakan dan hasilnya MENOLAK, dan
+                #    `paksa` tidak melewati baris `# TAHAN` - naikkan-pin.yml
+                #    menolaknya lebih dulu. Laporan yang sama bahkan sudah
+                #    mengatakan itu beberapa baris di atas (blok "baris
+                #    penahanan yang mengunci kenaikan ini"), jadi satu laporan
+                #    memuat dua kalimat yang bertentangan dan yang keliru justru
+                #    yang terakhir dibaca. Ketahuan saat KSU e88c7eeec ditahan
+                #    di revisi ke-47.
+                printf -- '- **JANGAN naikkan.** Vonis di atas **DITAHAN**: auditnya sudah dikerjakan dan\n'
+                printf -- '  hasilnya MENOLAK, dan baris `# TAHAN` yang mencatatnya sudah ada di `%s`.\n' "$WF"
+                printf -- '  Laporan ini karena itu tidak memberi baris salin-tempel MAUPUN jalur\n'
+                printf -- '  `paksa`: tombol "Naikkan pin" menolak kenaikan ini tanpa peduli `paksa`.\n'
+                printf -- '- satu-satunya jalan maju: audit ULANG SHA yang ditahan terhadap upstream\n'
+                printf -- '  terbaru. Kalau kali ini lolos, HAPUS baris `# TAHAN` dari `%s` lebih\n' "$WF"
+                printf -- '  dulu - selama baris itu ada, setiap jalur kenaikan tetap buntu.\n'
               else
                 printf -- '- **JANGAN naikkan dulu.** Vonis di atas bukan AMAN, jadi laporan ini sengaja\n'
                 printf -- '  TIDAK memberi baris salin-tempelnya: menyalinnya ke `%s` akan melewati\n' "$WF"
