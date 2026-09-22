@@ -3080,6 +3080,24 @@ jobs:
             echo "| ReSukiSU (di-PIN) | \`${KSU_SHA:-?}\` |"
             echo "| NoMount (di-PIN, ART) | \`${NOMOUNT_SHA:-?}\` |"
             echo ""
+            # Alasan yang sama dengan blok kembarannya di step "Terbitkan
+            # Release", dengan satu tambahan: step ini `if: always()`, jadi
+            # untuk build yang GAGAL inilah satu-satunya tempat kedelapan pin
+            # tercatat - rilisnya tidak pernah terbit. Sumbernya tetap
+            # /tmp/pins.export, bukan daftar nama baru.
+            if [ -s /tmp/pins.export ]; then
+              echo "<details><summary>Kedelapan pin yang mengunci build ini</summary>"
+              echo ""
+              echo '```'
+              cat /tmp/pins.export
+              echo '```'
+              echo ""
+              echo "Dikompilasi oleh revisi workflow di commit \`${GITHUB_SHA:-?}\`."
+              echo "</details>"
+            else
+              echo "CATATAN: \`/tmp/pins.export\` kosong - step \"Muat pins.env\" belum sempat jalan."
+            fi
+            echo ""
             echo "Paket: \`${ZIP:-belum terbentuk}\`"
             echo ""
             echo "### Kalau masih STUCK DI LOGO"
@@ -3152,6 +3170,35 @@ jobs:
             printf -- '| kernel | `%s` |\n' "$KERNEL_SHA"
             printf -- '| ReSukiSU | `%s` |\n' "$KSU_SHA"
             printf -- '| NoMount | `%s` |\n' "$NOMOUNT_SHA"
+            # Revisi ke-46: KEDELAPAN pin, bukan tiga. Sejak revisi ke-45c
+            # pertanyaan "dua rilis ini isinya sama atau tidak?" dijawab persis
+            # dua hal - nilai kedelapan SHA DAN revisi workflow yang
+            # mengompilasinya - dan sapuan riwayat 2026-09-21 terpaksa menggali
+            # keduanya lewat API justru karena halaman Releases cuma menyebut
+            # tiga komponen. Ukuran zip tidak bisa dipakai sebagai gantinya:
+            # stempel waktu build ikut masuk ke string versi kernel, jadi dua
+            # zip berisi kernel yang sama pun beda beberapa ratus byte.
+            # Sumbernya /tmp/pins.export - berkas yang ditulis step "Muat
+            # pins.env" di job yang sama, sesudah kedelapan nama diverifikasi
+            # ada persis satu. SENGAJA bukan daftar nama baru di sini: daftar
+            # itu sudah hidup di enam tempat, dan salinan ketujuh persis cara
+            # revisi ke-28 membusuk. Dicetak 40 hex penuh, bukan singkatan -
+            # inilah yang disalin orang ke pins.env waktu mundur, dan penjaga
+            # bentuk di step "Muat pins.env" menolak SHA pendek (revisi ke-37).
+            if [ -s /tmp/pins.export ]; then
+              printf -- '\n<details><summary>Kedelapan pin yang mengunci build ini</summary>\n\n'
+              printf -- '```\n'
+              cat /tmp/pins.export
+              printf -- '```\n\n'
+              printf -- 'Dikompilasi oleh revisi workflow di commit `%s`.\n' "$GITHUB_SHA"
+              printf -- 'Dua rilis berisi kernel yang sama HANYA kalau kedelapan baris di\n'
+              printf -- 'atas DAN commit itu sama persis. Ukuran zip tidak menentukan apa pun.\n'
+              printf -- '</details>\n'
+            else
+              printf -- '\n> CATATAN: daftar kedelapan pin tidak terbaca (`/tmp/pins.export`\n'
+              printf -- '> kosong) - rilis ini tidak bisa dibandingkan isinya dengan rilis lain\n'
+              printf -- '> tanpa membuka log run-nya.\n'
+            fi
             printf -- '\n- run: %s/%s/actions/runs/%s\n' \
               "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
             printf -- '- `%s` sudah berformat AnyKernel3: flash langsung lewat\n' "$ZIP"

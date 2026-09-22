@@ -190,16 +190,46 @@ jobs:
           rm -f /tmp/perlu_audit /tmp/ada_drift
 
           echo "$KOMPONEN" | grep -v '^[[:space:]]*$' | while IFS=';' read -r pola repo ref sensitif nama; do
-            pin=$(ambil "$pola")
+            # REVISI KE-46 - `|| true` DI BARIS BAWAH ADALAH SELURUH GUNANYA
+            # CABANG "POLA TAK KETEMU". Tanpanya cabang itu MUSTAHIL menyala:
+            # step Actions jalan dengan `bash -e`, `ambil` berujung pada grep
+            # yang keluar 1 kalau polanya tidak ketemu, dan `pin=$(ambil ...)`
+            # mewarisi kode keluar itu - jadi shell mati DI BARIS PENGAMBILAN,
+            # tiga baris sebelum `if [ -z "$pin" ]` yang seharusnya mengurusnya.
+            # Akibatnya bukan cuma satu cabang mati. Sisa step tidak jalan sama
+            # sekali: tidak ada tabel, tidak ada laporan, dan - yang terburuk -
+            # blok pengurus issue di ujung step tidak pernah tercapai, sehingga
+            # issue yang sedang terbuka membeku menganga tanpa satu kalimat pun
+            # yang menyebut kenapa. Itu menggabungkan dua kerusakan yang sudah
+            # pernah ditambal: laporan basi (revisi ke-32) dan PERLU_AUDIT yang
+            # tak pernah sampai ke pembacanya (revisi ke-29).
+            # Dibuktikan di luar CI, bukan dibaca dari kode: tabel dua baris
+            # dengan pola baris kedua sengaja dibuat tidak ada -> baris pertama
+            # tercetak, "POLA TAK KETEMU" tidak pernah, kalimat sesudah loop
+            # juga tidak, exit 1. Kelas yang sama dengan revisi ke-34/39/41:
+            # penjaga yang berhenti menjaga tanpa meninggalkan satu tanda pun.
+            #
+            # Sekalian, yang dinilai BUKAN "ada" melainkan "ada PERSIS SATU".
+            # Nama ganda di pins.env gampang terjadi lewat sunting tangan di web
+            # GitHub - dan jalur itu memang sah - lalu `ambil` diam-diam memakai
+            # baris PERTAMA (`head -1`) sedangkan $GITHUB_ENV di step "Muat
+            # pins.env" memakai yang TERAKHIR. Step pemuat build dan preflight.sh
+            # sudah menolak keadaan ini sejak revisi ke-33 dan tombol "Naikkan
+            # pin" menyusul kemudian; robot ini pembaca terakhir yang belum
+            # punya penjaganya, jadi sampai sekarang ia bisa melaporkan SHA yang
+            # berbeda dari yang benar-benar dikompilasi - dengan kedua-duanya
+            # tetap hijau.
+            n_baris=$(grep -ciE "$pola" "$WF" || true)
+            pin=$(ambil "$pola" || true)
             # Nama variabel pins.env-nya, dikupas dari polanya sendiri
             # (^KSU_PIN=[0-9a-f]{40} -> KSU_PIN) supaya tidak jadi salinan
             # kesembilan dari tabel yang sama. Dipakai revisi ke-37 untuk
             # mencetak baris pins.env yang siap disalin apa adanya.
             pola_nama=$(printf '%s' "$pola" | sed 's/^[[:space:]]*\^\{0,1\}//; s/=.*$//')
 
-            if [ -z "$pin" ]; then
-              printf '| %s | - | - | **POLA TAK KETEMU** | workflow berubah, perbarui pin-watch.yml |\n' \
-                "$nama" >> "$TABEL"
+            if [ -z "$pin" ] || [ "${n_baris:-0}" != "1" ]; then
+              printf '| %s | - | - | **POLA TAK KETEMU** | %s baris cocok di `%s` (wajib persis 1) - perbarui pin-watch.yml atau pins.env |\n' \
+                "$nama" "${n_baris:-0}" "$WF" >> "$TABEL"
               echo 1 > /tmp/perlu_audit
               continue
             fi
