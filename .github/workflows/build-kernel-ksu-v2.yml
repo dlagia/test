@@ -2297,9 +2297,12 @@ jobs:
           # nm.h, jadi -nostdlib -static -Wl,-e,_start tetap sahih.
           #
           # NOMOUNT_PIN dari pins.env (revisi ke-26). Nilai saat ini
-          # d6cb7158 = HEAD dev (2026-09-20). Branch master TIDAK ikut ke sana -
-          # master masih 016375cd, dan itu memang NOMOUNT_LOADER_PIN; isi
-          # kernel/setup.sh di kedua commit byte-identik.
+          # a8fe2f20 = HEAD dev (2026-09-24, revisi ke-52): d6cb7158 dinaikkan
+          # 15 commit sesudah upstream memperbaiki kebocoran r_path (nomount#77).
+          # Audit lengkapnya di blok NoMount pins.env. Penjaga SRCU di bawah
+          # kini bersyarat, dan ada penjaga baru untuk jalur yang pernah bocor.
+          # NOMOUNT_LOADER_PIN db76155b6 = HEAD master; kernel/setup.sh di
+          # kedua commit byte-identik (blob 76636501).
 
           # pipefail: tanpa ini, exit code pipeline = exit code `bash` saja,
           # sehingga HTTP 404/500 dari curl tidak pernah menggagalkan step.
@@ -2380,10 +2383,21 @@ jobs:
             echo "ERROR: fs/Kconfig masih mengandung duplikasi setelah perbaikan"
             exit 1
           }
-          grep -q 'nomount_srcu' fs/nomount/nomount.c || {
-            echo "ERROR: fs/nomount/nomount.c tidak mengandung nomount_srcu"
-            exit 1
-          }
+          # Revisi ke-52: upstream d15d5404 membuang nomount_srcu seluruhnya
+          # (pembaca rcu_read_lock() biasa, rule dibebaskan sesudah
+          # synchronize_rcu()). Dulu kata nomount_srcu WAJIB ada; sekarang
+          # dua keadaan yang sah: SRCU dipakai DAN diinisialisasi (blok di
+          # bawah), atau SRCU tidak disebut sama sekali. Yang ditolak adalah
+          # sisa srcu_read_lock/synchronize_srcu tanpa struct-nya.
+          if grep -q 'nomount_srcu' fs/nomount/nomount.c fs/nomount/nomount.h; then
+            NM_SRCU=1
+          else
+            NM_SRCU=0
+            if grep -n 'srcu_read_lock\|synchronize_srcu\|srcu_struct' fs/nomount/nomount.c fs/nomount/nomount.h; then
+              echo "ERROR: sisa SRCU di NoMount tanpa nomount_srcu - audit ulang"
+              exit 1
+            fi
+          fi
 
           # Revisi ke-42: penjaga di atas cuma memastikan KATA nomount_srcu ada,
           # dan itu sudah tidak cukup sejak upstream 002157ad. Sampai 7919faf2
@@ -2397,7 +2411,9 @@ jobs:
           # stuck di logo tanpa satu pun pesan yang menyebut SRCU. Jadi yang
           # di-assert adalah pertanyaan yang sebenarnya: siapa yang
           # menginisialisasi struct ini?
-          if grep -q 'DEFINE_STATIC_SRCU(nomount_srcu)' fs/nomount/nomount.h; then
+          if [ "$NM_SRCU" = "0" ]; then
+            echo "OK: NoMount tidak memakai SRCU (RCU biasa sejak d15d5404)"
+          elif grep -q 'DEFINE_STATIC_SRCU(nomount_srcu)' fs/nomount/nomount.h; then
             echo "OK: nomount_srcu statis (DEFINE_STATIC_SRCU) - init saat link"
           elif grep -q 'init_srcu_struct(&nomount_srcu)' fs/nomount/nomount.c; then
             echo "OK: nomount_srcu diinisialisasi manual (init_srcu_struct di nomount_init)"
@@ -2408,6 +2424,18 @@ jobs:
             echo "       Ini tidak akan gagal saat kompilasi - jadi dihentikan di sini."
             exit 1
           fi
+
+          # Revisi ke-52: kebocoran r_path (nomount#77, diperbaiki upstream di
+          # a8fe2f2). Di nomount_resolve_rule_dentry() hanya panggilan KEDUA
+          # __nomount_get_rule_info() yang boleh get_path=true, dan itu satu-
+          # satunya di seluruh berkas. Jumlah lain = kode berubah di jalur yang
+          # pernah bocor, jadi audit ulang dulu sebelum membangun.
+          N_GET_PATH="$(grep -c '&rule_info, true)' fs/nomount/nomount.c || true)"
+          test "$N_GET_PATH" = "1" || {
+            echo "ERROR: diharapkan tepat 1 '&rule_info, true)' di nomount.c, aktual $N_GET_PATH"
+            grep -n '__nomount_get_rule_info(' fs/nomount/nomount.c || true
+            exit 1
+          }
 
           # Entry fs/Makefile. setup.sh menambahkannya dengan penjaga longgar:
           #     if ! grep -q "nomount" "$FS_MAKEFILE"; then
