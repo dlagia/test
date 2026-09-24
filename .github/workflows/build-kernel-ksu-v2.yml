@@ -2301,8 +2301,10 @@ jobs:
           # 15 commit sesudah upstream memperbaiki kebocoran r_path (nomount#77).
           # Audit lengkapnya di blok NoMount pins.env. Penjaga SRCU di bawah
           # kini bersyarat, dan ada penjaga baru untuk jalur yang pernah bocor.
-          # NOMOUNT_LOADER_PIN db76155b6 = HEAD master; kernel/setup.sh di
-          # kedua commit byte-identik (blob 76636501).
+          # NOMOUNT_LOADER_PIN 2905772de = HEAD master (revisi ke-53);
+          # kernel/setup.sh tetap blob 76636501 sejak 016375cd.
+          # Revisi ke-53: dev 2905772de DITAHAN - clear_all-nya membebaskan
+          # rule tanpa melepasnya dari children direktori (use-after-free).
           # SUDAH DIUJI: rilis build-20260924-011546 diflash dan boot normal
           # (dikonfirmasi pemilik 2026-09-24).
 
@@ -2438,6 +2440,25 @@ jobs:
             grep -n '__nomount_get_rule_info(' fs/nomount/nomount.c || true
             exit 1
           }
+
+          # Revisi ke-53: upstream 646b62e41 membuat __nomount_clear_all()
+          # membebaskan rule sesudah hash_del_rcu() saja, tanpa melepasnya dari
+          # children direktori induk. Direktori asli yang dibajak lalu memegang
+          # pointer ke rule yang sudah di-kfree (use-after-free di lookup
+          # berikutnya), dan pemicunya `nm clear all` - dijalankan customize.sh
+          # setiap update modul. Yang di-assert: badan fungsi itu melepas rule
+          # dari children, lewat nm_detach_rule_locked() /
+          # __nomount_delete_child_locked() (a8fe2f20) atau mengosongkan
+          # ->children langsung (d6cb7158). Fungsi tidak ditemukan = gagal juga.
+          NM_CLEAR="$(awk '/^static void __nomount_clear_all\(/{f=1} f{print} f&&/^}/{exit}' fs/nomount/nomount.c)"
+          N_CLEAR="$(printf '%s\n' "$NM_CLEAR" | grep -c 'nm_detach_rule_locked(\|__nomount_delete_child_locked(\|->children, NULL)' || true)"
+          test "$N_CLEAR" -ge 1 || {
+            echo "ERROR: __nomount_clear_all() tidak melepas rule dari children direktori."
+            echo "       Rule yang dibebaskan tetap ditunjuk dir_node->children: use-after-free"
+            echo "       saat 'nm clear all'. Audit ulang NoMount sebelum membangun."
+            exit 1
+          }
+          echo "OK: __nomount_clear_all() melepas rule dari children direktori"
 
           # Entry fs/Makefile. setup.sh menambahkannya dengan penjaga longgar:
           #     if ! grep -q "nomount" "$FS_MAKEFILE"; then
