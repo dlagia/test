@@ -2303,6 +2303,8 @@ jobs:
           # kini bersyarat, dan ada penjaga baru untuk jalur yang pernah bocor.
           # NOMOUNT_LOADER_PIN db76155b6 = HEAD master; kernel/setup.sh di
           # kedua commit byte-identik (blob 76636501).
+          # SUDAH DIUJI: rilis build-20260924-011546 diflash dan boot normal
+          # (dikonfirmasi pemilik 2026-09-24).
 
           # pipefail: tanpa ini, exit code pipeline = exit code `bash` saja,
           # sehingga HTTP 404/500 dari curl tidak pernah menggagalkan step.
