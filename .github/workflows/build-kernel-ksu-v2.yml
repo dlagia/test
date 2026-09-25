@@ -581,10 +581,13 @@
 # D. CATATAN LATEN (disadari, sengaja TIDAK diubah):
 #    1. Cache key proton-clang tetap 'proton-clang-master-v1' walau CLANG_PIN
 #       bisa berubah - sudah ditulis di pesan error step-nya sendiri.
-#    2. runs-on wajib ubuntu-22.04 karena libtinfo5/libncurses5 tidak ada di
-#       24.04. Per hari ini 22.04 masih tersedia dan BELUM punya jadwal
-#       pencabutan, tapi 26.04 sudah preview - kalau nanti 22.04 dicabut,
-#       gantinya adalah unduh libtinfo5/libncurses5 manual, bukan ganti runner.
+#    2. [DICABUT di revisi ke-55] Dulu: runs-on wajib ubuntu-22.04 karena
+#       libtinfo5/libncurses5 tidak ada di 24.04. Alasan itu ternyata
+#       SALAH: `ldd` atas seluruh biner proton-clang tidak menemukan satu
+#       pun yang butuh libtinfo.so.5/libncurses.so.5. Penghalang 24.04 yang
+#       sebenarnya adalah ld binutils 2.36.1 milik proton-clang, yang
+#       didahulukan PATH lalu dipakai gcc untuk host tool, dan tidak kenal
+#       section .relr.dyn di glibc 2.39. Lihat catatan di step Compile kernel.
 #    3. Commit di dalam KernelSU/ pada step 05 menggeser rev-list --count +1
 #       dibanding upstream (kosmetik, hanya angka versi di manager).
 #    4. Bug refcount upstream di poin D revisi ke-18 masih ada dan masih
@@ -1393,7 +1396,10 @@ jobs:
   # padahal perlu berarti rilis tertinggal diam-diam, dan build yang tidak
   # pernah jalan tidak meninggalkan satu pun tanda merah.
   gerbang:
-    runs-on: ubuntu-22.04
+    # Revisi ke-55: 22.04 -> 24.04. ubuntu-22.04 mulai dipensiunkan
+    # 2026-09-17 (brownout Maret-April 2027, pensiun 2027-04-17,
+    # actions/runner-images#14254).
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       lanjut: ${{ steps.nilai.outputs.lanjut }}
@@ -1484,7 +1490,10 @@ jobs:
     # sendiri gagal, outputs.lanjut KOSONG - dan kosong harus berarti dibangun.
     # Dengan "== '1'" kegagalan gerbang justru mengubur build tanpa tanda merah.
     if: ${{ !cancelled() && needs.gerbang.outputs.lanjut != '0' }}
-    runs-on: ubuntu-22.04
+    # Revisi ke-55: 22.04 -> 24.04. ubuntu-22.04 mulai dipensiunkan
+    # 2026-09-17 (brownout Maret-April 2027, pensiun 2027-04-17,
+    # actions/runner-images#14254).
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
 
     steps:
@@ -1590,7 +1599,11 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             bc bison build-essential ccache cpio curl flex git kmod \
             libelf-dev libssl-dev zip zlib1g-dev xxd python3 \
-            libtinfo5 libncurses5 gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+          # Revisi ke-55: libtinfo5/libncurses5 dibuang - tidak ada di 24.04
+          # dan tidak dibutuhkan (diuji: run 36085113472 sukses tanpa keduanya).
+          # gcc-aarch64-linux-gnu kini gcc 13 (dulu 11); ia cuma dipakai
+          # untuk nm, yang tidak ikut masuk zip flash.
 
       - name: Clone source kernel (dlagia/android_kernel_xiaomi_rosemary @ rosemary-13)
         run: |
@@ -2309,7 +2322,8 @@ jobs:
           # boot normal (dikonfirmasi pemilik 2026-09-24).
           # Revisi ke-54: upstream membatalkan 646b62e41 (305d2cb00,
           # nomount#79); NOMOUNT_PIN dan NOMOUNT_LOADER_PIN naik ke 46b7d582e.
-          # BELUM diuji di HP. Audit di blok NoMount pins.env; ketiga penjaga
+          # SUDAH DIUJI: build-20260925-002642 boot normal (dikonfirmasi
+          # pemilik 2026-09-25). Audit di blok NoMount pins.env; ketiga penjaga
           # NoMount di bawah disimulasikan atas 46b7d582e dan lolos.
 
           # pipefail: tanpa ini, exit code pipeline = exit code `bash` saja,
@@ -2863,7 +2877,15 @@ jobs:
             echo "ccache tidak tersedia, pakai clang polos."
           fi
 
-          make O=out rosemary_defconfig
+          # Revisi ke-55: host tool (fixdep, conf, dtc, ...) WAJIB ditautkan
+          # ld sistem. PATH mendahulukan clang-proton/bin, jadi tanpa -B gcc
+          # memakai ld binutils 2.36.1 milik proton, yang di 24.04 gagal:
+          # "unknown type [0x13] section `.relr.dyn'" (glibc 2.39). fixdep
+          # sudah dibangun di pemanggilan defconfig ini, jadi HOSTCC harus ada
+          # di sini JUGA, bukan cuma di make utama. Image tetap dibuat clang +
+          # binutils aarch64 proton; yang berubah cuma alat bantu di host.
+          HOST_TOOLS=(HOSTCC="gcc -B/usr/bin/" HOSTCXX="g++ -B/usr/bin/")
+          make O=out "${HOST_TOOLS[@]}" rosemary_defconfig
 
           echo ""
           echo "==================== RESOLVED ReSukiSU & SuSFS CONFIG ===================="
@@ -2977,6 +2999,7 @@ jobs:
           if ! make -k O=out -j"$(nproc)" \
                 ARCH=arm64 \
                 CC="$CC_CMD" \
+                "${HOST_TOOLS[@]}" \
                 AR=llvm-ar \
                 NM=llvm-nm \
                 OBJCOPY=llvm-objcopy \
@@ -3179,6 +3202,9 @@ jobs:
         with:
           name: rosemary-kernel-build
           if-no-files-found: warn
+          # Revisi ke-55: tanpa ini kernel/out/.config (berkas tersembunyi)
+          # dilewati diam-diam sejak upload-artifact v4.
+          include-hidden-files: true
           path: |
             ${{ env.ZIP }}
             ${{ steps.kimg.outputs.path }}
