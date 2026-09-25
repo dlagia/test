@@ -2305,8 +2305,12 @@ jobs:
           # kernel/setup.sh tetap blob 76636501 sejak 016375cd.
           # Revisi ke-53: dev 2905772de DITAHAN - clear_all-nya membebaskan
           # rule tanpa melepasnya dari children direktori (use-after-free).
-          # SUDAH DIUJI: rilis build-20260924-011546 diflash dan boot normal
-          # (dikonfirmasi pemilik 2026-09-24).
+          # SUDAH DIUJI (a8fe2f20): rilis build-20260924-011546 diflash dan
+          # boot normal (dikonfirmasi pemilik 2026-09-24).
+          # Revisi ke-54: upstream membatalkan 646b62e41 (305d2cb00,
+          # nomount#79); NOMOUNT_PIN dan NOMOUNT_LOADER_PIN naik ke 46b7d582e.
+          # BELUM diuji di HP. Audit di blok NoMount pins.env; ketiga penjaga
+          # NoMount di bawah disimulasikan atas 46b7d582e dan lolos.
 
           # pipefail: tanpa ini, exit code pipeline = exit code `bash` saja,
           # sehingga HTTP 404/500 dari curl tidak pernah menggagalkan step.
