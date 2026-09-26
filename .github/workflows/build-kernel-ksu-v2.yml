@@ -2325,6 +2325,8 @@ jobs:
           # SUDAH DIUJI: build-20260925-002642 boot normal (dikonfirmasi
           # pemilik 2026-09-25). Audit di blok NoMount pins.env; ketiga penjaga
           # NoMount di bawah disimulasikan atas 46b7d582e dan lolos.
+          # Revisi ke-58: NOMOUNT_PIN naik ke 60073edc5 (HEAD dev), dengan
+          # tambalan jalur cepat v_inode di bawah. BELUM DIUJI di HP.
 
           # pipefail: tanpa ini, exit code pipeline = exit code `bash` saja,
           # sehingga HTTP 404/500 dari curl tidak pernah menggagalkan step.
@@ -2477,6 +2479,57 @@ jobs:
             exit 1
           }
           echo "OK: __nomount_clear_all() melepas rule dari children direktori"
+
+          # Revisi ke-58: upstream 60073edc5 ("fix race condition in concurrent
+          # virtual inode initialization") memberi dir_node->v_inode keadaan
+          # ketiga, (struct inode *)-2L = "sedang diinisialisasi CPU lain",
+          # lewat cmpxchg NULL -> -2L di jalur lambat
+          # nomount_resolve_rule_dentry(). Pemenangnya mengisi inode lalu
+          # smp_store_release(); yang kalah berputar sampai nilainya bukan -2L.
+          # Tapi jalur CEPAT di awal fungsi yang sama cuma mengenal NULL dan
+          # -1L: ia membaca v_inode, menolak -1L, lalu igrab() apa pun yang
+          # lain - termasuk -2L. igrab() langsung spin_lock(&inode->i_lock) di
+          # alamat 0xfffffffffffffffe, jadi oops di lookup. Sebelum 60073edc5
+          # v_inode lompat NULL -> inode dalam satu cmpxchg, jadi jalur cepat
+          # tidak pernah melihat nilai setengah jadi; commit itu mengubah
+          # balapan yang tadinya jinak jadi fatal, tepat di skenario yang ingin
+          # ia perbaiki. Tambalannya: jalur cepat meneruskan -2L ke jalur
+          # lambat, yang memang sudah menunggunya. splice_inode yang tertinggal
+          # berisi -2L selalu ditimpa di sana sebelum dipakai. Tambalan
+          # melewatkan dirinya sendiri kalau upstream sudah menangani -2L di
+          # jalur cepat, dan GAGAL kalau bentuk kodenya berubah (audit ulang).
+          python3 - << 'PYEOF'
+          path = "fs/nomount/nomount.c"
+          with open(path) as f:
+              src = f.read()
+          sentinel = "(struct inode *)-2L"
+          fast = ("if (rule_info.this_dir && (splice_inode = "
+                  "smp_load_acquire(&rule_info.this_dir->v_inode))) {")
+          fixed = ("if (rule_info.this_dir && (splice_inode = "
+                   "smp_load_acquire(&rule_info.this_dir->v_inode)) && "
+                   "splice_inode != " + sentinel + ") {")
+          if sentinel not in src:
+              print("OK: NoMount tidak memakai sentinel -2L - jalur cepat tidak perlu ditambal")
+          elif src.count(fixed) == 1:
+              print("OK: jalur cepat v_inode sudah menolak -2L (tambalan sudah terpasang)")
+          else:
+              n = src.count(fast)
+              if n != 1:
+                  print(f"ERROR: jalur cepat v_inode diharapkan tepat 1, aktual {n} - audit ulang")
+                  raise SystemExit(1)
+              i = src.index(fast)
+              j = src.find("goto do_splice;", i)
+              if j < 0:
+                  print("ERROR: 'goto do_splice;' tidak ada sesudah jalur cepat - audit ulang")
+                  raise SystemExit(1)
+              if sentinel in src[i:j]:
+                  print("OK: upstream sudah menangani -2L di jalur cepat - tambalan dilewati")
+              else:
+                  src = src.replace(fast, fixed)
+                  with open(path, "w") as f:
+                      f.write(src)
+                  print("Ditambal: jalur cepat v_inode kini meneruskan -2L ke jalur lambat")
+          PYEOF
 
           # Entry fs/Makefile. setup.sh menambahkannya dengan penjaga longgar:
           #     if ! grep -q "nomount" "$FS_MAKEFILE"; then
