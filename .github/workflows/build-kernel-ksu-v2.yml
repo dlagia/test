@@ -2327,6 +2327,8 @@ jobs:
           # NoMount di bawah disimulasikan atas 46b7d582e dan lolos.
           # Revisi ke-58: NOMOUNT_PIN naik ke 60073edc5 (HEAD dev), dengan
           # tambalan jalur cepat v_inode di bawah. BELUM DIUJI di HP.
+          # Revisi ke-58b: tambalan kedua, evict inode virtual lewat jalur
+          # generik lagi (lihat blok 58b di bawah).
 
           # pipefail: tanpa ini, exit code pipeline = exit code `bash` saja,
           # sehingga HTTP 404/500 dari curl tidak pernah menggagalkan step.
@@ -2529,6 +2531,64 @@ jobs:
                   with open(path, "w") as f:
                       f.write(src)
                   print("Ditambal: jalur cepat v_inode kini meneruskan -2L ke jalur lambat")
+          PYEOF
+
+          # Revisi ke-58b: upstream 53e4c93e4 memindahkan pembersihan inode ke
+          # nomount_hijacked_evict_inode() dan sekaligus mengirim inode VIRTUAL
+          # (nm_file_iops/nm_dir_iops) ke ->evict_inode ASLI milik fs, yaitu
+          # f2fs_evict_inode()/ext4_evict_inode(). Sampai 46b7d582e inode
+          # virtual selalu lewat truncate_inode_pages_final() + clear_inode()
+          # generik - jalur yang terbukti boot sejak revisi ke-15.
+          # Inode virtual dibuat new_inode() di superblock direktori yang
+          # dibajak, tapi i_ino-nya = v_ino = nomor inode berkas modul ASLI,
+          # dan ia tidak pernah punya inode on-disk sendiri. Selama i_nlink = 1
+          # kedua fs mengambil jalur no_delete dan tidak menyentuh disk. Tapi
+          # direktori asli yang dibajak tetap memakai ->unlink/->rename milik
+          # fs-nya (NoMount hanya mengganti ->lookup), dan f2fs_unlink() tidak
+          # mencocokkan nomor inode entri dengan inode dentry. Di direktori rw,
+          # `rm` atas berkas yang ditimpa NoMount menjatuhkan i_nlink inode
+          # virtual ke 0, lalu f2fs_evict_inode() menjalankan f2fs_truncate()
+          # dan f2fs_remove_inode_page() atas nid = v_ino: inode berkas modul
+          # asli dihapus dari disk sementara entri direktorinya tetap ada.
+          # Sebelum 53e4c93e4 jalur generik tidak pernah menulis ke disk.
+          # Tidak memicu bootloop di HP ini (partisi sistem ext4 read-only,
+          # modul tidak membajak /data), tapi ini kerusakan data yang
+          # diam-diam. Tambalannya mengembalikan jalur generik KHUSUS inode
+          # virtual; inode asli yang dibajak tetap lewat evict_inode asli, dan
+          # nm_destroy_virtual_inode() tetap dipanggil. Dilewati kalau
+          # upstream masih di destroy_inode (pra-53e4c93e4) atau sudah
+          # menanganinya; GAGAL kalau bentuk kodenya berubah (audit ulang).
+          python3 - << 'PYEOF'
+          path = "fs/nomount/nomount.c"
+          with open(path) as f:
+              src = f.read()
+          virt = "inode->i_op != &nm_file_iops && inode->i_op != &nm_dir_iops && "
+          orig = "if (nm_sop && nm_sop->orig_sop && nm_sop->orig_sop->evict_inode) {"
+          fixed = "if (" + virt + orig[len("if ("):]
+          if "nm_sop->fake_sop.evict_inode = nomount_hijacked_evict_inode;" not in src:
+              print("ERROR: evict_inode tidak lagi dibajak NoMount - audit ulang")
+              raise SystemExit(1)
+          if "nm_sop->fake_sop.destroy_inode = nomount_hijacked_destroy_inode;" in src:
+              print("OK: NoMount masih membersihkan di destroy_inode - evict virtual tetap generik")
+          elif src.count(fixed) == 1:
+              print("OK: evict inode virtual sudah lewat jalur generik (tambalan sudah terpasang)")
+          else:
+              i = src.find("static void nomount_hijacked_evict_inode(")
+              j = src.find("\n}\n", i)
+              if i < 0 or j < 0:
+                  print("ERROR: nomount_hijacked_evict_inode() tidak ditemukan - audit ulang")
+                  raise SystemExit(1)
+              body = src[i:j]
+              if body.count(orig) != 1:
+                  print(f"ERROR: cabang evict_inode asli diharapkan tepat 1, aktual {body.count(orig)} - audit ulang")
+                  raise SystemExit(1)
+              if "truncate_inode_pages_final(&inode->i_data);" not in body or "clear_inode(inode);" not in body:
+                  print("ERROR: cabang generik evict tidak ditemukan - audit ulang")
+                  raise SystemExit(1)
+              src = src[:i] + body.replace(orig, fixed) + src[j:]
+              with open(path, "w") as f:
+                  f.write(src)
+              print("Ditambal: inode virtual kembali di-evict lewat jalur generik")
           PYEOF
 
           # Entry fs/Makefile. setup.sh menambahkannya dengan penjaga longgar:
