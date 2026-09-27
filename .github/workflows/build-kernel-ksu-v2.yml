@@ -2744,6 +2744,88 @@ jobs:
           grep -rl 'no_sanitize(' --include='*.h' --include='*.c' --exclude-dir=.git --exclude-dir=patch_rejects . 2>/dev/null | sed 's/^/  /'
           echo -n 'no_sanitize( tersisa: '; grep -rl 'no_sanitize(' --include='*.h' --include='*.c' --exclude-dir=.git --exclude-dir=patch_rejects . 2>/dev/null | wc -l
 
+      - name: Setelan memori - swappiness 100 (bisa diubah) + zram lz4 + batas memcg
+        working-directory: kernel
+        run: |
+          # Revisi ke-62 (2026-09-27). Empat penggantian kecil di source
+          # rosemary-13, tidak ada yang menyentuh Kconfig:
+          #
+          # 1. mm/vmscan.c: vm_swappiness 190 -> 100. Commit 3e5265967b6c
+          #    ("sysctl: Lock vm_swappiness to 190") memberi get_scan_count()
+          #    anon_prio 190 : file_prio 10, jadi reclaim hampir selalu menukar
+          #    ke zram dan kswapd terus kompres/dekompres - boros baterai.
+          #    100 = anon dan page cache berbobot sama.
+          #    Harus lewat default kernel, bukan skrip userspace: memcg v1
+          #    (MEMCG dipilih ANDROID_DEFAULT_SETTING) menyalin swappiness
+          #    induknya waktu memcg dibuat (mem_cgroup_css_alloc), dan
+          #    /dev/memcg/apps + /dev/memcg/system dibuat init.rc saat boot.
+          #    Menulis /proc/sys/vm/swappiness sesudah boot cuma mengubah memcg
+          #    root; kedua anak itu tetap membawa nilai saat boot.
+          # 2. kernel/sysctl.c: /proc/sys/vm/swappiness 0444 -> 0644 (dikunci
+          #    oleh commit yang sama). Rentang tetap 0..200 (&two_hundred).
+          # 3. mm/memcontrol.c: mem_cgroup_swappiness_write() membungkus cek
+          #    `val > 100` dengan `#if 0` (supaya task_profiles Android boleh
+          #    menulis 150) tanpa batas pengganti. Nilai apa pun masuk, dan
+          #    memory.swappiness milik memcg root langsung menimpa
+          #    vm_swappiness - menembus kunci 0444 tadi. Di atas 200,
+          #    file_prio = 200 - swappiness terbungkus jadi unsigned raksasa di
+          #    get_scan_count(); ap/fp meluap dan `ap + fp + 1` bisa jadi 0,
+          #    lalu div64_u64 membagi dengan nol. Batasnya kini 200, sama
+          #    dengan sysctl; 150 dari task_profiles tetap lolos.
+          # 4. drivers/block/zram/zram_drv.c: default_compressor "zstd" ->
+          #    "lz4". CRYPTO_LZ4 ikut ter-build lewat `select CRYPTO_LZ4` di
+          #    Kconfig ZRAM (di-assert di step Compile). lz4 jauh lebih ringan
+          #    di CPU saat kompres dan dekompres; rasionya lebih kecil, tapi
+          #    RAM rosemary 6/8 GB. Kalau ROM menulis
+          #    /sys/block/zram0/comp_algorithm sendiri, nilai ROM yang menang.
+          # page-cluster tidak disentuh: mm/swap.c pohon ini sudah 0.
+          #
+          # Tiap penggantian harus mengenai TEPAT satu tempat. Kalau source
+          # sudah berisi nilai tujuan, dilewati; kalau anchor hilang atau
+          # ganda, step gagal - artinya KERNEL_PIN bergeser, audit ulang.
+          python3 - <<'PY'
+          import sys
+
+          def ganti(path, lama, baru, label):
+              with open(path, encoding="utf-8", newline="") as f:
+                  s = f.read()
+              n_lama, n_baru = s.count(lama), s.count(baru)
+              if n_lama == 0 and n_baru == 1:
+                  print(f"[=] {label}: sudah terpasang")
+                  return
+              if n_lama != 1 or n_baru != 0:
+                  sys.exit(f"ERROR: {label}: anchor di {path} cocok {n_lama}x "
+                           f"(nilai tujuan {n_baru}x), harus tepat 1x")
+              with open(path, "w", encoding="utf-8", newline="") as f:
+                  f.write(s.replace(lama, baru))
+              print(f"[+] {label}")
+
+          ganti("mm/vmscan.c",
+                "int vm_swappiness = 190;\n",
+                "int vm_swappiness = 100;\n",
+                "vm_swappiness default 190 -> 100")
+
+          blok = ('\t\t.procname\t= "swappiness",\n'
+                  '\t\t.data\t\t= &vm_swappiness,\n'
+                  '\t\t.maxlen\t\t= sizeof(vm_swappiness),\n'
+                  '\t\t.mode\t\t= %s,\n'
+                  '\t\t.proc_handler\t= proc_dointvec_minmax,\n'
+                  '\t\t.extra1\t\t= &zero,\n'
+                  '\t\t.extra2\t\t= &two_hundred,\n')
+          ganti("kernel/sysctl.c", blok % "0444", blok % "0644",
+                "/proc/sys/vm/swappiness 0444 -> 0644")
+
+          ganti("mm/memcontrol.c",
+                "#if 0\n\tif (val > 100)\n\t\treturn -EINVAL;\n#endif\n",
+                "\tif (val > 200)\n\t\treturn -EINVAL;\n",
+                "memory.swappiness dibatasi 0..200")
+
+          ganti("drivers/block/zram/zram_drv.c",
+                'static const char *default_compressor = "zstd";\n',
+                'static const char *default_compressor = "lz4";\n',
+                "zram default_compressor zstd -> lz4")
+          PY
+
       - name: Aktifkan KSU & SuSFS di defconfig (termasuk dlagia ksu-susfs_defconfig)
         working-directory: kernel
         run: |
@@ -3060,6 +3142,21 @@ jobs:
             exit 1
           }
           echo "OK: BBR jadi congestion control default, fq jadi qdisc default."
+
+          # Revisi ke-62: step "Setelan memori" mengganti default kompresor zram
+          # ke lz4. Tanpa CRYPTO_LZ4 kernel tetap ter-build dan boot, tapi
+          # zcomp_create() menolak "lz4" saat disksize ditulis - zram tidak
+          # pernah aktif dan tidak ada error di log CI. Jadi di-assert di sini.
+          echo ""
+          echo "==================== RESOLVED zram CONFIG ===================="
+          grep -E '^(CONFIG_SWAP|CONFIG_ZRAM|CONFIG_ZSMALLOC|CONFIG_CRYPTO_LZ4|CONFIG_MEMCG)=' out/.config || true
+          for opt in CONFIG_SWAP CONFIG_ZRAM CONFIG_CRYPTO_LZ4; do
+            grep -q "^${opt}=y$" out/.config || {
+              echo "ERROR: ${opt} tidak resolve ke y - zram lz4 tidak akan bisa dipakai."
+              exit 1
+            }
+          done
+          echo "OK: zram + lz4 ter-build di dalam kernel."
 
           # Revisi ke-40: nama berkas kernel yang dihasilkan ikut di-assert DI
           # SINI, sedetik sesudah Kconfig resolve - bukan sembilan menit kemudian
