@@ -557,6 +557,80 @@ jobs:
             } >> "$RINCI"
           done
 
+          # Revisi ke-76: aksi GitHub (`uses:`) ikut dipantau. Sejak revisi ke-75
+          # setiap aksi dipin ke SHA commit, dan itu punya harga: tag major (v6/v7)
+          # dulu ikut maju sendiri ke rilis tambalan, SHA tidak. Tanpa baris di
+          # laporan ini, rilis keamanan sebuah aksi cuma terlihat kalau kebetulan ada
+          # yang menjalankan preflight.sh lokal - satu-satunya sumber pin di repo ini
+          # yang tidak punya pengawas harian. Aksinya dibaca dari ketiga workflow di
+          # checkout, bukan disalin ke sini, jadi daftar ini tidak bisa basi.
+          # Vonisnya bukan AMAN/PERLU AUDIT: "Naikkan pin" tidak bisa menaikkannya
+          # (GITHUB_TOKEN dilarang menulis .github/workflows/), jadi yang diminta
+          # laporan selalu sunting tangan, dan bendera sendiri AKSI_DRIFT menjaga
+          # kalimat penutup laporan tetap benar.
+          rm -f /tmp/aksi_drift
+          AKSI=$(cat .github/workflows/*.yml | tr -d '\r' |
+                   grep -oE 'uses: *[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[^ ]+( *# *v[^ ]+)?' |
+                   sed -E 's/^uses: *//; s/ *# */#/' | sort -u || true)
+          {
+            printf '\n| Aksi GitHub | Dipin | Rilis terbaru | Status |\n'
+            printf '|---|---|---|---|\n'
+          } >> "$TABEL"
+          if [ -z "$AKSI" ]; then
+            printf '| - | - | - | **POLA TAK KETEMU** - tidak ada `uses:` terbaca di .github/workflows/ |\n' >> "$TABEL"
+            echo 1 > /tmp/perlu_audit
+          fi
+          while IFS= read -r a; do
+            [ -n "$a" ] || continue
+            arepo=${a%%@*}; rest=${a#*@}; apin=${rest%%#*}; aver=""
+            case "$rest" in *'#'*) aver=${rest#*#} ;; esac
+            if ! printf '%s' "$apin" | grep -qE '^[0-9a-f]{40}$'; then
+              printf '| %s | `@%s` | - | **TIDAK DIPIN SHA** |\n' "$arepo" "$apin" >> "$TABEL"
+              {
+                printf '\n### Aksi %s\n\n' "$arepo"
+                printf -- '- dirujuk lewat `@%s`, ref yang bisa digeser pemilik aksinya tanpa jejak di repo ini.\n' "$apin"
+                printf -- '- ganti jadi `uses: %s@<40 hex> # vX.Y.Z` (SHA commit rilis terbarunya),\n' "$arepo"
+                printf -- '  lalu `bash preflight.sh` (wajib bersih) dan push.\n'
+              } >> "$RINCI"
+              echo 1 > /tmp/aksi_drift
+              continue
+            fi
+            # Sekali ulang, sama dengan panggilan HEAD di atas. Bentuk dicek dua-duanya:
+            # badan error gh api punya .tag_name kosong tapi tetap tercetak ke STDOUT.
+            tag=""; tsha=""
+            for coba in 1 2; do
+              tag=$(gh api "repos/$arepo/releases/latest" --jq .tag_name 2>/dev/null || true)
+              if printf '%s' "$tag" | grep -qE '^v[0-9][0-9A-Za-z.-]*$'; then
+                tsha=$(gh api "repos/$arepo/commits/$tag" --jq .sha 2>/dev/null || true)
+              fi
+              if printf '%s' "$tsha" | grep -qE '^[0-9a-f]{40}$'; then break; fi
+              if [ "$coba" = 1 ]; then sleep 5; fi
+            done
+            if ! printf '%s' "$tsha" | grep -qE '^[0-9a-f]{40}$'; then
+              printf '| %s | `%s` %s | - | **GAGAL AMBIL** rilis terbaru |\n' "$arepo" "${apin:0:9}" "$aver" >> "$TABEL"
+              echo 1 > /tmp/perlu_audit
+            elif [ "$apin" != "$tsha" ]; then
+              printf '| %s | `%s` %s | `%s` %s | tertinggal |\n' "$arepo" "${apin:0:9}" "$aver" "${tsha:0:9}" "$tag" >> "$TABEL"
+              echo 1 > /tmp/aksi_drift
+              {
+                printf '\n### Aksi %s\n\n' "$arepo"
+                printf -- '- dipin `%s` (%s), rilis terbaru %s = `%s`\n' "$apin" "${aver:-tanpa komentar versi}" "$tag" "$tsha"
+                printf -- '- catatan rilis: https://github.com/%s/releases/tag/%s\n' "$arepo" "$tag"
+                printf -- '- cara menaikkan: TIDAK lewat "Naikkan pin". Di arsip lokal, ganti setiap\n'
+                printf -- '  `uses: %s@%s` di ketiga workflow jadi persis:\n' "$arepo" "$apin"
+                printf -- '  ```\n  uses: %s@%s # %s\n  ```\n' "$arepo" "$tsha" "$tag"
+                printf -- '  lalu `bash preflight.sh` (wajib bersih) dan push.\n'
+              } >> "$RINCI"
+            elif [ "$aver" != "$tag" ]; then
+              printf '| %s | `%s` %s | `%s` %s | SHA benar, **komentar versi basi** |\n' "$arepo" "${apin:0:9}" "${aver:-kosong}" "${tsha:0:9}" "$tag" >> "$TABEL"
+              echo 1 > /tmp/aksi_drift
+            else
+              printf '| %s | `%s` %s | `%s` %s | di rilis terbaru |\n' "$arepo" "${apin:0:9}" "$aver" "${tsha:0:9}" "$tag" >> "$TABEL"
+            fi
+          done <<< "$AKSI"
+          AKSI_DRIFT=0
+          if [ -f /tmp/aksi_drift ]; then AKSI_DRIFT=1; fi
+
           # WAJIB pakai if, bukan `[ -f x ] && VAR=1`: shell step di Actions jalan
           # dengan `bash -e`, jadi test yang gagal di posisi terakhir statement
           # akan MEMATIKAN step ini - persis di jalur "semua pin aman".
@@ -568,11 +642,21 @@ jobs:
           {
             printf 'Laporan otomatis %s UTC (run `%s`).\n\n' "$(date -u '+%Y-%m-%d %H:%M')" "$GITHUB_RUN_ID"
             cat "$TABEL"
-            if [ "$ADA_DRIFT" = "1" ]; then
+            if [ "$ADA_DRIFT" = "1" ] || [ "$AKSI_DRIFT" = "1" ]; then
               printf '\n## Rincian yang bergerak\n'
               cat "$RINCI"
               printf '\n---\n\n'
-              if [ "$PERLU_AUDIT" = "1" ]; then
+              if [ "$AKSI_DRIFT" = "1" ]; then
+                printf 'Ada aksi GitHub yang tertinggal dari rilis terbarunya atau tidak dipin SHA. '
+                printf 'Itu disunting tangan di ketiga workflow (lihat rinciannya), bukan lewat '
+                printf 'tombol "Naikkan pin".\n\n'
+              fi
+              if [ "$ADA_DRIFT" = "0" ]; then
+                if [ "$PERLU_AUDIT" = "1" ]; then
+                  printf 'Ada juga baris yang gagal dinilai (POLA TAK KETEMU / GAGAL AMBIL). '
+                  printf 'Lihat kolom Status: laporan ini belum tentu lengkap.\n'
+                fi
+              elif [ "$PERLU_AUDIT" = "1" ]; then
                 printf 'Ada yang menyentuh bagian yang dulu diaudit (atau pin sudah orphan). '
                 printf 'Jangan naikkan itu sendiri - patch/fixer bisa ikut patah.\n'
               else
@@ -588,7 +672,7 @@ jobs:
               printf '(POLA TAK KETEMU / GAGAL AMBIL / TAK BISA DIBANDINGKAN). '
               printf 'Lihat kolom Status: laporan ini belum tentu lengkap.\n'
             else
-              printf '\nSemua pin di HEAD. Tidak ada yang perlu dikerjakan.\n'
+              printf '\nSemua pin di HEAD dan semua aksi di rilis terbarunya. Tidak ada yang perlu dikerjakan.\n'
             fi
           } > "$BODY"
 
@@ -642,7 +726,7 @@ jobs:
           # justru membuang satu-satunya laporan yang bilang ada yang rusak.
           # Sekarang: diam hanya kalau benar-benar tidak ada drift DAN tidak ada
           # baris yang gagal dinilai.
-          if [ "$ADA_DRIFT" = "0" ] && [ "$PERLU_AUDIT" = "0" ]; then
+          if [ "$ADA_DRIFT" = "0" ] && [ "$PERLU_AUDIT" = "0" ] && [ "$AKSI_DRIFT" = "0" ]; then
             if [ -n "$nomor" ]; then
               gh issue comment "$nomor" --body-file "$BODY"
               gh issue close "$nomor" --comment "Semua pin kembali di HEAD, ditutup otomatis."
