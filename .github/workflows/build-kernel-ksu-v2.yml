@@ -1391,10 +1391,22 @@ jobs:
   # bukan salah satunya.
   #
   # SETIAP jalur ragu berakhir lanjut=1, tidak pernah 0: token gagal, compare
-  # tak terbaca, daftar berkas terpotong di 300, push pertama atau force-push
-  # (before = nol semua). Membangun tanpa perlu cuma boros; TIDAK membangun
-  # padahal perlu berarti rilis tertinggal diam-diam, dan build yang tidak
-  # pernah jalan tidak meninggalkan satu pun tanda merah.
+  # tak terbaca, daftar berkas terpotong di 300, rilis Latest tak terbaca.
+  # Membangun tanpa perlu cuma boros; TIDAK membangun padahal perlu berarti
+  # rilis tertinggal diam-diam, dan build yang tidak pernah jalan tidak
+  # meninggalkan satu pun tanda merah.
+  #
+  # Revisi ke-73: pembandingnya COMMIT RILIS LATEST, bukan github.event.before.
+  # Dengan event.before ada lubang nyata: push rev X (pin naik, build jalan),
+  # lalu push rev Xb (cuma komentar) sebelum build X selesai. concurrency di
+  # atas (cancel-in-progress) membatalkan build X - abu-abu, bukan merah - dan
+  # gerbang Xb membandingkan X..Xb, melihat cuma komentar, lalu melewati
+  # build. Pin X tidak pernah terbit sebagai rilis dan tidak ada yang tahu.
+  # Hal yang sama terjadi kalau build X GAGAL lalu komentar menyusul. Pertanyaan
+  # yang benar bukan "apa beda dari push sebelumnya" tapi "apa beda dari kernel
+  # yang terakhir benar-benar terbit". Yang dihitung pun cuma dua: berkas
+  # workflow build ini dan NILAI kedelapan SHA. Workflow robot (pin-watch,
+  # naikkan-pin) tidak ikut mengompilasi, jadi tidak memicu rilis kembar.
   gerbang:
     # Revisi ke-55: 22.04 -> 24.04. ubuntu-22.04 mulai dipensiunkan
     # 2026-09-17 (brownout Maret-April 2027, pensiun 2027-04-17,
@@ -1409,27 +1421,45 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PEMICU: ${{ github.event_name }}
-          SEBELUM: ${{ github.event.before }}
         run: |
           # Sengaja TANPA set -e: gerbang yang mati di tengah harus tetap
           # pulang membawa lanjut=1, bukan menggagalkan job dan ikut mengubur
-          # build.
-          set -uo pipefail
+          # build. Revisi ke-73: Actions menjalankan step ini sebagai
+          # `bash -e {0}` (lihat log), jadi "tanpa set -e" harus ditulis
+          # eksplisit - `set -uo pipefail` saja tidak mematikan -e.
+          set +e -uo pipefail
 
           lanjut=1
           alasan="pemicu '$PEMICU' bukan push - selalu dibangun"
 
           if [ "$PEMICU" = "push" ]; then
             alasan="ada yang berubah - dibangun"
-            if ! printf '%s' "${SEBELUM:-}" | grep -qE '^[0-9a-f]{40}$' ||
-               [ "$SEBELUM" = "0000000000000000000000000000000000000000" ]; then
-              alasan="commit sebelumnya tak diketahui (push pertama/force) - dibangun"
+            # Commit tempat tag rilis Latest menempel (dibuat dengan
+            # --target "$GITHUB_SHA", jadi tag-nya tag ringan ke commit build).
+            # Prerelease uji (--latest=false) sengaja tidak pernah jadi basis.
+            # Satu kali ulang per panggilan, seperti robot pin-watch: API yang
+            # berkedip sesaat (terlihat di uji lokal revisi ke-73) jatuh ke
+            # "dibangun" dan menerbitkan rilis kembar di atas yang terbukti boot.
+            TAG_LATEST=""; BASIS=""
+            for coba in 1 2; do
+              TAG_LATEST=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name 2>/dev/null || true)
+              if printf '%s' "$TAG_LATEST" | grep -qxE 'build-[0-9]{8}-[0-9]{6}'; then
+                BASIS=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG_LATEST}" \
+                          --jq 'select(.object.type=="commit") | .object.sha' 2>/dev/null || true)
+              fi
+              if printf '%s' "$BASIS" | grep -qxE '[0-9a-f]{40}'; then break; fi
+              if [ "$coba" = 1 ]; then sleep 5; fi
+            done
+            if ! printf '%s' "$BASIS" | grep -qxE '[0-9a-f]{40}'; then
+              alasan="commit rilis Latest tak terbaca (tag='${TAG_LATEST:0:60}') - dibangun"
             else
+              SEBELUM="$BASIS"
               # gh api mencetak badan error (401/403/404/5xx) ke STDOUT dan kode
               # keluarnya tertelan $( ), jadi yang diperiksa BENTUKNYA, bukan
               # kosong-tidaknya. Badan error pun punya .status - isinya kode HTTP
               # sebagai string. Pelajaran revisi ke-34 dan ke-41.
               CMP=$(gh api "repos/${GITHUB_REPOSITORY}/compare/${SEBELUM}...${GITHUB_SHA}" 2>/dev/null || true)
+              WF_BUILD=".github/workflows/build-kernel-ksu-v2.yml"
               ST=$(printf '%s' "$CMP" | jq -r '.status // empty' 2>/dev/null || true)
               case "$ST" in
                 ahead|behind|identical|diverged) ;;
@@ -1437,13 +1467,18 @@ jobs:
               esac
               if [ -z "$ST" ]; then
                 alasan="compare tak terbaca - dibangun"
+              elif [ "$ST" = "behind" ] || [ "$ST" = "diverged" ]; then
+                # Arah behind: API mengembalikan NOL berkas, jadi workflow yang
+                # berubah tak terlihat. diverged (force-push): daftar berkasnya
+                # cuma merge-base -> HEAD. Dua-duanya tak bisa dinilai.
+                alasan="HEAD $ST terhadap rilis ${TAG_LATEST} - dibangun"
               else
                 N_BERKAS=$(printf '%s' "$CMP" | jq -r '.files | length' 2>/dev/null || echo 0)
-                BUKAN_PINS=$(printf '%s' "$CMP" | jq -r '.files[].filename' 2>/dev/null | grep -vcx 'pins.env' || true)
+                WF_BERUBAH=$(printf '%s' "$CMP" | jq -r '.files[].filename' 2>/dev/null | grep -cxF "$WF_BUILD" || true)
                 if [ "${N_BERKAS:-0}" -ge 300 ]; then
                   alasan="daftar berkas terpotong di 300 oleh API - dibangun"
-                elif [ "${BUKAN_PINS:-1}" != "0" ]; then
-                  alasan="$BUKAN_PINS berkas selain pins.env berubah - dibangun"
+                elif [ "${WF_BERUBAH:-1}" != "0" ]; then
+                  alasan="workflow build berubah sejak rilis ${TAG_LATEST} - dibangun"
                 else
                   # Cuma pins.env yang tersentuh. Yang menentukan sekarang NILAI
                   # SHA-nya, bukan diff-nya: komentar boleh berubah sebanyak apa
@@ -1463,9 +1498,9 @@ jobs:
                     alasan="pins.env sesudah push cuma terbaca ${N_BARU:-0} baris pin - dibangun, biar step 'Muat pins.env' yang memvonis"
                   elif [ "$PIN_LAMA" = "$PIN_BARU" ]; then
                     lanjut=0
-                    alasan="hanya komentar pins.env yang berubah; kedelapan SHA sama persis - TIDAK dibangun"
+                    alasan="kedelapan SHA dan workflow build sama persis dengan rilis ${TAG_LATEST} (${SEBELUM:0:9}) - TIDAK dibangun"
                   else
-                    alasan="nilai pin berubah - dibangun"
+                    alasan="nilai pin beda dari rilis ${TAG_LATEST} - dibangun"
                   fi
                 fi
               fi
