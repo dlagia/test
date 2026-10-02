@@ -123,7 +123,10 @@ concurrency:
 
 jobs:
   pantau:
-    runs-on: ubuntu-latest
+    # Dipin 2026-10-02: label ubuntu-latest pindah ke Ubuntu 26.04 mulai
+    # 2026-10-19. Sama dengan workflow build dan rilis BRENE (24.04); naikkan
+    # bersama-sama, sesudah diuji, bukan diam-diam lewat label.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:
