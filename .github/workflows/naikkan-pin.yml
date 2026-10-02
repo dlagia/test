@@ -14,7 +14,8 @@
 #
 # PENGAMAN YANG PALING PENTING ada di step "Triase": sebelum menulis apa pun, ia
 # membandingkan pin lama dengan tujuan dan menolak kalau ada file sensitif yang
-# tersentuh (fs/, patch SUSFS, kernel/src/, defconfig, ...). Jadi tombol ini
+# tersentuh (fs/, patch SUSFS, kernel/src/, userspace/src/ NoMount, defconfig,
+# META-INF/ AnyKernel3, ...). Jadi tombol ini
 # tidak bisa dipakai untuk diam-diam menaikkan sesuatu yang seharusnya diaudit
 # dulu - kecuali Anda sendiri mencentang "paksa" dan menyatakan sudah paham.
 # ============================================================
@@ -83,10 +84,10 @@ jobs:
             'Build-Kernel_scripts')  BARIS='SCRIPTS_PIN;dlagia/Build-Kernel_scripts;main;.' ;;
             'ReSukiSU')              BARIS='KSU_PIN;ReSukiSU/ReSukiSU;main;^kernel/' ;;
             'SUSFS')                 BARIS='SUSFS_PIN;JackA1ltman/NonGKI_Kernel_Build_2nd;mainline;(susfs_patch_to_4\.14\.patch|^scripts/|hook)' ;;
-            'NoMount driver')        BARIS='NOMOUNT_PIN;maxsteeel/nomount;dev;^kernel/src/' ;;
+            'NoMount driver')        BARIS='NOMOUNT_PIN;maxsteeel/nomount;dev;^(kernel/src/|userspace/src/)' ;;
             'NoMount loader')        BARIS='NOMOUNT_LOADER_PIN;maxsteeel/nomount;master;^kernel/setup\.sh' ;;
             'proton-clang')          BARIS='CLANG_PIN;kdrag0n/proton-clang;master;.' ;;
-            'AnyKernel3')            BARIS='AK3_PIN;vlxlxlv/AnyKernel3;mt6781;^tools/' ;;
+            'AnyKernel3')            BARIS='AK3_PIN;vlxlxlv/AnyKernel3;mt6781;^(tools/|META-INF/|ramdisk/)' ;;
             *) echo "ERROR: komponen tak dikenal: $KOMPONEN"; exit 1 ;;
           esac
           IFS=';' read -r NAMA REPO REF SENSITIF <<< "$BARIS"

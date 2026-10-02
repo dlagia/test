@@ -161,19 +161,25 @@ jobs:
           #                      userspace/ nol dampak ke kernel yang dibangun.
           #   - SUSFS          : patch 4.14 dan script hook - ini yang berulang
           #                      kali mematahkan anchor fixer.
-          #   - NoMount dev    : kernel/src/ (driver yang dikompilasi).
+          #   - NoMount dev    : kernel/src/ (driver yang dikompilasi) dan
+          #                      userspace/src/ (step "Compile nm" menyalin
+          #                      nm.c + nm.h dari pin yang sama; file baru di
+          #                      sana mematahkan build). Sejak 2026-10-02.
           #   - NoMount master : kernel/setup.sh (loader yang dipanggil workflow).
-          #   - AnyKernel3     : tools/ (ak3-core.sh; anykernel.sh ditimpa workflow).
+          #   - AnyKernel3     : tools/ (ak3-core.sh; anykernel.sh ditimpa workflow),
+          #                      META-INF/ (update-binary = titik masuk flash) dan
+          #                      ramdisk/ (dump_boot menimpakan isinya ke ramdisk
+          #                      boot). Dua yang terakhir sejak 2026-10-02.
           #   - proton-clang   : apa pun = ganti compiler.
           #   - Build-Kernel_scripts: apa pun = ganti cara integrasi.
           KOMPONEN='
           ^KERNEL_PIN=[0-9a-f]{40};dlagia/android_kernel_xiaomi_rosemary;rosemary-13;^(fs/|arch/arm64/configs/);source kernel
           ^KSU_PIN=[0-9a-f]{40};ReSukiSU/ReSukiSU;main;^kernel/;ReSukiSU
           ^SUSFS_PIN=[0-9a-f]{40};JackA1ltman/NonGKI_Kernel_Build_2nd;mainline;(susfs_patch_to_4\.14\.patch|^scripts/|hook);SUSFS
-          ^NOMOUNT_PIN=[0-9a-f]{40};maxsteeel/nomount;dev;^kernel/src/;NoMount driver
+          ^NOMOUNT_PIN=[0-9a-f]{40};maxsteeel/nomount;dev;^(kernel/src/|userspace/src/);NoMount driver
           ^NOMOUNT_LOADER_PIN=[0-9a-f]{40};maxsteeel/nomount;master;^kernel/setup\.sh;NoMount loader
           ^CLANG_PIN=[0-9a-f]{40};kdrag0n/proton-clang;master;.;proton-clang
-          ^AK3_PIN=[0-9a-f]{40};vlxlxlv/AnyKernel3;mt6781;^tools/;AnyKernel3
+          ^AK3_PIN=[0-9a-f]{40};vlxlxlv/AnyKernel3;mt6781;^(tools/|META-INF/|ramdisk/);AnyKernel3
           ^SCRIPTS_PIN=[0-9a-f]{40};dlagia/Build-Kernel_scripts;main;.;Build-Kernel_scripts
           '
 
