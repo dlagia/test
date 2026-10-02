@@ -14,7 +14,7 @@
 #
 # PENGAMAN YANG PALING PENTING ada di step "Triase": sebelum menulis apa pun, ia
 # membandingkan pin lama dengan tujuan dan menolak kalau ada file sensitif yang
-# tersentuh (fs/, patch SUSFS, kernel/src/, userspace/src/ NoMount, defconfig,
+# tersentuh (source kernel mana pun, patch SUSFS, kernel/src/, userspace/src/ NoMount,
 # META-INF/ AnyKernel3, ...). Jadi tombol ini
 # tidak bisa dipakai untuk diam-diam menaikkan sesuatu yang seharusnya diaudit
 # dulu - kecuali Anda sendiri mencentang "paksa" dan menyatakan sudah paham.
@@ -80,7 +80,7 @@ jobs:
           # diubah, ubah keduanya. Pemisah ';' (bukan '|') karena kolom regex
           # jalur sensitif sendiri memakai '|' untuk alternasi.
           case "$KOMPONEN" in
-            'source kernel')         BARIS='KERNEL_PIN;dlagia/android_kernel_xiaomi_rosemary;rosemary-13;^(fs/|arch/arm64/configs/)' ;;
+            'source kernel')         BARIS='KERNEL_PIN;dlagia/android_kernel_xiaomi_rosemary;rosemary-13;.' ;;
             'Build-Kernel_scripts')  BARIS='SCRIPTS_PIN;dlagia/Build-Kernel_scripts;main;.' ;;
             'ReSukiSU')              BARIS='KSU_PIN;ReSukiSU/ReSukiSU;main;^kernel/' ;;
             'SUSFS')                 BARIS='SUSFS_PIN;JackA1ltman/NonGKI_Kernel_Build_2nd;mainline;(susfs_patch_to_4\.14\.patch|^scripts/|hook)' ;;

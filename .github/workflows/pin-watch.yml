@@ -155,8 +155,16 @@ jobs:
           # pola-di-file ; repo ; branch ; regex jalur sensitif ; nama
           #
           # "jalur sensitif" = file yang, kalau tersentuh, membatalkan audit lama:
-          #   - kernel source  : fs/ (semua patch SUSFS mendarat di sana) dan
-          #                      defconfig (audit BBR/KSU/NoMount).
+          #   - kernel source  : apa pun (sejak 2026-10-02). Dulu cuma fs/ dan
+          #                      defconfig, dengan anggapan "semua patch SUSFS
+          #                      mendarat di fs/" - SALAH: patch 4.14 juga
+          #                      menyentuh kernel/sys.c, kernel/kallsyms.c,
+          #                      mm/memory.c, security/selinux/avc.c, include/,
+          #                      skrip hook menyentuh security/ dan
+          #                      drivers/input/input.c, dan step "Setelan
+          #                      memori" menambal mm/, kernel/sysctl.c dan
+          #                      drivers/block/zram/. Lagi pula setiap commit
+          #                      di repo ini mengubah kernel yang dikompilasi.
           #   - ReSukiSU       : kernel/ saja. Perubahan di manager/ atau
           #                      userspace/ nol dampak ke kernel yang dibangun.
           #   - SUSFS          : patch 4.14 dan script hook - ini yang berulang
@@ -173,7 +181,7 @@ jobs:
           #   - proton-clang   : apa pun = ganti compiler.
           #   - Build-Kernel_scripts: apa pun = ganti cara integrasi.
           KOMPONEN='
-          ^KERNEL_PIN=[0-9a-f]{40};dlagia/android_kernel_xiaomi_rosemary;rosemary-13;^(fs/|arch/arm64/configs/);source kernel
+          ^KERNEL_PIN=[0-9a-f]{40};dlagia/android_kernel_xiaomi_rosemary;rosemary-13;.;source kernel
           ^KSU_PIN=[0-9a-f]{40};ReSukiSU/ReSukiSU;main;^kernel/;ReSukiSU
           ^SUSFS_PIN=[0-9a-f]{40};JackA1ltman/NonGKI_Kernel_Build_2nd;mainline;(susfs_patch_to_4\.14\.patch|^scripts/|hook);SUSFS
           ^NOMOUNT_PIN=[0-9a-f]{40};maxsteeel/nomount;dev;^(kernel/src/|userspace/src/);NoMount driver
