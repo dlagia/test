@@ -2995,9 +2995,15 @@ jobs:
           echo "" >> "$DEF"
           tail -30 "$DEF"
 
+      # Revisi ke-75: setiap `uses:` dipin ke SHA commit, versi rilisnya di
+      # komentar ujung baris. Tag major (v6/v7) bisa digeser pemilik repo aksi ke
+      # commit mana pun tanpa jejak di repo ini - dan aksi itu jalan dengan token
+      # job ini. Deskripsi repo menjanjikan "semua sumber dipin SHA"; sebelum
+      # revisi ini aksi GitHub satu-satunya pengecualian. preflight.sh [3/4]
+      # membandingkan SHA ini dengan rilis terbaru tiap aksi.
       - name: Cache toolchain proton-clang
         id: tc-cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: clang-proton
           # Revisi ke-23: key memuat SHA pin, jadi menaikkan pin otomatis jadi
@@ -3074,7 +3080,7 @@ jobs:
           fi
 
       - name: Cache ccache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.ccache
           key: ccache-rosemary-${{ github.run_id }}
@@ -3443,7 +3449,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload paket + kernel mentah + dtbo + nm CLI
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: rosemary-kernel-build
           if-no-files-found: warn
@@ -3612,7 +3618,7 @@ jobs:
       # jadi tidak menambah artifact di build yang sukses.
       - name: Upload log build lengkap (hanya saat gagal)
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: rosemary-build-log
           if-no-files-found: warn

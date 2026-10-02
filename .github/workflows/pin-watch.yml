@@ -130,7 +130,13 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v7
+      # Revisi ke-75: setiap `uses:` dipin ke SHA commit, versi rilisnya di
+      # komentar ujung baris. Tag major (v6/v7) bisa digeser pemilik repo aksi ke
+      # commit mana pun tanpa jejak di repo ini - dan aksi itu jalan dengan token
+      # job ini. Deskripsi repo menjanjikan "semua sumber dipin SHA"; sebelum
+      # revisi ini aksi GitHub satu-satunya pengecualian. preflight.sh [3/4]
+      # membandingkan SHA ini dengan rilis terbaru tiap aksi.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Bandingkan pin dengan upstream dan tulis laporan
         env:
