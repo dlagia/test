@@ -101,6 +101,20 @@ jobs:
           esac
           IFS=';' read -r NAMA REPO REF SENSITIF <<< "$BARIS"
 
+          # Revisi ke-77: step "Muat pins.env" di build membuang CR (tr -d '\r'),
+          # jadi pins.env ber-CRLF tetap terbangun - tapi di sini setiap `$`
+          # di bawah gagal cocok dan tombol ini berhenti dengan "muncul 0 kali",
+          # keluhan tentang karakter yang tak kelihatan. Sebut sebab aslinya.
+          # Tidak dinormalkan di tempat: itu mengubah semua baris dan penjaga
+          # `git diff --numstat` = 1/1 di bawah memang harus menolaknya.
+          # Dihitung lewat tr, bukan `grep $'\r'`: grep Git-for-Windows membuang
+          # CR sendiri, jadi uji lokal penjaga ini selalu lolos.
+          if [ "$(tr -d '\r' < pins.env | wc -c)" != "$(wc -c < pins.env)" ]; then
+            echo "ERROR: pins.env berakhiran CRLF. Normalkan ke LF (mis. lewat push.sh)"
+            echo "       lalu jalankan tombol ini lagi."
+            exit 1
+          fi
+
           # Wajib PERSIS SATU baris, bukan cuma ada. Nama ganda membuat $LAMA
           # berisi dua SHA berbaris dua, dan sed di bawah tidak akan cocok -
           # gagal, tapi dengan pesan yang menyesatkan. Penjaga yang sama sudah
@@ -134,6 +148,37 @@ jobs:
             echo "       jawaban API: ${BARU:0:120}"
             exit 1
           }
+
+          # Revisi ke-77 - SHA DIKETIK TANGAN BOLEH DATANG DARI FORK. API
+          # `repos/<repo>/commits/<sha>` menjawab commit dari SELURUH jaringan
+          # fork, bukan cuma repo itu (dibuktikan 2026-10-03: commit
+          # reigadegr/nomount b9711ceba dijawab utuh oleh maxsteeel/nomount).
+          # Penjaga di atas cuma membuktikan "ada", jadi pin bisa mendarat di kode
+          # orang lain, dan status `diverged` di bawah sengaja tidak ditolak
+          # (itulah jalan memperbaiki ORPHAN). Laporan pin-watch besoknya baru
+          # memvonis ORPHAN - sesudah build-nya jalan. Syaratnya sekarang: SHA
+          # tujuan TERKANDUNG di cabang $REF (ahead/identical, behind_by 0).
+          # Rollback ke SHA lama di cabang yang sama tetap lolos; sisanya
+          # perlu `paksa`.
+          if [ -n "$SHA_MINTA" ]; then
+            CMP_CABANG="$(gh api "repos/$REPO/compare/$BARU...$REF" 2>/dev/null || true)"
+            ST_CABANG="$(echo "$CMP_CABANG" | jq -r '.status // empty' 2>/dev/null || true)"
+            MUNDUR_CABANG="$(echo "$CMP_CABANG" | jq -r '.behind_by // empty' 2>/dev/null || true)"
+            if { [ "$ST_CABANG" = "ahead" ] || [ "$ST_CABANG" = "identical" ]; } \
+               && [ "$MUNDUR_CABANG" = "0" ]; then
+              echo "cabang   : $BARU terkandung di $REPO@$REF ($ST_CABANG)"
+            elif [ "$PAKSA" != "true" ]; then
+              echo ""
+              echo "DITOLAK: $BARU TIDAK terkandung di cabang $REPO@$REF"
+              echo "  (status '${ST_CABANG:-tak terbaca}', behind_by '${MUNDUR_CABANG:-?}')."
+              echo "Commit dari fork atau dari cabang lain dijawab API seolah milik repo ini;"
+              echo "pin ke sana langsung jadi ORPHAN dan membawa kode yang tidak diaudit."
+              echo "Kalau memang disengaja dan sudah diaudit, jalankan ulang dengan paksa = true."
+              exit 1
+            else
+              echo "PAKSA aktif - $BARU tidak terkandung di $REF (status '${ST_CABANG:-tak terbaca}'), diteruskan."
+            fi
+          fi
 
           # Revisi ke-39 - TOMBOL INI BUTA TERHADAP `# TAHAN`, dan itu lubang
           # kelas revisi ke-38 satu tingkat lebih dalam. Revisi ke-38 menutup

@@ -152,7 +152,12 @@ jobs:
           # Sejak revisi ke-26 filenya pins.env, bukan lagi workflow build:
           # GITHUB_TOKEN dilarang menulis di .github/workflows/, jadi pin harus
           # tinggal di luar sana supaya bisa dinaikkan oleh workflow.
-          ambil() { grep -oiE "$1" "$WF" | head -1 | grep -oiE '[0-9a-f]{40}'; }
+          # Revisi ke-77: pola dibaca PERSIS seperti step "Muat pins.env" di build
+          # - CR dibuang, huruf kecil saja (dulu `-i`), dan berujung `$` (dulu
+          # tidak). Sebelumnya baris yang DITOLAK build (hex huruf besar, ekor
+          # sesudah 40 hex) tetap terbaca di sini sebagai pin sah, jadi laporan
+          # bisa berbunyi "di HEAD" untuk pins.env yang tidak bisa dibangun.
+          ambil() { tr -d '\r' < "$WF" | grep -oE "$1\$" | head -1 | grep -oE '[0-9a-f]{40}'; }
 
           # Pemisah field SENGAJA ';' bukan '|': regex jalur sensitif di kolom 4
           # sendiri memakai '|' (alternasi), dan dengan IFS='|' field-nya akan
@@ -242,7 +247,7 @@ jobs:
             # punya penjaganya, jadi sampai sekarang ia bisa melaporkan SHA yang
             # berbeda dari yang benar-benar dikompilasi - dengan kedua-duanya
             # tetap hijau.
-            n_baris=$(grep -ciE "$pola" "$WF" || true)
+            n_baris=$(tr -d '\r' < "$WF" | grep -cE "$pola\$" || true)
             pin=$(ambil "$pola" || true)
             # Nama variabel pins.env-nya, dikupas dari polanya sendiri
             # (^KSU_PIN=[0-9a-f]{40} -> KSU_PIN) supaya tidak jadi salinan
@@ -292,6 +297,43 @@ jobs:
             fi
 
             if [ "$pin" = "$head" ]; then
+              # Revisi ke-77: "di HEAD" dulu tidak pernah membaca `# TAHAN`.
+              # Tombol "Naikkan pin" menolak kenaikan yang membawa SHA yang
+              # ditahan, tapi jalur lain yang sah - push.sh, sunting web -
+              # tidak melewati tombol itu. Pin yang dinaikkan lewat sana ke SHA
+              # yang ditahan (atau ke keturunannya) dilaporkan bersih di sini,
+              # sampai upstream bergerak lagi. Biaya API nol selama tidak ada
+              # baris TAHAN (keadaan normal).
+              bawa=""
+              while read -r baris_tahan; do
+                [ -n "$baris_tahan" ] || continue
+                sha_tahan=$(printf '%s' "$baris_tahan" | grep -oE '[0-9a-f]{40}' | head -1)
+                if [ "$sha_tahan" = "$pin" ]; then
+                  bawa="pin PERSIS SHA yang ditahan"
+                  break
+                fi
+                cmp_tahan=$(gh api "repos/$repo/compare/${sha_tahan}...${pin}" 2>/dev/null || true)
+                st_tahan=$(printf '%s' "$cmp_tahan" | jq -r '.status // empty' 2>/dev/null || true)
+                case "$st_tahan" in
+                  404|behind|diverged) continue ;;
+                  ahead|identical) ;;
+                  *)
+                    bawa="penahanan \`${sha_tahan:0:9}\` TAK BISA DINILAI (compare menjawab '${st_tahan:-kosong}')"
+                    break
+                    ;;
+                esac
+                mundur_tahan=$(printf '%s' "$cmp_tahan" | jq -r '.behind_by // empty' 2>/dev/null || true)
+                if [ "$mundur_tahan" = "0" ]; then
+                  bawa="\`${sha_tahan:0:9}\` LELUHUR pin ($st_tahan, behind_by 0) - kodenya ikut dikompilasi"
+                  break
+                fi
+              done < <(grep -E "^# TAHAN [A-Za-z0-9_-]+ [0-9a-f]{40}([[:space:]].*)?$" "$WF" || true)
+              if [ -n "$bawa" ]; then
+                printf '| %s | `%s` | `%s` | di HEAD | **PERLU AUDIT** - pin membawa SHA yang ditahan: %s. Audit ulang lalu hapus baris `# TAHAN`-nya, atau turunkan pin |\n' \
+                  "$nama" "${pin:0:9}" "${head:0:9}" "$bawa" >> "$TABEL"
+                echo 1 > /tmp/perlu_audit
+                continue
+              fi
               printf '| %s | `%s` | `%s` | di HEAD | - |\n' "$nama" "${pin:0:9}" "${head:0:9}" >> "$TABEL"
               continue
             fi
@@ -653,8 +695,8 @@ jobs:
               fi
               if [ "$ADA_DRIFT" = "0" ]; then
                 if [ "$PERLU_AUDIT" = "1" ]; then
-                  printf 'Ada juga baris yang gagal dinilai (POLA TAK KETEMU / GAGAL AMBIL). '
-                  printf 'Lihat kolom Status: laporan ini belum tentu lengkap.\n'
+                  printf 'Ada juga baris bertanda PERLU AUDIT, POLA TAK KETEMU atau GAGAL AMBIL. '
+                  printf 'Lihat kolom Status dan Vonis: laporan ini belum tentu lengkap.\n'
                 fi
               elif [ "$PERLU_AUDIT" = "1" ]; then
                 printf 'Ada yang menyentuh bagian yang dulu diaudit (atau pin sudah orphan). '
@@ -669,8 +711,8 @@ jobs:
             elif [ "$PERLU_AUDIT" = "1" ]; then
               # Revisi ke-29: keadaan ini nyata dan dulu tidak punya kalimat sendiri.
               printf '\nTidak ada pin yang bergerak, TAPI ada baris yang gagal dinilai '
-              printf '(POLA TAK KETEMU / GAGAL AMBIL / TAK BISA DIBANDINGKAN). '
-              printf 'Lihat kolom Status: laporan ini belum tentu lengkap.\n'
+              printf '(POLA TAK KETEMU / GAGAL AMBIL / TAK BISA DIBANDINGKAN) atau pin '
+              printf 'yang membawa SHA yang ditahan. Lihat kolom Status dan Vonis.\n'
             else
               printf '\nSemua pin di HEAD dan semua aksi di rilis terbarunya. Tidak ada yang perlu dikerjakan.\n'
             fi
