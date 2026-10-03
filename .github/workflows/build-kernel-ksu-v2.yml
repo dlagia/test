@@ -1662,10 +1662,13 @@ jobs:
             echo "  diharapkan: $KERNEL_PIN"
             echo "  aktual    : $KERNEL_ACT"
             echo "Yang harus dilakukan sebelum menaikkan pin ini:"
-            echo "  1) git log --stat $KERNEL_PIN..$KERNEL_ACT -- fs/ arch/arm64/configs/"
-            echo "  2) kalau fs/ tersentuh: ulangi simulasi patch SUSFS (lihat blok"
-            echo "     BUKTI SIMULASI di step integrasi) dan perbarui daftar reject"
-            echo "     yang diharapkan."
+            echo "  1) git log --stat $KERNEL_PIN..$KERNEL_ACT"
+            echo "     (SELURUH pohon: patch SUSFS 4.14 juga menyentuh kernel/, mm/,"
+            echo "     security/, include/; skrip hook drivers/input/; step memori mm/,"
+            echo "     kernel/sysctl.c dan zram - bukan cuma fs/)"
+            echo "  2) kalau berkas yang ditambal tersentuh: ulangi simulasi patch SUSFS"
+            echo "     (lihat blok BUKTI SIMULASI di step integrasi) dan perbarui daftar"
+            echo "     reject yang diharapkan."
             echo "  3) kalau rosemary_defconfig tersentuh: ulangi audit defconfig."
             exit 1
           }
@@ -2369,6 +2372,22 @@ jobs:
           # sehingga HTTP 404/500 dari curl tidak pernah menggagalkan step.
           set -o pipefail
           rm -rf NoMount fs/nomount
+          # Revisi ke-78 - PIN NoMount YANG ORPHAN DULU MEMATIKAN BUILD. setup.sh
+          # (set -eu) meng-clone repo, `git fetch --all --tags`, lalu
+          # `git checkout "$1"` TANPA `||`. Commit yang sudah lepas dari cabang
+          # (upstream force-push dev, sudah terjadi 2026-09-30 atas 88c5eccaf)
+          # tidak ikut fetch itu, jadi checkout gagal: "fatal: unable to read
+          # tree", exit 128 - disimulasikan 2026-10-03 dengan setup.sh
+          # c5fad9d8f atas 88c5eccaf. KSU, clang dan AK3 menyembuhkan diri lewat
+          # fetch-by-SHA; NoMount tidak, sehingga setiap build ulang - termasuk
+          # mundur ke jaring lama di pins.env - mati sampai pin dinaikkan.
+          # Obatnya tanpa menyentuh setup.sh: clone lebih dulu dan ambil SHA pin
+          # per-hash (GitHub tetap melayaninya walau orphan). setup.sh melihat
+          # NoMount/ sudah ada, melewati clone-nya sendiri, dan checkout-nya
+          # menemukan objek itu secara lokal. Untuk pin yang masih di cabang,
+          # fetch ini no-op.
+          git clone -q https://github.com/maxsteeel/nomount NoMount
+          git -C NoMount fetch -q origin "$NOMOUNT_PIN"
           # setup.sh sendiri tetap di-pin ke commit tertentu (isi script stabil);
           # argumen $1 = commit driver yang mau di-checkout (detached HEAD).
           # -f: HTTP >=400 -> curl exit != 0 (tanpa -f, halaman error ikut ter-pipe
