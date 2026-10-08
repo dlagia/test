@@ -2624,6 +2624,8 @@ jobs:
               raise SystemExit(1)
           if "nm_sop->fake_sop.destroy_inode = nomount_hijacked_destroy_inode;" in src:
               print("OK: NoMount masih membersihkan di destroy_inode - evict virtual tetap generik")
+          elif "bool virtual = inode->i_op == &nm_file_iops" in src and "!virtual && nm_sop && nm_sop->orig_sop" in src:
+              print("OK: upstream sudah memisahkan inode virtual di nomount_hijacked_evict_inode() - tambalan tidak diperlukan")
           elif src.count(fixed) == 1:
               print("OK: evict inode virtual sudah lewat jalur generik (tambalan sudah terpasang)")
           else:
