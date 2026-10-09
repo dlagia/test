@@ -2511,11 +2511,17 @@ jobs:
           # satunya di seluruh berkas. Jumlah lain = kode berubah di jalur yang
           # pernah bocor, jadi audit ulang dulu sebelum membangun.
           N_GET_PATH="$(grep -c '&rule_info, true)' fs/nomount/nomount.c || true)"
-          test "$N_GET_PATH" = "1" || {
-            echo "ERROR: diharapkan tepat 1 '&rule_info, true)' di nomount.c, aktual $N_GET_PATH"
+          if [ "$N_GET_PATH" = "1" ]; then
+            echo "OK: get_path tepat 1 (kode lama)"
+          elif [ "$N_GET_PATH" = "2" ] && ! grep -q 'nomount_resolve_rule_dentry' fs/nomount/nomount.c \
+               && grep -q 'nm_free_rule(rule_info->rule)' fs/nomount/nomount.c \
+               && grep -q 'nm_dir_put(rule_info->this_dir)' fs/nomount/nomount.c; then
+            echo "OK: 2 panggilan get_refs di lookup; rule dilepas di nm_materialize_rule (refcount seimbang)"
+          else
+            echo "ERROR: diharapkan tepat 1 '&rule_info, true)' di nomount.c, aktual $N_GET_PATH - audit ulang"
             grep -n '__nomount_get_rule_info(' fs/nomount/nomount.c || true
             exit 1
-          }
+          fi
 
           # Revisi ke-53: upstream 646b62e41 membuat __nomount_clear_all()
           # membebaskan rule sesudah hash_del_rcu() saja, tanpa melepasnya dari
