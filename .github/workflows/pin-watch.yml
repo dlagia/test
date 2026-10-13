@@ -400,14 +400,19 @@ jobs:
               # Commit sisi pin ($mundur) ikut HILANG kalau dinaikkan, dan
               # berkasnya dulu tidak disebut sama sekali (KSU 6200478dd: revert
               # di kernel/ hilang, laporan bilang "sensitif 0").
+              # Sekali ulang, seperti setiap panggilan gh api lain di robot ini.
               cmp_balik=$(gh api "repos/$repo/compare/$head...$pin" 2>/dev/null || true)
+              if [ "$(echo "$cmp_balik" | jq -r '.status // empty' 2>/dev/null || true)" != "diverged" ]; then
+                sleep 5
+                cmp_balik=$(gh api "repos/$repo/compare/$head...$pin" 2>/dev/null || true)
+              fi
               if [ "$(echo "$cmp_balik" | jq -r '.status // empty' 2>/dev/null || true)" = "diverged" ]; then
                 b_hilang=$(echo "$cmp_balik" | jq -r '.files[]?.filename')
                 n_hilang=$(echo "$b_hilang" | grep -c . || true)
                 k_hilang=$(echo "$b_hilang" | grep -cE "$sensitif" || true)
                 hilang_baris="- commit sisi pin yang HILANG kalau dinaikkan: $mundur, file: ${n_hilang:-0}, yang sensitif: **${k_hilang:-0}**"
                 if [ "${k_hilang:-0}" -gt 0 ]; then
-                  hilang_baris="$hilang_baris ($(echo "$b_hilang" | grep -E "$sensitif" | head -5 | sed 's/^/`/; s/$/`/' | paste -sd, -))"
+                  hilang_baris="$hilang_baris ($(echo "$b_hilang" | grep -E "$sensitif" | head -5 | sed 's/^/`/; s/$/`/' | paste -sd, - || true))"
                 fi
               else
                 hilang_baris="- commit sisi pin yang HILANG kalau dinaikkan: $mundur, berkasnya **tak terbaca** (compare balik gagal)"

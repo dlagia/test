@@ -365,9 +365,12 @@ jobs:
               CMP_BALIK="$(gh api "repos/$REPO/compare/$BARU...$LAMA" 2>/dev/null || true)"
             fi
             if [ "$(echo "$CMP_BALIK" | jq -r '.status // empty' 2>/dev/null || true)" != "diverged" ]; then
-              echo "DITOLAK: compare balik $BARU...$LAMA tak terbaca, jadi commit sisi pin"
-              echo "yang akan hilang tidak bisa dinilai."
-              [ "$PAKSA" = "true" ] || exit 1
+              echo "compare balik $BARU...$LAMA tak terbaca, jadi commit sisi pin yang"
+              echo "akan hilang tidak bisa dinilai."
+              if [ "$PAKSA" != "true" ]; then
+                echo "DITOLAK. Sesudah diaudit, jalankan ulang dengan paksa = true."
+                exit 1
+              fi
               echo "PAKSA aktif - diteruskan tanpa menilai commit yang hilang."
             else
               BERKAS_HILANG="$(echo "$CMP_BALIK" | jq -r '.files[]?.filename')"
