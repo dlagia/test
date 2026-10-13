@@ -2510,17 +2510,30 @@ jobs:
           # __nomount_get_rule_info() yang boleh get_path=true, dan itu satu-
           # satunya di seluruh berkas. Jumlah lain = kode berubah di jalur yang
           # pernah bocor, jadi audit ulang dulu sebelum membangun.
-          N_GET_PATH="$(grep -c '&rule_info, true)' fs/nomount/nomount.c || true)"
+          # Guard NoMount (revisi ke-80): cek STRUKTUR refcount, bukan jumlah string.
+          # Bentuk lama "tepat 1 &rule_info,true)" tetap diterima (titik B e2513c3ac).
+          # HEAD baru (594778b39) lolos lewat struktur. TIDAK membuktikan race
+          # atomic_inc aman - itu belum diaudit (TAHAN bbfdcef2f tetap berlaku).
+          NM=fs/nomount/nomount.c
+          N_GET_PATH="$(grep -c "&rule_info, true)" "$NM" || true)"
           if [ "$N_GET_PATH" = "1" ]; then
-            echo "OK: get_path tepat 1 (kode lama)"
-          elif [ "$N_GET_PATH" = "2" ] && ! grep -q 'nomount_resolve_rule_dentry' fs/nomount/nomount.c \
-               && { grep -q 'nm_free_rule(rule_info->rule)' fs/nomount/nomount.c || grep -q 'path_put(&rule_info->r_path)' fs/nomount/nomount.c; } \
-               && grep -q 'nm_dir_put(rule_info->this_dir)' fs/nomount/nomount.c; then
-            echo "OK: 2 panggilan get_refs di lookup; rule dilepas di jalur out (refcount seimbang)"
+            echo "OK: bentuk lama (get_path tepat 1)"
           else
-            echo "ERROR: diharapkan tepat 1 '&rule_info, true)' di nomount.c, aktual $N_GET_PATH - audit ulang"
-            grep -n '__nomount_get_rule_info(' fs/nomount/nomount.c || true
-            exit 1
+            N_RESOLVE="$(grep -c "^static bool nm_resolve_rule(" "$NM" || true)"
+            N_INC="$(grep -c "atomic_inc(&out->this_dir->refs)" "$NM" || true)"
+            N_PGET="$(grep -c "path_get(&out->r_path)" "$NM" || true)"
+            N_MAT="$(grep -c "^static struct dentry \*nm_materialize_rule(" "$NM" || true)"
+            N_DPUT="$(grep -c "nm_dir_put(rule_info->this_dir)" "$NM" || true)"
+            N_PPUT="$(grep -c "path_put(&rule_info->r_path)" "$NM" || true)"
+            if [ "$N_RESOLVE" = "1" ] && [ "$N_INC" = "1" ] && [ "$N_PGET" = "1" ] \
+               && [ "$N_MAT" = "1" ] && [ "$N_DPUT" = "1" ] && [ "$N_PPUT" = "1" ]; then
+              echo "OK: struktur nm_resolve_rule + nm_materialize_rule (refs/r_path seimbang)"
+              echo "PERINGATAN: race atomic_inc di nm_resolve_rule BELUM diaudit"
+            else
+              echo "ERROR: guard NoMount gagal. get_path=$N_GET_PATH resolve=$N_RESOLVE inc=$N_INC pget=$N_PGET mat=$N_MAT dput=$N_DPUT pput=$N_PPUT"
+              grep -n "__nomount_get_rule_info(" "$NM" || true
+              exit 1
+            fi
           fi
 
           # Revisi ke-53: upstream 646b62e41 membuat __nomount_clear_all()
