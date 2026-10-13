@@ -391,10 +391,27 @@ jobs:
             # di blok "cara menaikkan" di bawah.
             aman=1
 
+            hilang_baris=""
             if [ "$status" = "diverged" ]; then
               ket="**ORPHAN** (diverged, maju $maju mundur $mundur)"
               echo 1 > /tmp/perlu_audit
               aman=0
+              # Revisi ke-81: "file tersentuh" di bawah cuma merge-base -> HEAD.
+              # Commit sisi pin ($mundur) ikut HILANG kalau dinaikkan, dan
+              # berkasnya dulu tidak disebut sama sekali (KSU 6200478dd: revert
+              # di kernel/ hilang, laporan bilang "sensitif 0").
+              cmp_balik=$(gh api "repos/$repo/compare/$head...$pin" 2>/dev/null || true)
+              if [ "$(echo "$cmp_balik" | jq -r '.status // empty' 2>/dev/null || true)" = "diverged" ]; then
+                b_hilang=$(echo "$cmp_balik" | jq -r '.files[]?.filename')
+                n_hilang=$(echo "$b_hilang" | grep -c . || true)
+                k_hilang=$(echo "$b_hilang" | grep -cE "$sensitif" || true)
+                hilang_baris="- commit sisi pin yang HILANG kalau dinaikkan: $mundur, file: ${n_hilang:-0}, yang sensitif: **${k_hilang:-0}**"
+                if [ "${k_hilang:-0}" -gt 0 ]; then
+                  hilang_baris="$hilang_baris ($(echo "$b_hilang" | grep -E "$sensitif" | head -5 | sed 's/^/`/; s/$/`/' | paste -sd, -))"
+                fi
+              else
+                hilang_baris="- commit sisi pin yang HILANG kalau dinaikkan: $mundur, berkasnya **tak terbaca** (compare balik gagal)"
+              fi
             elif [ "$status" = "behind" ]; then
               # Revisi ke-39: keadaan ketiga yang selama ini jatuh ke `else`.
               # 'behind' = ujung branch ada DI BELAKANG pin - upstream force-push
@@ -510,6 +527,7 @@ jobs:
               printf '\n### %s (`%s`)\n\n' "$nama" "$repo"
               printf -- '- naik: `%s` -> `%s` (%s commit)\n' "${pin:0:9}" "${head:0:9}" "$maju"
               printf -- '- file tersentuh: %s, yang sensitif (`%s`): **%s**\n' "$n_berkas" "$sensitif" "$kena"
+              if [ -n "$hilang_baris" ]; then printf -- '%s\n' "$hilang_baris"; fi
               if [ "$n_berkas" -ge 300 ]; then
                 printf -- '- **daftar file terpotong di 300 oleh API compare** - jumlah sensitif di atas TIDAK bisa dipakai; buka diff-nya sendiri.\n'
               fi

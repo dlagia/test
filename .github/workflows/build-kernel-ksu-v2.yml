@@ -2512,8 +2512,10 @@ jobs:
           # pernah bocor, jadi audit ulang dulu sebelum membangun.
           # Guard NoMount (revisi ke-80): cek STRUKTUR refcount, bukan jumlah string.
           # Bentuk lama "tepat 1 &rule_info,true)" tetap diterima (titik B e2513c3ac).
-          # HEAD baru (594778b39) lolos lewat struktur. TIDAK membuktikan race
-          # atomic_inc aman - itu belum diaudit (TAHAN bbfdcef2f tetap berlaku).
+          # NoMount 2.1 (594778b39, 7046c7ad3) lolos lewat struktur. Guard ini
+          # cuma memastikan bentuknya; keamanan refcount-nya dari audit di
+          # pins.env: atomic_inc refs dan path_get r_path di bagian RCU aman
+          # (audit 2026-10-13 + revisi ke-81), boot terbukti di titik C.
           NM=fs/nomount/nomount.c
           N_GET_PATH="$(grep -c "&rule_info, true)" "$NM" || true)"
           if [ "$N_GET_PATH" = "1" ]; then
@@ -2528,7 +2530,7 @@ jobs:
             if [ "$N_RESOLVE" = "1" ] && [ "$N_INC" = "1" ] && [ "$N_PGET" = "1" ] \
                && [ "$N_MAT" = "1" ] && [ "$N_DPUT" = "1" ] && [ "$N_PPUT" = "1" ]; then
               echo "OK: struktur nm_resolve_rule + nm_materialize_rule (refs/r_path seimbang)"
-              echo "PERINGATAN: race atomic_inc di nm_resolve_rule BELUM diaudit"
+              echo "Catatan: keamanan refcount nm_resolve_rule dari audit di pins.env, bukan dari guard ini"
             else
               echo "ERROR: guard NoMount gagal. get_path=$N_GET_PATH resolve=$N_RESOLVE inc=$N_INC pget=$N_PGET mat=$N_MAT dput=$N_DPUT pput=$N_PPUT"
               grep -n "__nomount_get_rule_info(" "$NM" || true

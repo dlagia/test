@@ -350,9 +350,41 @@ jobs:
           STATUS="$(echo "$CMP" | jq -r .status)"
           MAJU="$(echo "$CMP" | jq -r .ahead_by)"
           BERKAS="$(echo "$CMP" | jq -r '.files[]?.filename')"
+          # Revisi ke-81: kalimat "triase-nya tetap sahih" di atas cuma separuh
+          # benar. Untuk 'diverged' .files berisi merge-base -> tujuan, tapi
+          # commit yang hanya ada di sisi PIN (behind_by) ikut HILANG saat pin
+          # dinaikkan, dan berkasnya tidak pernah dihitung. Kasus nyata
+          # 2026-10-13: KSU 6200478dd -> f4435f007 membuang revert penangguhan
+          # SUSFS di kernel/tools/susfs_compat.mk, tapi triase berbunyi
+          # "0 sensitif"; yang menolak cuma baris TAHAN. Compare kebalikannya
+          # (tujuan...pin) memberi persis berkas sisi pin itu; digabung ke BERKAS.
+          if [ "$STATUS" = "diverged" ]; then
+            CMP_BALIK="$(gh api "repos/$REPO/compare/$BARU...$LAMA" 2>/dev/null || true)"
+            if [ "$(echo "$CMP_BALIK" | jq -r '.status // empty' 2>/dev/null || true)" != "diverged" ]; then
+              sleep 5
+              CMP_BALIK="$(gh api "repos/$REPO/compare/$BARU...$LAMA" 2>/dev/null || true)"
+            fi
+            if [ "$(echo "$CMP_BALIK" | jq -r '.status // empty' 2>/dev/null || true)" != "diverged" ]; then
+              echo "DITOLAK: compare balik $BARU...$LAMA tak terbaca, jadi commit sisi pin"
+              echo "yang akan hilang tidak bisa dinilai."
+              [ "$PAKSA" = "true" ] || exit 1
+              echo "PAKSA aktif - diteruskan tanpa menilai commit yang hilang."
+            else
+              BERKAS_HILANG="$(echo "$CMP_BALIK" | jq -r '.files[]?.filename')"
+              N_HILANG="$(echo "$BERKAS_HILANG" | grep -c . || true)"
+              echo "commit sisi pin yang HILANG: $(echo "$CMP_BALIK" | jq -r .ahead_by), ${N_HILANG:-0} file (ikut dinilai di bawah)"
+              BERKAS="$(printf '%s\n%s\n' "$BERKAS" "$BERKAS_HILANG" | grep . | sort -u || true)"
+              if [ "${N_HILANG:-0}" -ge 300 ]; then
+                # Sama dengan gerbang 300 di bawah: daftar terpotong tidak bisa
+                # dipakai untuk bilang "0 sensitif".
+                N_BERKAS_PAKSA_300=1
+              fi
+            fi
+          fi
           N_BERKAS="$(echo "$BERKAS" | grep -c . || true)"
           KENA="$(echo "$BERKAS" | grep -cE "$SENSITIF" || true)"
           : "${N_BERKAS:=0}" "${KENA:=0}"
+          if [ "${N_BERKAS_PAKSA_300:-0}" = "1" ] && [ "$N_BERKAS" -lt 300 ]; then N_BERKAS=300; fi
 
           echo "status   : $STATUS, maju $MAJU commit, $N_BERKAS file, $KENA sensitif"
           # Revisi ke-39: status 'behind' berarti tujuan ada DI BELAKANG pin
