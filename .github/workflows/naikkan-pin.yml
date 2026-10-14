@@ -91,7 +91,7 @@ jobs:
           case "$KOMPONEN" in
             'source kernel')         BARIS='KERNEL_PIN;dlagia/android_kernel_xiaomi_rosemary;rosemary-13;.' ;;
             'Build-Kernel_scripts')  BARIS='SCRIPTS_PIN;dlagia/Build-Kernel_scripts;main;.' ;;
-            'ReSukiSU')              BARIS='KSU_PIN;ReSukiSU/ReSukiSU;main;^kernel/' ;;
+            'ReSukiSU')              BARIS='KSU_PIN;Baka-SU/BakaSU;main;^kernel/' ;;
             'SUSFS')                 BARIS='SUSFS_PIN;JackA1ltman/NonGKI_Kernel_Build_2nd;mainline;(susfs_patch_to_4\.14\.patch|^scripts/|hook)' ;;
             'NoMount driver')        BARIS='NOMOUNT_PIN;maxsteeel/nomount;dev;^(kernel/src/|userspace/src/)' ;;
             'NoMount loader')        BARIS='NOMOUNT_LOADER_PIN;maxsteeel/nomount;master;^kernel/setup\.sh' ;;

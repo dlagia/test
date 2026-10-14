@@ -1767,7 +1767,10 @@ jobs:
           # di kernel/, jadi audit Kconfig/Kbuild/setup.sh/hook di atas tetap sahih
           # dan satu-satunya efek di build adalah KSU_VERSION +3.
           # KSU_PIN dari pins.env (revisi ke-26).
-          sed -i "s|ReSukiSU/ReSukiSU/main/kernel/setup.sh|ReSukiSU/ReSukiSU/${KSU_PIN}/kernel/setup.sh|" integrate_ksu_susfs.sh
+          # 2026-10-14: ReSukiSU/ReSukiSU dipindah ke Baka-SU/BakaSU (rename upstream).
+          # Pola kiri tetap nama lama karena isi integrate_ksu_susfs.sh di SCRIPTS_PIN
+          # masih begitu; URL hasilnya langsung ke repo baru, tidak bergantung redirect.
+          sed -i "s|ReSukiSU/ReSukiSU/main/kernel/setup.sh|Baka-SU/BakaSU/${KSU_PIN}/kernel/setup.sh|" integrate_ksu_susfs.sh
           sed -i "s#setup.sh\" | bash >#setup.sh\" | bash -s ${KSU_PIN} >#" integrate_ksu_susfs.sh
           # PENTING: URL dan `| bash >` ada di BARIS YANG SAMA (baris 11), jadi di sini
           # dipakai `grep -o | wc -l` (hitung KEMUNCULAN), bukan `grep -c` yang
@@ -1776,7 +1779,7 @@ jobs:
           if [ "$KSU_HIT" != "2" ]; then
             echo "ERROR: pin ReSukiSU gagal disisipkan (harus 2 kemunculan: URL + argumen, dapat $KSU_HIT)."
             echo "Struktur integrate_ksu_susfs.sh berubah? Baris yang menyebut ReSukiSU:"
-            grep -n 'ReSukiSU' integrate_ksu_susfs.sh || true
+            grep -nE 'ReSukiSU|BakaSU' integrate_ksu_susfs.sh || true
             exit 1
           fi
           echo "[+] ReSukiSU di-PIN ke ${KSU_PIN} (URL setup.sh + argumen checkout)"

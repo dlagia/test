@@ -196,7 +196,7 @@ jobs:
           #   - Build-Kernel_scripts: apa pun = ganti cara integrasi.
           KOMPONEN='
           ^KERNEL_PIN=[0-9a-f]{40};dlagia/android_kernel_xiaomi_rosemary;rosemary-13;.;source kernel
-          ^KSU_PIN=[0-9a-f]{40};ReSukiSU/ReSukiSU;main;^kernel/;ReSukiSU
+          ^KSU_PIN=[0-9a-f]{40};Baka-SU/BakaSU;main;^kernel/;ReSukiSU
           ^SUSFS_PIN=[0-9a-f]{40};JackA1ltman/NonGKI_Kernel_Build_2nd;mainline;(susfs_patch_to_4\.14\.patch|^scripts/|hook);SUSFS
           ^NOMOUNT_PIN=[0-9a-f]{40};maxsteeel/nomount;dev;^(kernel/src/|userspace/src/);NoMount driver
           ^NOMOUNT_LOADER_PIN=[0-9a-f]{40};maxsteeel/nomount;master;^kernel/setup\.sh;NoMount loader
