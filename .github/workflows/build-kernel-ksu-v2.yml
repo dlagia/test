@@ -2524,13 +2524,16 @@ jobs:
           if [ "$N_GET_PATH" = "1" ]; then
             echo "OK: bentuk lama (get_path tepat 1)"
           else
-            N_RESOLVE="$(grep -c "^static bool nm_resolve_rule(" "$NM" || true)"
+            # Revisi ke-87: sejak e077d8b68 resolver dipecah jadi
+            # nm_resolve_rule_from_leaf / nm_resolve_rule_default; tiap resolver
+            # tepat satu atomic_inc + satu path_get.
+            N_RESOLVE="$(grep -cE "^static bool nm_resolve_rule(_from_leaf|_default)?\(" "$NM" || true)"
             N_INC="$(grep -c "atomic_inc(&out->this_dir->refs)" "$NM" || true)"
             N_PGET="$(grep -c "path_get(&out->r_path)" "$NM" || true)"
             N_MAT="$(grep -c "^static struct dentry \*nm_materialize_rule(" "$NM" || true)"
             N_DPUT="$(grep -c "nm_dir_put(rule_info->this_dir)" "$NM" || true)"
             N_PPUT="$(grep -c "path_put(&rule_info->r_path)" "$NM" || true)"
-            if [ "$N_RESOLVE" = "1" ] && [ "$N_INC" = "1" ] && [ "$N_PGET" = "1" ] \
+            if [ "$N_RESOLVE" -ge 1 ] && [ "$N_INC" = "$N_RESOLVE" ] && [ "$N_PGET" = "$N_RESOLVE" ] \
                && [ "$N_MAT" = "1" ] && [ "$N_DPUT" = "1" ] && [ "$N_PPUT" = "1" ]; then
               echo "OK: struktur nm_resolve_rule + nm_materialize_rule (refs/r_path seimbang)"
               echo "Catatan: keamanan refcount nm_resolve_rule dari audit di pins.env, bukan dari guard ini"
@@ -2550,8 +2553,10 @@ jobs:
           # dari children, lewat nm_detach_rule_locked() /
           # __nomount_delete_child_locked() (a8fe2f20) atau mengosongkan
           # ->children langsung (d6cb7158). Fungsi tidak ditemukan = gagal juga.
-          NM_CLEAR="$(awk '/^static void __nomount_clear_all\(/{f=1} f{print} f&&/^}/{exit}' fs/nomount/nomount.c)"
-          N_CLEAR="$(printf '%s\n' "$NM_CLEAR" | grep -c 'nm_detach_rule_locked(\|__nomount_delete_child_locked(\|->children, NULL)' || true)"
+          # Revisi ke-87: fdaff1ed7 mengganti awalan nomount_ jadi nm_; fungsinya
+          # kini nm_clear_state() dan melepas lewat nm_delete_child_locked(leaf, true).
+          NM_CLEAR="$(awk '/^static void (__nomount_clear_all|nm_clear_state)\(/{f=1} f{print} f&&/^}/{exit}' fs/nomount/nomount.c)"
+          N_CLEAR="$(printf '%s\n' "$NM_CLEAR" | grep -c 'nm_detach_rule_locked(\|__nomount_delete_child_locked(\|nm_delete_child_locked(\|->children, NULL)' || true)"
           test "$N_CLEAR" -ge 1 || {
             echo "ERROR: __nomount_clear_all() tidak melepas rule dari children direktori."
             echo "       Rule yang dibebaskan tetap ditunjuk dir_node->children: use-after-free"
@@ -2643,13 +2648,21 @@ jobs:
           virt = "inode->i_op != &nm_file_iops && inode->i_op != &nm_dir_iops && "
           orig = "if (nm_sop && nm_sop->orig_sop && nm_sop->orig_sop->evict_inode) {"
           fixed = "if (" + virt + orig[len("if ("):]
-          if "nm_sop->fake_sop.evict_inode = nomount_hijacked_evict_inode;" not in src:
+          # Revisi ke-87: fdaff1ed7 mengganti nama jadi nm_hijacked_evict_inode dan
+          # memisahkan inode virtual lewat nm_inode_is_virtual() di nomount.h.
+          with open("fs/nomount/nomount.h") as f:
+              hdr = f.read()
+          if ("nm_sop->fake_sop.evict_inode = nomount_hijacked_evict_inode;" not in src
+                  and "nm_sop->fake_sop.evict_inode = nm_hijacked_evict_inode;" not in src):
               print("ERROR: evict_inode tidak lagi dibajak NoMount - audit ulang")
               raise SystemExit(1)
           if "nm_sop->fake_sop.destroy_inode = nomount_hijacked_destroy_inode;" in src:
               print("OK: NoMount masih membersihkan di destroy_inode - evict virtual tetap generik")
-          elif "bool virtual = inode->i_op == &nm_file_iops" in src and "!virtual && nm_sop && nm_sop->orig_sop" in src:
-              print("OK: upstream sudah memisahkan inode virtual di nomount_hijacked_evict_inode() - tambalan tidak diperlukan")
+          elif "!virtual && nm_sop && nm_sop->orig_sop" in src and (
+                  "bool virtual = inode->i_op == &nm_file_iops" in src
+                  or ("bool virtual = nm_inode_is_virtual(inode);" in src
+                      and "return inode->i_op == &nm_file_iops || inode->i_op == &nm_dir_iops;" in hdr)):
+              print("OK: upstream sudah memisahkan inode virtual di hijacked_evict_inode() - tambalan tidak diperlukan")
           elif src.count(fixed) == 1:
               print("OK: evict inode virtual sudah lewat jalur generik (tambalan sudah terpasang)")
           else:
