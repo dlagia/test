@@ -425,6 +425,10 @@ jobs:
             echo ""
             echo "File sensitif yang tersentuh:"
             echo "$BERKAS" | grep -E "$SENSITIF" | head -20 | sed 's/^/  - /'
+            # Revisi ke-90: dulu dipotong di 20 tanpa tanda (sama dengan pin-watch).
+            if [ "$KENA" -gt 20 ]; then
+              echo "  - ... dan $((KENA - 20)) lagi (daftar dipotong di 20; lengkapnya di diff)"
+            fi
             echo ""
             if [ "$PAKSA" != "true" ]; then
               echo "DITOLAK: kenaikan ini menyentuh bagian yang dulu diaudit."

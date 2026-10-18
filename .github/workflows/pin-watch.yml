@@ -412,7 +412,12 @@ jobs:
                 k_hilang=$(echo "$b_hilang" | grep -cE "$sensitif" || true)
                 hilang_baris="- commit sisi pin yang HILANG kalau dinaikkan: $mundur, file: ${n_hilang:-0}, yang sensitif: **${k_hilang:-0}**"
                 if [ "${k_hilang:-0}" -gt 0 ]; then
-                  hilang_baris="$hilang_baris ($(echo "$b_hilang" | grep -E "$sensitif" | head -5 | sed 's/^/`/; s/$/`/' | paste -sd, - || true))"
+                  hilang_baris="$hilang_baris ($(echo "$b_hilang" | grep -E "$sensitif" | head -5 | sed 's/^/`/; s/$/`/' | paste -sd, - || true)"
+                  # Revisi ke-90: sama dengan daftar di bawah - lebih dari 5 diberi tanda.
+                  if [ "$k_hilang" -gt 5 ]; then
+                    hilang_baris="$hilang_baris, ... dan $((k_hilang - 5)) lagi"
+                  fi
+                  hilang_baris="$hilang_baris)"
                 fi
               else
                 hilang_baris="- commit sisi pin yang HILANG kalau dinaikkan: $mundur, berkasnya **tak terbaca** (compare balik gagal)"
@@ -539,6 +544,12 @@ jobs:
               if [ "$kena" -gt 0 ]; then
                 printf -- '- file sensitifnya:\n'
                 echo "$berkas" | grep -E "$sensitif" | head -20 | sed 's/^/  - `/; s/$/`/'
+                # Revisi ke-90: daftar dipotong di 20 tanpa tanda, jadi KSU
+                # "sensitif: 21" cuma menampilkan 20 nama dan berkas ke-21
+                # (kernel/tools/kernel_compat.mk) hilang diam-diam dari laporan.
+                if [ "$kena" -gt 20 ]; then
+                  printf -- '  - ... dan %s lagi (daftar dipotong di 20; lengkapnya di diff)\n' "$((kena - 20))"
+                fi
               fi
               printf -- '- diff: https://github.com/%s/compare/%s...%s\n' "$repo" "$pin" "$head"
               if [ -n "$tahan_info" ]; then
