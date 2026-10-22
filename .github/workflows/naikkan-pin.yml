@@ -30,7 +30,7 @@ on:
         type: choice
         options:
           - 'SUSFS'
-          - 'ReSukiSU'
+          - 'BakaSU'
           - 'NoMount driver'
           - 'NoMount loader'
           - 'source kernel'
@@ -88,10 +88,12 @@ jobs:
           # Tabel ini KEMBARAN tabel KOMPONEN di pin-watch.yml - kalau satu
           # diubah, ubah keduanya. Pemisah ';' (bukan '|') karena kolom regex
           # jalur sensitif sendiri memakai '|' untuk alternasi.
+          # Revisi ke-93: label 'ReSukiSU' jadi 'BakaSU' (repo upstream ganti
+          # nama 2026-10-14), sama dengan kolom nama KOMPONEN di pin-watch.yml.
           case "$KOMPONEN" in
             'source kernel')         BARIS='KERNEL_PIN;dlagia/android_kernel_xiaomi_rosemary;rosemary-13;.' ;;
             'Build-Kernel_scripts')  BARIS='SCRIPTS_PIN;dlagia/Build-Kernel_scripts;main;.' ;;
-            'ReSukiSU')              BARIS='KSU_PIN;Baka-SU/BakaSU;main;^kernel/' ;;
+            'BakaSU')                BARIS='KSU_PIN;Baka-SU/BakaSU;main;^kernel/' ;;
             'SUSFS')                 BARIS='SUSFS_PIN;JackA1ltman/NonGKI_Kernel_Build_2nd;mainline;(susfs_patch_to_4\.14\.patch|^scripts/|hook)' ;;
             'NoMount driver')        BARIS='NOMOUNT_PIN;maxsteeel/nomount;dev;^(kernel/src/|userspace/src/)' ;;
             'NoMount loader')        BARIS='NOMOUNT_LOADER_PIN;maxsteeel/nomount;master;^kernel/setup\.sh' ;;
