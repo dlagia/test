@@ -226,7 +226,7 @@
 #        => "expected external declaration" x3, "expected identifier or '('",
 #           "unterminated conditional directive". Dinormalkan di sanitizer.
 #     2. fs/stat.c - 'stat->mnt_id = real_mount(...)->mnt_id' x2. Field mnt_id baru
-#        masuk struct kstat di 5.10 (statx STATX_MNT_ID); susfs.c sendiri sudah
+#        masuk struct kstat di 5.8 (statx STATX_MNT_ID); susfs.c sendiri sudah
 #        menjaganya dengan LINUX_VERSION_CODE >= 5.10 tapi hunk stat.c lupa.
 #     3. fs/stat.c + fs/namei.c - filename_lookup() dipanggil tanpa deklarasi.
 #        susfs_inline_hook_patches.sh menyisipkan deklarasi hanya bila
@@ -2117,12 +2117,22 @@ jobs:
       - name: Perbaiki bug patch SUSFS untuk kernel 4.14 (stat/statfs/susfs/proc-fd/super/namespace)
         working-directory: kernel
         run: |
-          # Patch SUSFS v2.3.0 ditulis untuk kernel 5.10+ lalu di-backport setengah
-          # jalan ke 4.14, sehingga build sebelumnya berhenti dengan 30 error di
-          # empat file. Semua ini cacat UPSTREAM (bukan salah workflow); script di
-          # bawah memperbaikinya dengan anchor ketat + idempoten:
+          # Patch SUSFS 4.14 berasal dari JackA1ltman/NonGKI_Kernel_Build_2nd
+          # (diunduh integrate_ksu_susfs.sh dari dlagia/Build-Kernel_scripts) dan
+          # membawa kode SUSFS v2.3.0 yang aslinya ditulis untuk kernel 5.10+.
+          # Sebelum revisi ke-10 (2026-09-10) build berhenti dengan 30 error di
+          # empat file. Itu cacat UPSTREAM (bukan salah workflow); script di bawah
+          # memperbaikinya dengan anchor ketat + idempoten: tiap perbaikan memeriksa
+          # dulu dan hanya mengubah kode kalau cacatnya masih ada.
+          # Status per SUSFS_PIN dcd789634 (dicek revisi ke-97, 2026-10-27, log run
+          # 40162359551): cacat di stat.c, namei.c, statfs.c, susfs.c dan proc/fd.c
+          # sudah dibereskan upstream, jadi perbaikannya mencetak "..., dilewati".
+          # Yang masih benar-benar mengubah kode hanya fs/super.c dan
+          # fs/namespace.c. Perbaikan yang dilewati sengaja tidak dibuang: kalau pin
+          # berikutnya membawa lagi cacat lama, perbaikannya otomatis jalan lagi.
+          # Cacat yang ditangani:
           #   fs/stat.c    stat->mnt_id      -> field itu baru ada di struct kstat
-          #                                     sejak 5.10 (statx STATX_MNT_ID);
+          #                                     sejak 5.8 (statx STATX_MNT_ID);
           #                                     dua assignment dibuang, result_mask
           #                                     tetap di-set jadi jalur spoof utuh.
           #   fs/stat.c +  filename_lookup() -> susfs_inline_hook_patches.sh menyisipkan
