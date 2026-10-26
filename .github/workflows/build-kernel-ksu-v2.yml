@@ -1649,7 +1649,7 @@ jobs:
 
           # ----- ASSERT SHA SOURCE KERNEL (revisi ke-18, 2026-09-12) -----
           # Ini dependency terakhir yang masih MENGAMBANG: branch rosemary-13.
-          # Semua patch SUSFS/KSU/NoMount di bawah, plus setiap fixer base64 di
+          # Semua patch SUSFS/KSU/NoMount di bawah, plus setiap fixer Python di
           # workflow ini, diaudit terhadap ISI POHON commit di bawah (mis.
           # fs/statfs.c, fs/stat.c, fs/proc/fd.c). Kalau dlagia mendorong commit
           # baru yang menyentuh fs/, patch bisa ter-apply "bersih" tapi salah,
@@ -2105,7 +2105,112 @@ jobs:
       - name: Perbaiki hasil patch SUSFS di fs/proc/task_mmu.c
         working-directory: kernel
         run: |
-          echo "IyEvdXNyL2Jpbi9lbnYgcHl0aG9uMwoiIiIKUGVyYmFpa2FuIGZzL3Byb2MvdGFza19tbXUuYyBzZXRlbGFoIHBhdGNoIFNVU0ZTIDQuMTQuCgpLZW5hcGEgcGVybHU6IGZzL3Byb2MvdGFza19tbXUuYyBkaSBzb3VyY2Ugcm9zZW1hcnktMTMgc3VkYWggZGktYmFja3BvcnQgZ2F5YQo0LjE5KyAoYWRhIHNtYXBfZ2F0aGVyX3N0YXRzKCksIHNob3dfc21hcCgpIHRhbnBhIGlzX3BpZCwgdGlkYWsgYWRhCjxsaW51eC9jdHlwZS5oPikuIEFraWJhdG55YSBwYWRhIHBhdGNoIHVwc3RyZWFtOgogIC0gSHVuayAjMSAoaW5jbHVkZSBzdXNmc19kZWYuaCkgIC0+IEZBSUxFRCAgPT4gbWFjcm8gU1VTRlNfSVNfSU5PREVfKiBqYWRpCiAgICBpbXBsaWNpdCBkZWNsYXJhdGlvbi4KICAtIEh1bmsgIzQgKGd1YXJkIFNVU19NQVAgZGkgc2hvd19zbWFwKSAtPiAiYmVyaGFzaWwiIGRlbmdhbiBmdXp6IDIgdGFwaQogICAgTUVOREFSQVQgREkgc21hcF9nYXRoZXJfc3RhdHMoKSB5YW5nIGJlcnRpcGUgdm9pZCA9PiAicmV0dXJuIDAiIGRpIGZ1bmdzaQogICAgdm9pZC4KICAtIEh1bmsgIzUgJiAjNiAtPiBGQUlMRUQsIGlzaW55YSBjdW1hIHRhbWJhaC9oYXB1cyBiYXJpcyBrb3NvbmcgKGtvc21ldGlrLAogICAgYW1hbiBkaWFiYWlrYW4pLgoKU2NyaXB0IGluaSBtZW1hc2FuZyBodW5rICMxIGRhbiBtZW1pbmRhaGthbiBodW5rICM0IGtlIHRlbXBhdCB5YW5nIGJlbmFyLgpJZGVtcG90ZW46IGthbGF1IHN1ZGFoIGJlbmFyLCB0aWRhayBtZWxha3VrYW4gYXBhLWFwYS4KIiIiCmltcG9ydCByZSwgc3lzCgpQQVRIID0gImZzL3Byb2MvdGFza19tbXUuYyIKSU5DID0gKCIjaWYgZGVmaW5lZChDT05GSUdfS1NVX1NVU0ZTX1NVU19LU1RBVCkgfHwgZGVmaW5lZChDT05GSUdfS1NVX1NVU0ZTX1NVU19NQVApIHx8IGRlZmluZWQoQ09ORklHX0tTVV9TVVNGU19PUEVOX1JFRElSRUNUKVxuIgogICAgICAgIiNpbmNsdWRlIDxsaW51eC9zdXNmc19kZWYuaD5cbiIKICAgICAgICIjZW5kaWZcbiIpCkdVQVJEID0gKCIjaWZkZWYgQ09ORklHX0tTVV9TVVNGU19TVVNfTUFQXG4iCiAgICAgICAgICJcdGlmICh2bWEtPnZtX2ZpbGUgJiYgU1VTRlNfSVNfSU5PREVfU1VTX01BUChmaWxlX2lub2RlKHZtYS0+dm1fZmlsZSkpKVxuIgogICAgICAgICAiXHRcdHJldHVybiAwO1xuIgogICAgICAgICAiI2VuZGlmXG4iKQoKcyA9IG9wZW4oUEFUSCwgZW5jb2Rpbmc9J3V0Zi04JywgZXJyb3JzPSdzdXJyb2dhdGVlc2NhcGUnKS5yZWFkKCkKCiMgLS0tIDEpIGluY2x1ZGUgc3VzZnNfZGVmLmggKGh1bmsgIzEgeWFuZyBnYWdhbCkKaWYgInN1c2ZzX2RlZi5oIiBpbiBzOgogICAgcHJpbnQoInRhc2tfbW11OiBpbmNsdWRlIHN1c2ZzX2RlZi5oIHN1ZGFoIGFkYSwgZGlsZXdhdGkiKQplbHNlOgogICAgYW5jaG9yID0gIiNpbmNsdWRlIDxsaW51eC9tbV9pbmxpbmUuaD5cbiIKICAgIGlmIHMuY291bnQoYW5jaG9yKSAhPSAxOgogICAgICAgIHN5cy5leGl0KCJ0YXNrX21tdTogYW5jaG9yIGluY2x1ZGUgbW1faW5saW5lLmgga2V0ZW11ICVkIGthbGkgKGhhcnVzIDEpIiAlIHMuY291bnQoYW5jaG9yKSkKICAgIHMgPSBzLnJlcGxhY2UoYW5jaG9yLCBhbmNob3IgKyBJTkMsIDEpCiAgICBwcmludCgidGFza19tbXU6IGluY2x1ZGUgc3VzZnNfZGVmLmggZGl0YW1iYWhrYW4iKQoKIyAtLS0gMikgYnVhbmcgZ3VhcmQgU1VTX01BUCB5YW5nIHNhbGFoIG1lbmRhcmF0IGRpIHNtYXBfZ2F0aGVyX3N0YXRzKCkgKHZvaWQpCm1pc3BsYWNlZCA9IHJlLmNvbXBpbGUoCiAgICByJ1xuI2lmZGVmIENPTkZJR19LU1VfU1VTRlNfU1VTX01BUFxuJwogICAgcidcdGlmIFwodm1hLT52bV9maWxlICYmIFNVU0ZTX0lTX0lOT0RFX1NVU19NQVBcKGZpbGVfaW5vZGVcKHZtYS0+dm1fZmlsZVwpXClcKVxuJwogICAgcidcdFx0cmV0dXJuIDA7XG4nCiAgICByJyNlbmRpZlxuXG4oXHRzbWFwc193YWxrXC5wcml2YXRlID0gbXNzO1xuKScpCm4gPSBsZW4obWlzcGxhY2VkLmZpbmRhbGwocykpCmlmIG4gPT0gMToKICAgIHMgPSBtaXNwbGFjZWQuc3ViKGxhbWJkYSBtOiAiXG4iICsgbS5ncm91cCgxKSwgcykKICAgIHByaW50KCJ0YXNrX21tdTogZ3VhcmQgU1VTX01BUCBzYWxhaCB0ZW1wYXQgZGkgc21hcF9nYXRoZXJfc3RhdHMoKSBkaWhhcHVzIikKZWxpZiBuID09IDA6CiAgICBwcmludCgidGFza19tbXU6IHRpZGFrIGFkYSBndWFyZCBzYWxhaCB0ZW1wYXQgKG11bmdraW4gcGF0Y2ggdXBzdHJlYW0gc3VkYWggZGlwZXJiYWlraSkiKQplbHNlOgogICAgc3lzLmV4aXQoInRhc2tfbW11OiBndWFyZCBzYWxhaCB0ZW1wYXQga2V0ZW11ICVkIGthbGksIHN0cnVrdHVyIHRhayBkaWtlbmFsIiAlIG4pCgojIC0tLSAzKSBwYXNhbmcgZ3VhcmQgU1VTX01BUCBkaSBzaG93X3NtYXAoKSB5YW5nIGJlbmFyCmlmIHJlLnNlYXJjaChyJ3N0YXRpYyBpbnQgc2hvd19zbWFwXChzdHJ1Y3Qgc2VxX2ZpbGUgXCptLCB2b2lkIFwqdlwpXG5ce1xuW159XSo/U1VTRlNfSVNfSU5PREVfU1VTX01BUCcsIHMpOgogICAgcHJpbnQoInRhc2tfbW11OiBndWFyZCBTVVNfTUFQIGRpIHNob3dfc21hcCgpIHN1ZGFoIGFkYSwgZGlsZXdhdGkiKQplbHNlOgogICAgYW5jaG9yID0gKCJzdGF0aWMgaW50IHNob3dfc21hcChzdHJ1Y3Qgc2VxX2ZpbGUgKm0sIHZvaWQgKnYpXG4iCiAgICAgICAgICAgICAgIntcbiIKICAgICAgICAgICAgICAiXHRzdHJ1Y3Qgdm1fYXJlYV9zdHJ1Y3QgKnZtYSA9IHY7XG4iCiAgICAgICAgICAgICAgIlx0c3RydWN0IG1lbV9zaXplX3N0YXRzIG1zcztcblxuIikKICAgIGlmIHMuY291bnQoYW5jaG9yKSAhPSAxOgogICAgICAgIHN5cy5leGl0KCJ0YXNrX21tdTogYW5jaG9yIHNob3dfc21hcCgpIGtldGVtdSAlZCBrYWxpIChoYXJ1cyAxKSAtICIKICAgICAgICAgICAgICAgICAic3RydWt0dXIgZmlsZSBiZXJ1YmFoLCBob29rIFNVU19NQVAgcGVybHUgZGlzZXN1YWlrYW4gbWFudWFsIiAlIHMuY291bnQoYW5jaG9yKSkKICAgIHMgPSBzLnJlcGxhY2UoYW5jaG9yLCBhbmNob3IgKyBHVUFSRCArICJcbiIsIDEpCiAgICBwcmludCgidGFza19tbXU6IGd1YXJkIFNVU19NQVAgZGlwYXNhbmcgZGkgc2hvd19zbWFwKCkiKQoKb3BlbihQQVRILCAndycsIGVuY29kaW5nPSd1dGYtOCcsIGVycm9ycz0nc3Vycm9nYXRlZXNjYXBlJykud3JpdGUocykKCiMgLS0tIHZlcmlmaWthc2kgYWtoaXIKIwojIER1bHUgYmFnaWFuIGluaSBtZW1ha2FpIHMuaW5kZXgoKSBkdWEga2FsaS4gRHVhIG1hc2FsYWggbnlhdGE6CiMgICBhKSBzLmluZGV4KCkgbWVsZW1wYXIgVmFsdWVFcnJvciAodHJhY2ViYWNrIG1lbnRhaCkga2FsYXUgc2FsYWggc2F0dSBwZW5hbmRhCiMgICAgICBoaWxhbmcgLSBwZXNhbiBlcnJvcm55YSB0aWRhayBtZW5qZWxhc2thbiBhcGEtYXBhIGtlIHBlbWJhY2EgbG9nIENJLgojICAgYikga2FsYXUgcGVuYW5kYSBha2hpciBrZWJldHVsYW4gYmVyYWRhIFNFQkVMVU0gcGVuYW5kYSBhd2FsLCBzbGljaW5nIFB5dGhvbgojICAgICAgbWVuZ2hhc2lsa2FuIHN0cmluZyBrb3NvbmcgdGFucGEgZXJyb3IsIGphZGkgY2VrICJyZXR1cm4gMDsiIGxvbG9zCiMgICAgICBkaWFtLWRpYW0gKGZhbHNlIG5lZ2F0aXZlKSAtIHBlcnNpcyBrZWdhZ2FsYW4geWFuZyBtYXUgZGljZWdhaC4KIyBTZWthcmFuZyBkaXBha2FpIGZpbmQoKSArIHZhbGlkYXNpIHVydXRhbiBzZWNhcmEgZWtzcGxpc2l0LgpzID0gb3BlbihQQVRILCBlbmNvZGluZz0ndXRmLTgnLCBlcnJvcnM9J3N1cnJvZ2F0ZWVzY2FwZScpLnJlYWQoKQoKaWYgInN1c2ZzX2RlZi5oIiBub3QgaW4gczoKICAgIHN5cy5leGl0KCJ0YXNrX21tdTogaW5jbHVkZSBzdXNmc19kZWYuaCBoaWxhbmcgc2V0ZWxhaCBwZW51bGlzYW4gZmlsZSIpCgpCRUcgPSAic3RhdGljIHZvaWQgc21hcF9nYXRoZXJfc3RhdHMoIgpFTkQgPSAiLyogU2hvdyB0aGUgY29udGVudHMgY29tbW9uIGZvciBzbWFwcyIKYiA9IHMuZmluZChCRUcpCmUgPSBzLmZpbmQoRU5EKQppZiBiIDwgMDoKICAgIHN5cy5leGl0KCJ0YXNrX21tdTogcGVuYW5kYSBhd2FsICclcycgdGlkYWsgZGl0ZW11a2FuIC0gc3RydWt0dXIgZmlsZSBiZXJ1YmFoLCAiCiAgICAgICAgICAgICAidmVyaWZpa2FzaSBzbWFwX2dhdGhlcl9zdGF0cygpIHRpZGFrIGJpc2EgZGlqYWxhbmthbiIgJSBCRUcpCmlmIGUgPCAwOgogICAgc3lzLmV4aXQoInRhc2tfbW11OiBwZW5hbmRhIGFraGlyICclcycgdGlkYWsgZGl0ZW11a2FuIC0gc3RydWt0dXIgZmlsZSBiZXJ1YmFoLCAiCiAgICAgICAgICAgICAidmVyaWZpa2FzaSBzbWFwX2dhdGhlcl9zdGF0cygpIHRpZGFrIGJpc2EgZGlqYWxhbmthbiIgJSBFTkQpCmlmIGUgPD0gYjoKICAgIHN5cy5leGl0KCJ0YXNrX21tdTogcGVuYW5kYSBha2hpciBtdW5jdWwgc2ViZWx1bSBwZW5hbmRhIGF3YWwgKGI9JWQsIGU9JWQpIC0gIgogICAgICAgICAgICAgInVydXRhbiBmdW5nc2kgYmVydWJhaCwgdmVyaWZpa2FzaSB0aWRhayB2YWxpZCIgJSAoYiwgZSkpCgpnYXRoZXIgPSBzW2I6ZV0KaWYgInJldHVybiAwOyIgaW4gZ2F0aGVyOgogICAgc3lzLmV4aXQoInRhc2tfbW11OiBtYXNpaCBhZGEgJ3JldHVybiAwOycgZGkgc21hcF9nYXRoZXJfc3RhdHMoKSB5YW5nIGJlcnRpcGUgdm9pZCIpCnByaW50KCJ0YXNrX21tdTogT0sgKGJsb2sgc21hcF9nYXRoZXJfc3RhdHMoKSBkaXZlcmlmaWthc2ksICVkIGJ5dGUpIiAlIGxlbihnYXRoZXIpKQo=" | base64 -d > /tmp/fix_susfs_task_mmu.py
+          cat > /tmp/fix_susfs_task_mmu.py <<'FIX_SUSFS_TASK_MMU_PY'
+          #!/usr/bin/env python3
+          """
+          Perbaikan fs/proc/task_mmu.c setelah patch SUSFS 4.14.
+
+          Kenapa perlu: fs/proc/task_mmu.c di source rosemary-13 sudah di-backport gaya
+          4.19+ (ada smap_gather_stats(), show_smap() tanpa is_pid, tidak ada
+          <linux/ctype.h>). Akibatnya pada patch upstream:
+            - Hunk #1 (include susfs_def.h)  -> FAILED  => macro SUSFS_IS_INODE_* jadi
+              implicit declaration.
+            - Hunk #4 (guard SUS_MAP di show_smap) -> "berhasil" dengan fuzz 2 tapi
+              MENDARAT DI smap_gather_stats() yang bertipe void => "return 0" di fungsi
+              void.
+            - Hunk #5 & #6 -> FAILED, isinya cuma tambah/hapus baris kosong (kosmetik,
+              aman diabaikan).
+
+          Script ini memasang hunk #1 dan memindahkan hunk #4 ke tempat yang benar.
+          Idempoten: kalau sudah benar, tidak melakukan apa-apa.
+          """
+          import re, sys
+
+          PATH = "fs/proc/task_mmu.c"
+          INC = ("#if defined(CONFIG_KSU_SUSFS_SUS_KSTAT) || defined(CONFIG_KSU_SUSFS_SUS_MAP) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)\n"
+                 "#include <linux/susfs_def.h>\n"
+                 "#endif\n")
+          GUARD = ("#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n"
+                   "\tif (vma->vm_file && SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file)))\n"
+                   "\t\treturn 0;\n"
+                   "#endif\n")
+
+          s = open(PATH, encoding='utf-8', errors='surrogateescape').read()
+
+          # --- 1) include susfs_def.h (hunk #1 yang gagal)
+          if "susfs_def.h" in s:
+              print("task_mmu: include susfs_def.h sudah ada, dilewati")
+          else:
+              anchor = "#include <linux/mm_inline.h>\n"
+              if s.count(anchor) != 1:
+                  sys.exit("task_mmu: anchor include mm_inline.h ketemu %d kali (harus 1)" % s.count(anchor))
+              s = s.replace(anchor, anchor + INC, 1)
+              print("task_mmu: include susfs_def.h ditambahkan")
+
+          # --- 2) buang guard SUS_MAP yang salah mendarat di smap_gather_stats() (void)
+          misplaced = re.compile(
+              r'\n#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
+              r'\tif \(vma->vm_file && SUSFS_IS_INODE_SUS_MAP\(file_inode\(vma->vm_file\)\)\)\n'
+              r'\t\treturn 0;\n'
+              r'#endif\n\n(\tsmaps_walk\.private = mss;\n)')
+          n = len(misplaced.findall(s))
+          if n == 1:
+              s = misplaced.sub(lambda m: "\n" + m.group(1), s)
+              print("task_mmu: guard SUS_MAP salah tempat di smap_gather_stats() dihapus")
+          elif n == 0:
+              print("task_mmu: tidak ada guard salah tempat (mungkin patch upstream sudah diperbaiki)")
+          else:
+              sys.exit("task_mmu: guard salah tempat ketemu %d kali, struktur tak dikenal" % n)
+
+          # --- 3) pasang guard SUS_MAP di show_smap() yang benar
+          if re.search(r'static int show_smap\(struct seq_file \*m, void \*v\)\n\{\n[^}]*?SUSFS_IS_INODE_SUS_MAP', s):
+              print("task_mmu: guard SUS_MAP di show_smap() sudah ada, dilewati")
+          else:
+              anchor = ("static int show_smap(struct seq_file *m, void *v)\n"
+                        "{\n"
+                        "\tstruct vm_area_struct *vma = v;\n"
+                        "\tstruct mem_size_stats mss;\n\n")
+              if s.count(anchor) != 1:
+                  sys.exit("task_mmu: anchor show_smap() ketemu %d kali (harus 1) - "
+                           "struktur file berubah, hook SUS_MAP perlu disesuaikan manual" % s.count(anchor))
+              s = s.replace(anchor, anchor + GUARD + "\n", 1)
+              print("task_mmu: guard SUS_MAP dipasang di show_smap()")
+
+          open(PATH, 'w', encoding='utf-8', errors='surrogateescape').write(s)
+
+          # --- verifikasi akhir
+          #
+          # Dulu bagian ini memakai s.index() dua kali. Dua masalah nyata:
+          #   a) s.index() melempar ValueError (traceback mentah) kalau salah satu penanda
+          #      hilang - pesan errornya tidak menjelaskan apa-apa ke pembaca log CI.
+          #   b) kalau penanda akhir kebetulan berada SEBELUM penanda awal, slicing Python
+          #      menghasilkan string kosong tanpa error, jadi cek "return 0;" lolos
+          #      diam-diam (false negative) - persis kegagalan yang mau dicegah.
+          # Sekarang dipakai find() + validasi urutan secara eksplisit.
+          s = open(PATH, encoding='utf-8', errors='surrogateescape').read()
+
+          if "susfs_def.h" not in s:
+              sys.exit("task_mmu: include susfs_def.h hilang setelah penulisan file")
+
+          BEG = "static void smap_gather_stats("
+          END = "/* Show the contents common for smaps"
+          b = s.find(BEG)
+          e = s.find(END)
+          if b < 0:
+              sys.exit("task_mmu: penanda awal '%s' tidak ditemukan - struktur file berubah, "
+                       "verifikasi smap_gather_stats() tidak bisa dijalankan" % BEG)
+          if e < 0:
+              sys.exit("task_mmu: penanda akhir '%s' tidak ditemukan - struktur file berubah, "
+                       "verifikasi smap_gather_stats() tidak bisa dijalankan" % END)
+          if e <= b:
+              sys.exit("task_mmu: penanda akhir muncul sebelum penanda awal (b=%d, e=%d) - "
+                       "urutan fungsi berubah, verifikasi tidak valid" % (b, e))
+
+          gather = s[b:e]
+          if "return 0;" in gather:
+              sys.exit("task_mmu: masih ada 'return 0;' di smap_gather_stats() yang bertipe void")
+          print("task_mmu: OK (blok smap_gather_stats() diverifikasi, %d byte)" % len(gather))
+          FIX_SUSFS_TASK_MMU_PY
           python3 /tmp/fix_susfs_task_mmu.py
           rm -f fs/proc/task_mmu.c.rej patch_rejects/fs/proc/task_mmu.c.rej
 
@@ -2167,7 +2272,308 @@ jobs:
           #                                     lock, ida_get_new_above di dalam lock.
           # (Baris diff bertanda ganda '^++' di fs/stat.c sudah ditangani lebih awal,
           #  di lapis-2 sanitizer /tmp/susfs_apply.sh.)
-          echo "IyEvdXNyL2Jpbi9lbnYgcHl0aG9uMwoiIiIKUGVyYmFpa2kgYnVnIHBhdGNoIFNVU0ZTIHYyLjMuMCAoSmFja0ExbHRtYW4gbWFpbmxpbmUgQGMyMzFlZjVkNDUpIHBhZGEga2VybmVsIDQuMTQuCgpTZW11YSB5YW5nIGRpcGVyYmFpa2kgZGkgc2luaSBhZGFsYWggY2FjYXQgVVBTVFJFQU0sIGJ1a2FuIHNhbGFoIHdvcmtmbG93OiBwYXRjaAppdHUgZGl0dWxpcyB1bnR1ayBrZXJuZWwgNS4xMCsgbGFsdSBkaS1iYWNrcG9ydCBzZXRlbmdhaCBqYWxhbiwgc2VoaW5nZ2EgNCBmaWxlCmdhZ2FsIGNvbXBpbGUuIFRpYXAgcGVyYmFpa2FuIGlkZW1wb3RlbiBkYW4gbWVtdmFsaWRhc2kgYW5jaG9yLW55YSAoa2FsYXUKc3RydWt0dXIgYmVydWJhaCAtPiBiZXJoZW50aSBkZ24gcGVzYW4gamVsYXMsIGJ1a2FuIG1lbmFtYmFsIHNlcmFtcGFuZ2FuKS4KIiIiCmltcG9ydCByZSwgc3lzCgpkZWYgcncocGF0aCwgZm4pOgogICAgd2l0aCBvcGVuKHBhdGgsIGVuY29kaW5nPSd1dGYtOCcsIGVycm9ycz0nc3Vycm9nYXRlZXNjYXBlJykgYXMgZjoKICAgICAgICBzID0gZi5yZWFkKCkKICAgIG91dCA9IGZuKHMpCiAgICBpZiBvdXQgaXMgTm9uZToKICAgICAgICByZXR1cm4KICAgIHdpdGggb3BlbihwYXRoLCAndycsIGVuY29kaW5nPSd1dGYtOCcsIGVycm9ycz0nc3Vycm9nYXRlZXNjYXBlJykgYXMgZjoKICAgICAgICBmLndyaXRlKG91dCkKCmRlZiBuZWVkKHMsIHR4dCwgcGF0aCwgbGFiZWwsIG49MSk6CiAgICBjID0gcy5jb3VudCh0eHQpCiAgICBpZiBjICE9IG46CiAgICAgICAgc3lzLmV4aXQoInN1c2ZzLWZpeDogYW5jaG9yICclcycga2V0ZW11ICVkIGthbGkgKGhhcnVzICVkKSBkaSAlcyIgJSAobGFiZWwsIGMsIG4sIHBhdGgpKQoKIyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KIyAxKSBmcy9zdGF0LmMgLSBzdGF0LT5tbnRfaWQgdGlkYWsgYWRhIGRpIHN0cnVjdCBrc3RhdCBzZWJlbHVtIDUuMTAuCiMgICAgc3VzZnMuYyBzZW5kaXJpIG1lbmphZ2EgZmllbGQgaW5pIGRnbgojICAgICAgICAjaWYgTElOVVhfVkVSU0lPTl9DT0RFID49IEtFUk5FTF9WRVJTSU9OKDUsIDEwLCAwKQojICAgIHRhcGkgaHVuayBmcy9zdGF0LmMgbHVwYSBtZW1ha2FpIHBlbmphZ2EgeWFuZyBzYW1hLgojICAgIHJlc3VsdF9tYXNrIHRldGFwIGRpLXNldCwgamFkaSBqYWx1ciBzcG9vZmluZyB0aWRhayBiZXJ1YmFoLgojID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQpNTlRfUEFUID0gcideWyBcdF0qc3RhdC0+bW50X2lkID0gcmVhbF9tb3VudFwocGF0aC0+bW50XCktPm1udF9pZDtcbicKCmRlZiBmaXhfc3RhdF9tbnRfaWQocyk6CiAgICAjIFNlamFrIEphY2tBMWx0bWFuQDFjNDQyODc3ICgiZml4OiBuZWVkbid0IHJlYWxfbW91bnQiKSB1cHN0cmVhbSBUSURBSwogICAgIyBtZW5naGFwdXMgYXNzaWdubWVudCBpbmkgbWVsYWlua2FuIE1FTkdPTUVOVEFSSU5ZQSBtZW5qYWRpCiAgICAjICAgICAvLyBzdGF0LT5tbnRfaWQgPSByZWFsX21vdW50KHBhdGgtPm1udCktPm1udF9pZDsKICAgICMgSmFkaSBwZW5jYXJpYW4gc3Vic3RyaW5nICJzdGF0LT5tbnRfaWQiIG1hc2loIG1lbmVtdWthbm55YSBESSBEQUxBTQogICAgIyBrb21lbnRhciAtIGl0dSBidWthbiB0YW5kYSBrb2RlbnlhIGFrdGlmLiBZYW5nIGRpaGl0dW5nIGhhcnVzIGFzc2lnbm1lbnQKICAgICMgeWFuZyBiZW5hci1iZW5hciBha3RpZjsgcmVnZXggZGkgYmF3YWggYmVyamFuZ2thciBeWyBcdF0qIHNlaGluZ2dhIGJhcmlzCiAgICAjIHlhbmcgZGlhd2FsaSAiLy8iIHRpZGFrIGlrdXQgY29jb2suCiAgICBuID0gbGVuKHJlLmZpbmRhbGwoTU5UX1BBVCwgcywgcmUuTSkpCiAgICBpZiBuID09IDA6CiAgICAgICAgcHJpbnQoInN0YXQuYzogdGlkYWsgYWRhIGFzc2lnbm1lbnQgc3RhdC0+bW50X2lkIGFrdGlmIChzdWRhaCBkaWtvbWVudGFyaS9kaWhhcHVzIHVwc3RyZWFtKSwgZGlsZXdhdGkiKQogICAgICAgIHJldHVybiBOb25lCiAgICBpZiBuICE9IDI6CiAgICAgICAgc3lzLmV4aXQoInN1c2ZzLWZpeDogYXNzaWdubWVudCBzdGF0LT5tbnRfaWQgYWt0aWYga2V0ZW11ICVkIGthbGkgZGkgZnMvc3RhdC5jIChoYXJ1cyAwIGF0YXUgMikiICUgbikKICAgIHMgPSByZS5zdWIoTU5UX1BBVCwgJycsIHMsIGZsYWdzPXJlLk0pCiAgICBwcmludCgic3RhdC5jOiAyIGFzc2lnbm1lbnQgc3RhdC0+bW50X2lkIGRpYnVhbmcgKGtzdGF0IDQuMTQgdGlkYWsgcHVueWEgZmllbGQgaXR1KSIpCiAgICByZXR1cm4gcwoKIyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KIyAyKSBmcy9zdGF0LmMgKyBmcy9uYW1laS5jIC0gZmlsZW5hbWVfbG9va3VwKCkuCiMgICAgc3VzZnNfaW5saW5lX2hvb2tfcGF0Y2hlcy5zaCBtZW55aXNpcGthbiBwZW1hbmdnaWxhbiBmaWxlbmFtZV9sb29rdXAoKQojICAgIGtlIGZzL3N0YXQuYywgVEFQSSBwZW5qYWdhbnlhCiMgICAgICAgIGlmICEgZ3JlcCAtcSAiaW50ZXJuYWwuaCIgZnMvc3RhdC5jICYmICEgZ3JlcCAic3RhdGljIGludCBmaWxlbmFtZV9sb29rdXAiIGZzL25hbWVpLmMKIyAgICBtZW1idWF0IGRla2xhcmFzaW55YSBUSURBSyBpa3V0IGRpc2lzaXBrYW4ganVzdHJ1IGtldGlrYSBmdW5nc2lueWEgc3RhdGljCiMgICAgKGthc3VzIDQuMTQpIC0gamFkaSBrb2RlbnlhIG1hc3VrIHRhbnBhIGRla2xhcmFzaSBhcGEgcHVuLiBTb2x1c2lueWE6CiMgICAgYnVhbmcgJ3N0YXRpYycgZGkgZGVmaW5pc2kgbmFtZWkuYyBsYWx1IGRla2xhcmFzaWthbiBleHRlcm4gZGkgc3RhdC5jLgojID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQpOQU1FSV9PTEQgPSAic3RhdGljIGludCBmaWxlbmFtZV9sb29rdXAoaW50IGRmZCwgc3RydWN0IGZpbGVuYW1lICpuYW1lLCB1bnNpZ25lZCBmbGFncyxcbiIKTkFNRUlfTkVXID0gImludCBmaWxlbmFtZV9sb29rdXAoaW50IGRmZCwgc3RydWN0IGZpbGVuYW1lICpuYW1lLCB1bnNpZ25lZCBmbGFncyxcbiIKCmRlZiBmaXhfbmFtZWkocyk6CiAgICBpZiBOQU1FSV9PTEQgbm90IGluIHM6CiAgICAgICAgcHJpbnQoIm5hbWVpLmM6IGZpbGVuYW1lX2xvb2t1cCBzdWRhaCBub24tc3RhdGljLCBkaWxld2F0aSIpCiAgICAgICAgcmV0dXJuIE5vbmUKICAgIG5lZWQocywgTkFNRUlfT0xELCAnZnMvbmFtZWkuYycsICdzdGF0aWMgaW50IGZpbGVuYW1lX2xvb2t1cCgnKQogICAgcHJpbnQoIm5hbWVpLmM6ICdzdGF0aWMnIGRpYnVhbmcgZGFyaSBkZWZpbmlzaSBmaWxlbmFtZV9sb29rdXAoKSIpCiAgICByZXR1cm4gcy5yZXBsYWNlKE5BTUVJX09MRCwgTkFNRUlfTkVXLCAxKQoKU1RBVF9ERUNMID0gKCJleHRlcm4gaW50IGZpbGVuYW1lX2xvb2t1cChpbnQgZGZkLCBzdHJ1Y3QgZmlsZW5hbWUgKm5hbWUsIHVuc2lnbmVkIGZsYWdzLFxuIgogICAgICAgICAgICAgIlx0XHRcdHN0cnVjdCBwYXRoICpwYXRoLCBzdHJ1Y3QgcGF0aCAqcm9vdCk7XG4iKQpTVEFUX0FOQ0hPUiA9ICJleHRlcm4gaW50IGtzdV9oYW5kbGVfc3RhdChpbnQgKmRmZCwgc3RydWN0IGZpbGVuYW1lICoqZmlsZW5hbWUsIGludCAqZmxhZ3MpO1xuIgoKZGVmIGZpeF9zdGF0X2RlY2wocyk6CiAgICBpZiAiZXh0ZXJuIGludCBmaWxlbmFtZV9sb29rdXAoIiBpbiBzOgogICAgICAgIHByaW50KCJzdGF0LmM6IGRla2xhcmFzaSBmaWxlbmFtZV9sb29rdXAgc3VkYWggYWRhLCBkaWxld2F0aSIpCiAgICAgICAgcmV0dXJuIE5vbmUKICAgIGlmICJmaWxlbmFtZV9sb29rdXAoIiBub3QgaW4gczoKICAgICAgICBwcmludCgic3RhdC5jOiBmaWxlbmFtZV9sb29rdXAgdGlkYWsgZGlwYWthaSAoaG9vayBzY3JpcHQgYmVydWJhaD8pLCBkaWxld2F0aSIpCiAgICAgICAgcmV0dXJuIE5vbmUKICAgIG5lZWQocywgU1RBVF9BTkNIT1IsICdmcy9zdGF0LmMnLCAnZXh0ZXJuIGludCBrc3VfaGFuZGxlX3N0YXQoJykKICAgIHByaW50KCJzdGF0LmM6IGRla2xhcmFzaSBleHRlcm4gZmlsZW5hbWVfbG9va3VwKCkgZGl0YW1iYWhrYW4iKQogICAgcmV0dXJuIHMucmVwbGFjZShTVEFUX0FOQ0hPUiwgU1RBVF9BTkNIT1IgKyBTVEFUX0RFQ0wsIDEpCgojID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQojIDMpIGZzL3N0YXRmcy5jIC0gc3VzZnNfc3RhdGZzX2J5X2RlbnRyeSgpIG1lbWFuZ2dpbAojICAgIHN1c2ZzX3N1c19rc3RhdF9zcG9vZl92ZnNfc3RhdGZzKCkgcGFkYWhhbCBibG9rIGV4dGVybi1ueWEgZGl0YXJ1aAojICAgIFNFU1VEQUggZnVuZ3NpIGl0dS4gRGVrbGFyYXNpIGRpdWxhbmcgZGkgYXRhcyAoZGVrbGFyYXNpIGdhbmRhIHNhaCBkaSBDKS4KIyAgICBBbmNob3Igc2VuZ2FqYSBjdW1hIG5hbWEgZnVuZ3NpbnlhLCB0YW5wYSBkYWZ0YXIgcGFyYW1ldGVyOiBTVVNGUwojICAgIDZiOWU3YWNmOSBtZW5hbWJhaCBwYXJhbWV0ZXIgYHN0cnVjdCB2ZnNtb3VudCAqbW50YCwgZGFuIGFuY2hvciB5YW5nCiMgICAgbWVtdWF0IHNpZ25hdHVyZSBsZW5na2FwIG1lbWJ1YXQgZml4ZXIgaW5pIChkYW4gdmVyaWZpa2FzaW55YSkgYmVyaGVudGkKIyAgICBkZW5nYW4gInRpZGFrIGtldGVtdSIgd2FsYXUgZXh0ZXJuLW55YSBzdWRhaCBiZW5hciBkaSBhdGFzLgojID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQpTVEFURlNfQU5DSE9SID0gInN0YXRpYyBpbnQgc3VzZnNfc3RhdGZzX2J5X2RlbnRyeSgiClNUQVRGU19ERUNMID0gKCJleHRlcm4gYm9vbCBzdXNmc19pc19pbm9kZV9zdXNfa3N0YXQoc3RydWN0IGlub2RlICppbm9kZSwgYm9vbCAqb3V0X2lzX2Z1c2UpO1xuIgogICAgICAgICAgICAgICAiZXh0ZXJuIGludCBzdXNmc19zdXNfa3N0YXRfc3Bvb2ZfdmZzX3N0YXRmcyhzdHJ1Y3QgaW5vZGUgKmlub2RlLCBzdHJ1Y3Qga3N0YXRmcyAqYnVmLCBib29sICppc19mdXNlKTtcbiIpCgpkZWYgZml4X3N0YXRmcyhzKToKICAgIGlfZGVjbCA9IHMuZmluZCgiZXh0ZXJuIGludCBzdXNmc19zdXNfa3N0YXRfc3Bvb2ZfdmZzX3N0YXRmcyIpCiAgICBpX3VzZSA9IHMuZmluZChTVEFURlNfQU5DSE9SKQogICAgaWYgaV91c2UgPCAwOgogICAgICAgIHN5cy5leGl0KCJzdXNmcy1maXg6IHN1c2ZzX3N0YXRmc19ieV9kZW50cnkoKSB0aWRhayBrZXRlbXUgZGkgZnMvc3RhdGZzLmMiKQogICAgaWYgMCA8PSBpX2RlY2wgPCBpX3VzZToKICAgICAgICBwcmludCgic3RhdGZzLmM6IGV4dGVybiBzdWRhaCBtZW5kYWh1bHVpIHBlbWFrYWlhbiwgZGlsZXdhdGkiKQogICAgICAgIHJldHVybiBOb25lCiAgICBuZWVkKHMsIFNUQVRGU19BTkNIT1IsICdmcy9zdGF0ZnMuYycsICdzdGF0aWMgaW50IHN1c2ZzX3N0YXRmc19ieV9kZW50cnkoJykKICAgIHByaW50KCJzdGF0ZnMuYzogZGVrbGFyYXNpIGV4dGVybiBkaXBpbmRhaCBrZSBhdGFzIHN1c2ZzX3N0YXRmc19ieV9kZW50cnkoKSIpCiAgICByZXR1cm4gcy5yZXBsYWNlKFNUQVRGU19BTkNIT1IsIFNUQVRGU19ERUNMICsgU1RBVEZTX0FOQ0hPUiwgMSkKCiMgPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09CiMgNCkgZnMvc3VzZnMuYyAtIHNlY3VyaXR5X3NiX3N0YXRmcygpIGJ1dHVoIDxsaW51eC9zZWN1cml0eS5oPi4KIyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KU1VTRlNfSU5DX0FOQ0hPUiA9ICIjaW5jbHVkZSA8bGludXgvZnMuaD5cbiIKU1VTRlNfSU5DID0gIiNpbmNsdWRlIDxsaW51eC9zZWN1cml0eS5oPlxuIgoKZGVmIGZpeF9zdXNmc19pbmNsdWRlKHMpOgogICAgaWYgU1VTRlNfSU5DIGluIHM6CiAgICAgICAgcHJpbnQoInN1c2ZzLmM6IDxsaW51eC9zZWN1cml0eS5oPiBzdWRhaCBhZGEsIGRpbGV3YXRpIikKICAgICAgICByZXR1cm4gTm9uZQogICAgbmVlZChzLCBTVVNGU19JTkNfQU5DSE9SLCAnZnMvc3VzZnMuYycsICcjaW5jbHVkZSA8bGludXgvZnMuaD4nKQogICAgcHJpbnQoInN1c2ZzLmM6ICNpbmNsdWRlIDxsaW51eC9zZWN1cml0eS5oPiBkaXRhbWJhaGthbiAodW50dWsgc2VjdXJpdHlfc2Jfc3RhdGZzKSIpCiAgICByZXR1cm4gcy5yZXBsYWNlKFNVU0ZTX0lOQ19BTkNIT1IsIFNVU0ZTX0lOQ19BTkNIT1IgKyBTVVNGU19JTkMsIDEpCgojID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQojIDUpIGZzL3N1c2ZzLmMgLSBzYXR1IGNhbGwgc2l0ZSBzdXNmc19tYXJrX2lub2RlX3N1c19rc3RhdCgpIGtldGluZ2dhbGFuCiMgICAgYXJndW1lbiBrZS0zIChpc191cGRhdGUpIHdha3R1IHNpZ25hdHVyZS1ueWEgZGl0YW1iYWguIEphbHVyIGluaSBhZGFsYWgKIyAgICAiaWYgbm8gZHVwbGljYXRlZCwgYWRkIGl0IHRvIGxpc3QiID0gcGVuYW1iYWhhbiBiYXJ1LCBqYWRpIGlzX3VwZGF0ZT1mYWxzZQojICAgIChzYW1hIHNlcGVydGkgY2FsbCBzaXRlIHNlamVuaXMgZGkgYXRhc255YSkuCiMgPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09CkNBTExfQkFEID0gInN1c2ZzX21hcmtfaW5vZGVfc3VzX2tzdGF0KG5ld19lbnRyeS0+aW5mby50YXJnZXRfcGF0aG5hbWUsIG5ld19lbnRyeSk7XG4iCkNBTExfT0sgPSAic3VzZnNfbWFya19pbm9kZV9zdXNfa3N0YXQobmV3X2VudHJ5LT5pbmZvLnRhcmdldF9wYXRobmFtZSwgbmV3X2VudHJ5LCBmYWxzZSk7XG4iCgpkZWYgZml4X3N1c2ZzX2NhbGwocyk6CiAgICBpZiBDQUxMX0JBRCBub3QgaW4gczoKICAgICAgICBwcmludCgic3VzZnMuYzogY2FsbCBzdXNmc19tYXJrX2lub2RlX3N1c19rc3RhdCBzdWRhaCAzIGFyZ3VtZW4sIGRpbGV3YXRpIikKICAgICAgICByZXR1cm4gTm9uZQogICAgbmVlZChzLCBDQUxMX0JBRCwgJ2ZzL3N1c2ZzLmMnLCAnc3VzZnNfbWFya19pbm9kZV9zdXNfa3N0YXQoLi4sIC4uKSAyLWFyZ3VtZW4nKQogICAgcHJpbnQoInN1c2ZzLmM6IGFyZ3VtZW4gaXNfdXBkYXRlPWZhbHNlIGRpdGFtYmFoa2FuIGtlIGNhbGwgc3VzZnNfbWFya19pbm9kZV9zdXNfa3N0YXQoKSIpCiAgICByZXR1cm4gcy5yZXBsYWNlKENBTExfQkFELCBDQUxMX09LLCAxKQoKIyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KIyA2KSBmcy9wcm9jL2ZkLmMgLSBibG9rIFNVU19NT1VOVCBrdXJhbmcgc2F0dSAnfSc6IGFkYSBkdWEgJ2lmJyB5YW5nIGRpYnVrYQojICAgIHRhcGkgY3VtYSBzYXR1IHlhbmcgZGl0dXR1cCBzZWJlbHVtIGxhYmVsIG9yaWdfZmxvdywgamFkaSBzZWx1cnVoIHNpc2EKIyAgICBmaWxlIGlrdXQgdGVydGVsYW4ga2UgZGFsYW0gc2VxX3Nob3coKSAoImZ1bmN0aW9uIGRlZmluaXRpb24gaXMgbm90CiMgICAgYWxsb3dlZCBoZXJlIikuIEluaSBidWcgc2VqZW5pcyB5ZyBiYXJ1IHNhamEgdXBzdHJlYW0gcGVyYmFpa2kgZGkKIyAgICBmcy9ub3RpZnkvZmRpbmZvLmMgdGFwaSB0ZXJsZXdhdCBkaSBzaW5pLgojID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQpGRF9PTEQgPSAiXHRcdGdvdG8gb3JpZ19mbG93O1xuXHR9XG5vcmlnX2Zsb3c6XG4jZW5kaWYgLy8gI2lmZGVmIENPTkZJR19LU1VfU1VTRlNfU1VTX01PVU5UXG4iCkZEX05FVyA9ICJcdFx0Z290byBvcmlnX2Zsb3c7XG5cdFx0fVxuXHR9XG5vcmlnX2Zsb3c6XG4jZW5kaWYgLy8gI2lmZGVmIENPTkZJR19LU1VfU1VTRlNfU1VTX01PVU5UXG4iCgpkZWYgZml4X2ZkKHMpOgogICAgaWYgRkRfTkVXIGluIHM6CiAgICAgICAgcHJpbnQoInByb2MvZmQuYzogYnJhY2Ugc3VkYWggc2VpbWJhbmcsIGRpbGV3YXRpIikKICAgICAgICByZXR1cm4gTm9uZQogICAgbmVlZChzLCBGRF9PTEQsICdmcy9wcm9jL2ZkLmMnLCAiJ2dvdG8gb3JpZ19mbG93OyB9IG9yaWdfZmxvdzonIikKICAgIHByaW50KCJwcm9jL2ZkLmM6IHNhdHUgJ30nIHlhbmcgaGlsYW5nIGRpIGJsb2sgU1VTX01PVU5UIGRpdGFtYmFoa2FuIikKICAgIHJldHVybiBzLnJlcGxhY2UoRkRfT0xELCBGRF9ORVcsIDEpCgojID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KIyA3KSBmcy9zdXBlci5jIC0gaHVuayBnZXRfYW5vbl9iZGV2KCkgeWFuZyBCQVJVIChtdWxhaSBwaW4gYzIzMWVmNWQ0NSkKIyAgICBtZW1hbmdnaWwgaWRhX3NpbXBsZV9nZXQoKSBwYWRhIHVubmFtZWRfZGV2X2lkYS4gRGkgNC4xNCBJREEgaXR1IGRpa2Vsb2xhCiMgICAgZGVuZ2FuIGlkYV9wcmVfZ2V0KCkraWRhX2dldF9uZXdfYWJvdmUoKSBESSBCQVdBSCB1bm5hbWVkX2Rldl9sb2NrLAojICAgIHNlZGFuZ2thbiBpZGFfc2ltcGxlX2dldCgpIG1lbWFrYWkgc2ltcGxlX2lkYV9sb2NrIG1pbGlrbnlhIHNlbmRpcmkgLT4KIyAgICBzYXR1IElEQSBkaW1vZGlmaWthc2kgZGkgYmF3YWggZHVhIGxvY2sgYmVyYmVkYSA9IGRhdGEgcmFjZSwga2FyZW5hCiMgICAgZ2V0X2Fub25fYmRldigpIGJpc2EgamFsYW4gYmVyc2FtYWFuIGRpIENQVSBsYWluIHVudHVrIG1vdW50IGFub25pbSBhcGEKIyAgICBwdW4uIERpIDUuMTAgKHRhcmdldCBhc2xpIFNVU0ZTKSB0aWRhayBhZGEgbWFzYWxhaDogZ2V0X2Fub25fYmRldigpIGRpCiMgICAgc2FuYSBzdWRhaCBtZW1ha2FpIGlkYV9hbGxvY19yYW5nZSgpIHlhbmcgYmVyLWxvY2sgc2VuZGlyaS4KIyAgICBQZXJiYWlrYW4gTUlOSU1BTDogcGFuZ2dpbGFubnlhIGRpYnVuZ2t1cyB1bm5hbWVkX2Rldl9sb2NrLCB0ZWtzIHVwc3RyZWFtCiMgICAgdGlkYWsgZGl1YmFoLiBUaWRhayBtdW5na2luICJzbGVlcGluZyBpbiBhdG9taWMiOiBmbGFnLW55YSBHRlBfQVRPTUlDLAojICAgIGphZGkgaWRhX3ByZV9nZXQoKSBkaSBkYWxhbSBpZGFfc2ltcGxlX2dldCgpIHRpZGFrIHBlcm5haCB0aWR1ci4gVXJ1dGFuCiMgICAgbG9jayBhbWFuICh0aWRhayBhZGEgQUJCQSk6IHNpbXBsZV9pZGFfbG9jayBoYW55YSBkaXBlZ2FuZyBESSBEQUxBTQojICAgIGlkYV9zaW1wbGVfKigpLCB5YW5nIHRpZGFrIHBlcm5haCBtZW5nYW1iaWwgdW5uYW1lZF9kZXZfbG9jay4KIyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09ClNVUEVSX09MRCA9ICgiXHRcdFx0ZGV2ID0gaWRhX3NpbXBsZV9nZXQoJnVubmFtZWRfZGV2X2lkYSwgREVGQVVMVF9LU1VfTU5UX01JTk9SX0RFVixcbiIKICAgICAgICAgICAgICJcdFx0XHRcdFx0ICAgICAoMSA8PCBNSU5PUkJJVFMpLCBHRlBfQVRPTUlDKTtcbiIpClNVUEVSX05FVyA9ICgiXHRcdFx0c3Bpbl9sb2NrKCZ1bm5hbWVkX2Rldl9sb2NrKTtcbiIgKyBTVVBFUl9PTEQgKwogICAgICAgICAgICAgIlx0XHRcdHNwaW5fdW5sb2NrKCZ1bm5hbWVkX2Rldl9sb2NrKTtcbiIpCgpkZWYgZml4X3N1cGVyX2lkYShzKToKICAgIGlmIFNVUEVSX05FVyBpbiBzOgogICAgICAgIHByaW50KCJzdXBlci5jOiBpZGFfc2ltcGxlX2dldCBzdWRhaCBkaWJ1bmdrdXMgdW5uYW1lZF9kZXZfbG9jaywgZGlsZXdhdGkiKQogICAgICAgIHJldHVybiBOb25lCiAgICBpZiAiaWRhX3NpbXBsZV9nZXQoJnVubmFtZWRfZGV2X2lkYSIgbm90IGluIHM6CiAgICAgICAgcHJpbnQoInN1cGVyLmM6IGh1bmsgZ2V0X2Fub25fYmRldiBTVVNGUyB0aWRhayBhZGEgKHBpbiBsZWJpaCBsYW1hPyksIGRpbGV3YXRpIikKICAgICAgICByZXR1cm4gTm9uZQogICAgbmVlZChzLCBTVVBFUl9PTEQsICdmcy9zdXBlci5jJywgJ2RldiA9IGlkYV9zaW1wbGVfZ2V0KCZ1bm5hbWVkX2Rldl9pZGEsIC4uLiknKQogICAgcHJpbnQoInN1cGVyLmM6IGlkYV9zaW1wbGVfZ2V0KCZ1bm5hbWVkX2Rldl9pZGEpIGRpYnVuZ2t1cyB1bm5hbWVkX2Rldl9sb2NrIikKICAgIHJldHVybiBzLnJlcGxhY2UoU1VQRVJfT0xELCBTVVBFUl9ORVcsIDEpCgojID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KIyA4KSBmcy9uYW1lc3BhY2UuYyAtIGNhY2F0IFNFSkVOSVMgZGkgc3VzZnNfYWxsb2Nfbm9uX3Vuc2hhcmVfa3N1X3Zmc21udCgpOgojICAgIGlkYV9zaW1wbGVfZ2V0KCZtbnRfaWRfaWRhLCAuLi4pIHBhZGFoYWwgbW50X2lkX2lkYSBkaSA0LjE0IGRpbGluZHVuZ2kKIyAgICBtbnRfaWRfbG9jayAobGloYXQgbW50X2FsbG9jX2lkKCkvbW50X2ZyZWVfaWQoKSBkaSBmaWxlIHlhbmcgc2FtYSkuIEluaQojICAgIFNVREFIIGFkYSBzZWphayBwaW4tcGluIHNlYmVsdW1ueWEgKHJldmlzaSBrZS0xOS9rZS0yMCBib290IG5vcm1hbCBkZW5nYW4KIyAgICBjYWNhdCBpbmkpLCBqYWRpIGJ1a2FuIHJlZ3Jlc2kgYmFydSAtIHRhcGkgdGV0YXAgcmFjZSB5YW5nIHNhbWEuCiMgICAgRGkgc2luaSBidW5na3VzLWxvY2sgVElEQUsgY3VrdXA6IGZsYWctbnlhIEdGUF9LRVJORUwsIGRhbiBpZGFfcHJlX2dldCgpCiMgICAgZGVuZ2FuIEdGUF9LRVJORUwgQk9MRUggVElEVVIgLT4gbWVtYW5nZ2lsbnlhIGRpIGRhbGFtIHNwaW5sb2NrIGp1c3RydQojICAgIG1lbWJ1YXQgYnVnIGJhcnUgeWFuZyBsZWJpaCBwYXJhaCAoInNsZWVwaW5nIGZ1bmN0aW9uIGNhbGxlZCBmcm9tIGludmFsaWQKIyAgICBjb250ZXh0IikuIEthcmVuYSBpdHUgamFsdXJueWEgZGl0dWxpcyB1bGFuZyBwZXJzaXMgZ2F5YSA0LjE0OiBpZGFfcHJlX2dldCgpCiMgICAgZGkgTFVBUiBsb2NrLCBpZGFfZ2V0X25ld19hYm92ZSgpIGRpIERBTEFNIG1udF9pZF9sb2NrLCByZXRyeSBzYWF0IC1FQUdBSU4uCiMgICAgaWRhX2dldF9uZXdfYWJvdmUoKSBtZW51bGlzIGlkIGtlICZtbnQtPm1udF9pZCBkYW4gbWVuZ2VtYmFsaWthbiAwLCBqYWRpCiMgICAgZGkgYWtoaXIgcmVzIGRpLXNldCB1bGFuZyBrZSBtbnQtPm1udF9pZCBzdXBheWEgRFVBIGJhcmlzIHVwc3RyZWFtCiMgICAgc2VzdWRhaG55YSAoImlmIChyZXMgPCAwKSBnb3RvIG91dF9mcmVlX2NhY2hlOyIgZGFuICJtbnQtPm1udF9pZCA9IHJlczsiKQojICAgIHRldGFwIGJlbmFyIHRhbnBhIHBlcmx1IGRpaGFwdXMgLSB5YW5nIHBlcnRhbWEgamFkaSBjZWsgeWFuZyBzZWxhbHUgbG9sb3MsCiMgICAgeWFuZyBrZWR1YSBqYWRpIHNlbGYtYXNzaWdubWVudC4KIyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09Ck5TX09MRCA9ICJcdFx0cmVzID0gaWRhX3NpbXBsZV9nZXQoJm1udF9pZF9pZGEsIERFRkFVTFRfS1NVX01OVF9JRCwgMCwgR0ZQX0tFUk5FTCk7XG4iCk5TX05FVyA9ICgiXHRcdGRvIHtcbiIKICAgICAgICAgICJcdFx0XHRpZiAoIWlkYV9wcmVfZ2V0KCZtbnRfaWRfaWRhLCBHRlBfS0VSTkVMKSkge1xuIgogICAgICAgICAgIlx0XHRcdFx0cmVzID0gLUVOT01FTTtcbiIKICAgICAgICAgICJcdFx0XHRcdGdvdG8gb3V0X2ZyZWVfY2FjaGU7XG4iCiAgICAgICAgICAiXHRcdFx0fVxuIgogICAgICAgICAgIlx0XHRcdHNwaW5fbG9jaygmbW50X2lkX2xvY2spO1xuIgogICAgICAgICAgIlx0XHRcdHJlcyA9IGlkYV9nZXRfbmV3X2Fib3ZlKCZtbnRfaWRfaWRhLCBERUZBVUxUX0tTVV9NTlRfSUQsICZtbnQtPm1udF9pZCk7XG4iCiAgICAgICAgICAiXHRcdFx0c3Bpbl91bmxvY2soJm1udF9pZF9sb2NrKTtcbiIKICAgICAgICAgICJcdFx0fSB3aGlsZSAocmVzID09IC1FQUdBSU4pO1xuIgogICAgICAgICAgIlx0XHRpZiAocmVzIDwgMClcbiIKICAgICAgICAgICJcdFx0XHRnb3RvIG91dF9mcmVlX2NhY2hlO1xuIgogICAgICAgICAgIlx0XHRyZXMgPSBtbnQtPm1udF9pZDtcbiIpCgpkZWYgZml4X25hbWVzcGFjZV9pZGEocyk6CiAgICBpZiAiaWRhX2dldF9uZXdfYWJvdmUoJm1udF9pZF9pZGEsIERFRkFVTFRfS1NVX01OVF9JRCIgaW4gczoKICAgICAgICBwcmludCgibmFtZXNwYWNlLmM6IGFsb2thc2kgbW50X2lkIGtzdSBzdWRhaCBsZXdhdCBqYWx1ciBiZXItbG9jaywgZGlsZXdhdGkiKQogICAgICAgIHJldHVybiBOb25lCiAgICBpZiAiaWRhX3NpbXBsZV9nZXQoJm1udF9pZF9pZGEiIG5vdCBpbiBzOgogICAgICAgIHByaW50KCJuYW1lc3BhY2UuYzogdGlkYWsgYWRhIGlkYV9zaW1wbGVfZ2V0KCZtbnRfaWRfaWRhKSAoc3RydWt0dXIgcGF0Y2ggYmVydWJhaD8pLCBkaWxld2F0aSIpCiAgICAgICAgcmV0dXJuIE5vbmUKICAgIG5lZWQocywgTlNfT0xELCAnZnMvbmFtZXNwYWNlLmMnLCAncmVzID0gaWRhX3NpbXBsZV9nZXQoJm1udF9pZF9pZGEsIC4uLiknKQogICAgcHJpbnQoIm5hbWVzcGFjZS5jOiBhbG9rYXNpIG1udF9pZCBrc3UgZGlwaW5kYWgga2UgaWRhX3ByZV9nZXQraWRhX2dldF9uZXdfYWJvdmUgZGkgYmF3YWggbW50X2lkX2xvY2siKQogICAgcmV0dXJuIHMucmVwbGFjZShOU19PTEQsIE5TX05FVywgMSkKCnJ3KCdmcy9zdGF0LmMnLCBmaXhfc3RhdF9tbnRfaWQpCnJ3KCdmcy9uYW1laS5jJywgZml4X25hbWVpKQpydygnZnMvc3RhdC5jJywgZml4X3N0YXRfZGVjbCkKcncoJ2ZzL3N0YXRmcy5jJywgZml4X3N0YXRmcykKcncoJ2ZzL3N1c2ZzLmMnLCBmaXhfc3VzZnNfaW5jbHVkZSkKcncoJ2ZzL3N1c2ZzLmMnLCBmaXhfc3VzZnNfY2FsbCkKcncoJ2ZzL3Byb2MvZmQuYycsIGZpeF9mZCkKcncoJ2ZzL3N1cGVyLmMnLCBmaXhfc3VwZXJfaWRhKQpydygnZnMvbmFtZXNwYWNlLmMnLCBmaXhfbmFtZXNwYWNlX2lkYSkKCiMgLS0tLS0tLS0tLS0tLS0tLSB2ZXJpZmlrYXNpIGFraGlyIC0tLS0tLS0tLS0tLS0tLS0KZGVmIHJkKHApOgogICAgcmV0dXJuIG9wZW4ocCwgZW5jb2Rpbmc9J3V0Zi04JywgZXJyb3JzPSdzdXJyb2dhdGVlc2NhcGUnKS5yZWFkKCkKCmVyciA9IFtdCnN0ID0gcmQoJ2ZzL3N0YXQuYycpCmlmIHJlLnNlYXJjaChNTlRfUEFULCBzdCwgcmUuTSk6CiAgICBlcnIuYXBwZW5kKCJmcy9zdGF0LmMgbWFzaWggbWVtYWthaSBzdGF0LT5tbnRfaWQgKGFzc2lnbm1lbnQgYWt0aWYsIGJ1a2FuIGtvbWVudGFyKSIpCmlmICdmaWxlbmFtZV9sb29rdXAoJyBpbiBzdCBhbmQgJ2V4dGVybiBpbnQgZmlsZW5hbWVfbG9va3VwKCcgbm90IGluIHN0OgogICAgZXJyLmFwcGVuZCgiZnMvc3RhdC5jIG1lbWFuZ2dpbCBmaWxlbmFtZV9sb29rdXAoKSB0YW5wYSBkZWtsYXJhc2kiKQppZiByZS5zZWFyY2gocideXCsnLCBzdCwgcmUuTSk6CiAgICBlcnIuYXBwZW5kKCJmcy9zdGF0LmMgbWFzaWggcHVueWEgYmFyaXMgYmVyYXdhbGFuICcrJyAoc2lzYSBtYXJrZXIgZGlmZikiKQpubSA9IHJkKCdmcy9uYW1laS5jJykKaWYgJ3N0YXRpYyBpbnQgZmlsZW5hbWVfbG9va3VwKCcgaW4gbm06CiAgICBlcnIuYXBwZW5kKCJmcy9uYW1laS5jOiBmaWxlbmFtZV9sb29rdXAgbWFzaWggc3RhdGljIikKc2YgPSByZCgnZnMvc3RhdGZzLmMnKQojIFBlbWVyaWtzYWFuIGluaSBkdWx1IGBmaW5kKGRlY2wpID4gZmluZCh1c2UpYC4gS2FsYXUgZXh0ZXJuLW55YSBUSURBSyBBREEgc2FtYQojIHNla2FsaSwgZmluZCgpIG1lbmdlbWJhbGlrYW4gLTEgZGFuIC0xID4gbiBzZWxhbHUgRmFsc2UgLT4gbG9sb3MgcGFkYWhhbAojIGZzL3N0YXRmcy5jIHRpZGFrIGJpc2EgY29tcGlsZS4gU2VrYXJhbmcgZXh0ZXJuIFdBSklCIGFkYSBEQU4gbWVuZGFodWx1aS4KaV9kZWNsID0gc2YuZmluZCgnZXh0ZXJuIGludCBzdXNmc19zdXNfa3N0YXRfc3Bvb2ZfdmZzX3N0YXRmcycpCmlfdXNlID0gc2YuZmluZChTVEFURlNfQU5DSE9SKQppZiBpX3VzZSA8IDA6CiAgICBlcnIuYXBwZW5kKCJmcy9zdGF0ZnMuYzogc3VzZnNfc3RhdGZzX2J5X2RlbnRyeSgpIGhpbGFuZyAocGF0Y2ggU1VTRlMgdGlkYWsgdGVyLWFwcGx5PykiKQplbGlmIG5vdCAoMCA8PSBpX2RlY2wgPCBpX3VzZSk6CiAgICBlcnIuYXBwZW5kKCJmcy9zdGF0ZnMuYzogZXh0ZXJuIHN1c2ZzX3N1c19rc3RhdF9zcG9vZl92ZnNfc3RhdGZzIHRpZGFrIGFkYSBhdGF1ICIKICAgICAgICAgICAgICAgIm1hc2loIGRpIGJhd2FoIHBlbWFrYWlhbiAoZGVjbD0lZCwgdXNlPSVkKSIgJSAoaV9kZWNsLCBpX3VzZSkpCnN1ID0gcmQoJ2ZzL3N1c2ZzLmMnKQppZiAnI2luY2x1ZGUgPGxpbnV4L3NlY3VyaXR5Lmg+JyBub3QgaW4gc3U6CiAgICBlcnIuYXBwZW5kKCJmcy9zdXNmcy5jOiA8bGludXgvc2VjdXJpdHkuaD4gYmVsdW0gYWRhIikKaWYgQ0FMTF9CQUQgaW4gc3U6CiAgICBlcnIuYXBwZW5kKCJmcy9zdXNmcy5jOiBtYXNpaCBhZGEgY2FsbCBzdXNmc19tYXJrX2lub2RlX3N1c19rc3RhdCAyLWFyZ3VtZW4iKQpmZCA9IHJkKCdmcy9wcm9jL2ZkLmMnKQppZiBmZC5jb3VudCgneycpICE9IGZkLmNvdW50KCd9Jyk6CiAgICBlcnIuYXBwZW5kKCJmcy9wcm9jL2ZkLmM6IGJyYWNlIHRpZGFrIHNlaW1iYW5nICh7PSVkLCB9PSVkKSIgJSAoZmQuY291bnQoJ3snKSwgZmQuY291bnQoJ30nKSkpCnNwID0gcmQoJ2ZzL3N1cGVyLmMnKQppZiAnaWRhX3NpbXBsZV9nZXQoJnVubmFtZWRfZGV2X2lkYScgaW4gc3AgYW5kIFNVUEVSX05FVyBub3QgaW4gc3A6CiAgICBlcnIuYXBwZW5kKCJmcy9zdXBlci5jOiBpZGFfc2ltcGxlX2dldCgmdW5uYW1lZF9kZXZfaWRhKSB0aWRhayBkaWxpbmR1bmdpIHVubmFtZWRfZGV2X2xvY2sgIgogICAgICAgICAgICAgICAiKHJhY2UgZGduIGphbHVyIGlkYV9nZXRfbmV3X2Fib3ZlIGRpIGJhd2FoIGxvY2sgaXR1KSIpCmlmIHNwLmNvdW50KCdzcGluX2xvY2soJnVubmFtZWRfZGV2X2xvY2spOycpICE9IHNwLmNvdW50KCdzcGluX3VubG9jaygmdW5uYW1lZF9kZXZfbG9jayk7Jyk6CiAgICBlcnIuYXBwZW5kKCJmcy9zdXBlci5jOiBzcGluX2xvY2svc3Bpbl91bmxvY2sgdW5uYW1lZF9kZXZfbG9jayB0aWRhayBzZWltYmFuZyAoJWQgdnMgJWQpIgogICAgICAgICAgICAgICAlIChzcC5jb3VudCgnc3Bpbl9sb2NrKCZ1bm5hbWVkX2Rldl9sb2NrKTsnKSwgc3AuY291bnQoJ3NwaW5fdW5sb2NrKCZ1bm5hbWVkX2Rldl9sb2NrKTsnKSkpCm5zID0gcmQoJ2ZzL25hbWVzcGFjZS5jJykKaWYgJ2lkYV9zaW1wbGVfZ2V0KCZtbnRfaWRfaWRhJyBpbiBuczoKICAgIGVyci5hcHBlbmQoImZzL25hbWVzcGFjZS5jOiBtYXNpaCBhZGEgaWRhX3NpbXBsZV9nZXQoJm1udF9pZF9pZGEpIC0gbG9jay1ueWEgY2FtcHVyIGRnbiBtbnRfaWRfbG9jayIpCmlmIG5zLmNvdW50KCdzcGluX2xvY2soJm1udF9pZF9sb2NrKTsnKSAhPSBucy5jb3VudCgnc3Bpbl91bmxvY2soJm1udF9pZF9sb2NrKTsnKToKICAgIGVyci5hcHBlbmQoImZzL25hbWVzcGFjZS5jOiBzcGluX2xvY2svc3Bpbl91bmxvY2sgbW50X2lkX2xvY2sgdGlkYWsgc2VpbWJhbmcgKCVkIHZzICVkKSIKICAgICAgICAgICAgICAgJSAobnMuY291bnQoJ3NwaW5fbG9jaygmbW50X2lkX2xvY2spOycpLCBucy5jb3VudCgnc3Bpbl91bmxvY2soJm1udF9pZF9sb2NrKTsnKSkpCmZvciBfcCwgX3QgaW4gKCgnZnMvc3VwZXIuYycsIHNwKSwgKCdmcy9uYW1lc3BhY2UuYycsIG5zKSk6CiAgICBpZiBfdC5jb3VudCgneycpICE9IF90LmNvdW50KCd9Jyk6CiAgICAgICAgZXJyLmFwcGVuZCgiJXM6IGJyYWNlIHRpZGFrIHNlaW1iYW5nICh7PSVkLCB9PSVkKSIgJSAoX3AsIF90LmNvdW50KCd7JyksIF90LmNvdW50KCd9JykpKQppZiBlcnI6CiAgICBwcmludCgiXG5zdXNmcy1maXg6IFZFUklGSUtBU0kgR0FHQUw6IikKICAgIGZvciBlIGluIGVycjoKICAgICAgICBwcmludCgiICAtICIgKyBlKQogICAgc3lzLmV4aXQoMSkKcHJpbnQoInN1c2ZzLWZpeDogT0ssIDYgZmlsZSBTVVNGUyBkaXZlcmlmaWthc2kiKQo=" | base64 -d > /tmp/fix_susfs_414.py
+          cat > /tmp/fix_susfs_414.py <<'FIX_SUSFS_414_PY'
+          #!/usr/bin/env python3
+          """
+          Perbaiki bug patch SUSFS v2.3.0 (JackA1ltman mainline @c231ef5d45) pada kernel 4.14.
+
+          Semua yang diperbaiki di sini adalah cacat UPSTREAM, bukan salah workflow: patch
+          itu ditulis untuk kernel 5.10+ lalu di-backport setengah jalan, sehingga 4 file
+          gagal compile. Tiap perbaikan idempoten dan memvalidasi anchor-nya (kalau
+          struktur berubah -> berhenti dgn pesan jelas, bukan menambal serampangan).
+          """
+          import re, sys
+
+          def rw(path, fn):
+              with open(path, encoding='utf-8', errors='surrogateescape') as f:
+                  s = f.read()
+              out = fn(s)
+              if out is None:
+                  return
+              with open(path, 'w', encoding='utf-8', errors='surrogateescape') as f:
+                  f.write(out)
+
+          def need(s, txt, path, label, n=1):
+              c = s.count(txt)
+              if c != n:
+                  sys.exit("susfs-fix: anchor '%s' ketemu %d kali (harus %d) di %s" % (label, c, n, path))
+
+          # =====================================================================
+          # 1) fs/stat.c - stat->mnt_id tidak ada di struct kstat sebelum 5.10.
+          #    susfs.c sendiri menjaga field ini dgn
+          #        #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
+          #    tapi hunk fs/stat.c lupa memakai penjaga yang sama.
+          #    result_mask tetap di-set, jadi jalur spoofing tidak berubah.
+          # =====================================================================
+          MNT_PAT = r'^[ \t]*stat->mnt_id = real_mount\(path->mnt\)->mnt_id;\n'
+
+          def fix_stat_mnt_id(s):
+              # Sejak JackA1ltman@1c442877 ("fix: needn't real_mount") upstream TIDAK
+              # menghapus assignment ini melainkan MENGOMENTARINYA menjadi
+              #     // stat->mnt_id = real_mount(path->mnt)->mnt_id;
+              # Jadi pencarian substring "stat->mnt_id" masih menemukannya DI DALAM
+              # komentar - itu bukan tanda kodenya aktif. Yang dihitung harus assignment
+              # yang benar-benar aktif; regex di bawah berjangkar ^[ \t]* sehingga baris
+              # yang diawali "//" tidak ikut cocok.
+              n = len(re.findall(MNT_PAT, s, re.M))
+              if n == 0:
+                  print("stat.c: tidak ada assignment stat->mnt_id aktif (sudah dikomentari/dihapus upstream), dilewati")
+                  return None
+              if n != 2:
+                  sys.exit("susfs-fix: assignment stat->mnt_id aktif ketemu %d kali di fs/stat.c (harus 0 atau 2)" % n)
+              s = re.sub(MNT_PAT, '', s, flags=re.M)
+              print("stat.c: 2 assignment stat->mnt_id dibuang (kstat 4.14 tidak punya field itu)")
+              return s
+
+          # =====================================================================
+          # 2) fs/stat.c + fs/namei.c - filename_lookup().
+          #    susfs_inline_hook_patches.sh menyisipkan pemanggilan filename_lookup()
+          #    ke fs/stat.c, TAPI penjaganya
+          #        if ! grep -q "internal.h" fs/stat.c && ! grep "static int filename_lookup" fs/namei.c
+          #    membuat deklarasinya TIDAK ikut disisipkan justru ketika fungsinya static
+          #    (kasus 4.14) - jadi kodenya masuk tanpa deklarasi apa pun. Solusinya:
+          #    buang 'static' di definisi namei.c lalu deklarasikan extern di stat.c.
+          # =====================================================================
+          NAMEI_OLD = "static int filename_lookup(int dfd, struct filename *name, unsigned flags,\n"
+          NAMEI_NEW = "int filename_lookup(int dfd, struct filename *name, unsigned flags,\n"
+
+          def fix_namei(s):
+              if NAMEI_OLD not in s:
+                  print("namei.c: filename_lookup sudah non-static, dilewati")
+                  return None
+              need(s, NAMEI_OLD, 'fs/namei.c', 'static int filename_lookup(')
+              print("namei.c: 'static' dibuang dari definisi filename_lookup()")
+              return s.replace(NAMEI_OLD, NAMEI_NEW, 1)
+
+          STAT_DECL = ("extern int filename_lookup(int dfd, struct filename *name, unsigned flags,\n"
+                       "\t\t\tstruct path *path, struct path *root);\n")
+          STAT_ANCHOR = "extern int ksu_handle_stat(int *dfd, struct filename **filename, int *flags);\n"
+
+          def fix_stat_decl(s):
+              if "extern int filename_lookup(" in s:
+                  print("stat.c: deklarasi filename_lookup sudah ada, dilewati")
+                  return None
+              if "filename_lookup(" not in s:
+                  print("stat.c: filename_lookup tidak dipakai (hook script berubah?), dilewati")
+                  return None
+              need(s, STAT_ANCHOR, 'fs/stat.c', 'extern int ksu_handle_stat(')
+              print("stat.c: deklarasi extern filename_lookup() ditambahkan")
+              return s.replace(STAT_ANCHOR, STAT_ANCHOR + STAT_DECL, 1)
+
+          # =====================================================================
+          # 3) fs/statfs.c - susfs_statfs_by_dentry() memanggil
+          #    susfs_sus_kstat_spoof_vfs_statfs() padahal blok extern-nya ditaruh
+          #    SESUDAH fungsi itu. Deklarasi diulang di atas (deklarasi ganda sah di C).
+          #    Anchor sengaja cuma nama fungsinya, tanpa daftar parameter: SUSFS
+          #    6b9e7acf9 menambah parameter `struct vfsmount *mnt`, dan anchor yang
+          #    memuat signature lengkap membuat fixer ini (dan verifikasinya) berhenti
+          #    dengan "tidak ketemu" walau extern-nya sudah benar di atas.
+          # =====================================================================
+          STATFS_ANCHOR = "static int susfs_statfs_by_dentry("
+          STATFS_DECL = ("extern bool susfs_is_inode_sus_kstat(struct inode *inode, bool *out_is_fuse);\n"
+                         "extern int susfs_sus_kstat_spoof_vfs_statfs(struct inode *inode, struct kstatfs *buf, bool *is_fuse);\n")
+
+          def fix_statfs(s):
+              i_decl = s.find("extern int susfs_sus_kstat_spoof_vfs_statfs")
+              i_use = s.find(STATFS_ANCHOR)
+              if i_use < 0:
+                  sys.exit("susfs-fix: susfs_statfs_by_dentry() tidak ketemu di fs/statfs.c")
+              if 0 <= i_decl < i_use:
+                  print("statfs.c: extern sudah mendahului pemakaian, dilewati")
+                  return None
+              need(s, STATFS_ANCHOR, 'fs/statfs.c', 'static int susfs_statfs_by_dentry(')
+              print("statfs.c: deklarasi extern dipindah ke atas susfs_statfs_by_dentry()")
+              return s.replace(STATFS_ANCHOR, STATFS_DECL + STATFS_ANCHOR, 1)
+
+          # =====================================================================
+          # 4) fs/susfs.c - security_sb_statfs() butuh <linux/security.h>.
+          # =====================================================================
+          SUSFS_INC_ANCHOR = "#include <linux/fs.h>\n"
+          SUSFS_INC = "#include <linux/security.h>\n"
+
+          def fix_susfs_include(s):
+              if SUSFS_INC in s:
+                  print("susfs.c: <linux/security.h> sudah ada, dilewati")
+                  return None
+              need(s, SUSFS_INC_ANCHOR, 'fs/susfs.c', '#include <linux/fs.h>')
+              print("susfs.c: #include <linux/security.h> ditambahkan (untuk security_sb_statfs)")
+              return s.replace(SUSFS_INC_ANCHOR, SUSFS_INC_ANCHOR + SUSFS_INC, 1)
+
+          # =====================================================================
+          # 5) fs/susfs.c - satu call site susfs_mark_inode_sus_kstat() ketinggalan
+          #    argumen ke-3 (is_update) waktu signature-nya ditambah. Jalur ini adalah
+          #    "if no duplicated, add it to list" = penambahan baru, jadi is_update=false
+          #    (sama seperti call site sejenis di atasnya).
+          # =====================================================================
+          CALL_BAD = "susfs_mark_inode_sus_kstat(new_entry->info.target_pathname, new_entry);\n"
+          CALL_OK = "susfs_mark_inode_sus_kstat(new_entry->info.target_pathname, new_entry, false);\n"
+
+          def fix_susfs_call(s):
+              if CALL_BAD not in s:
+                  print("susfs.c: call susfs_mark_inode_sus_kstat sudah 3 argumen, dilewati")
+                  return None
+              need(s, CALL_BAD, 'fs/susfs.c', 'susfs_mark_inode_sus_kstat(.., ..) 2-argumen')
+              print("susfs.c: argumen is_update=false ditambahkan ke call susfs_mark_inode_sus_kstat()")
+              return s.replace(CALL_BAD, CALL_OK, 1)
+
+          # =====================================================================
+          # 6) fs/proc/fd.c - blok SUS_MOUNT kurang satu '}': ada dua 'if' yang dibuka
+          #    tapi cuma satu yang ditutup sebelum label orig_flow, jadi seluruh sisa
+          #    file ikut tertelan ke dalam seq_show() ("function definition is not
+          #    allowed here"). Ini bug sejenis yg baru saja upstream perbaiki di
+          #    fs/notify/fdinfo.c tapi terlewat di sini.
+          # =====================================================================
+          FD_OLD = "\t\tgoto orig_flow;\n\t}\norig_flow:\n#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n"
+          FD_NEW = "\t\tgoto orig_flow;\n\t\t}\n\t}\norig_flow:\n#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n"
+
+          def fix_fd(s):
+              if FD_NEW in s:
+                  print("proc/fd.c: brace sudah seimbang, dilewati")
+                  return None
+              need(s, FD_OLD, 'fs/proc/fd.c', "'goto orig_flow; } orig_flow:'")
+              print("proc/fd.c: satu '}' yang hilang di blok SUS_MOUNT ditambahkan")
+              return s.replace(FD_OLD, FD_NEW, 1)
+
+          # ============================================================================
+          # 7) fs/super.c - hunk get_anon_bdev() yang BARU (mulai pin c231ef5d45)
+          #    memanggil ida_simple_get() pada unnamed_dev_ida. Di 4.14 IDA itu dikelola
+          #    dengan ida_pre_get()+ida_get_new_above() DI BAWAH unnamed_dev_lock,
+          #    sedangkan ida_simple_get() memakai simple_ida_lock miliknya sendiri ->
+          #    satu IDA dimodifikasi di bawah dua lock berbeda = data race, karena
+          #    get_anon_bdev() bisa jalan bersamaan di CPU lain untuk mount anonim apa
+          #    pun. Di 5.10 (target asli SUSFS) tidak ada masalah: get_anon_bdev() di
+          #    sana sudah memakai ida_alloc_range() yang ber-lock sendiri.
+          #    Perbaikan MINIMAL: panggilannya dibungkus unnamed_dev_lock, teks upstream
+          #    tidak diubah. Tidak mungkin "sleeping in atomic": flag-nya GFP_ATOMIC,
+          #    jadi ida_pre_get() di dalam ida_simple_get() tidak pernah tidur. Urutan
+          #    lock aman (tidak ada ABBA): simple_ida_lock hanya dipegang DI DALAM
+          #    ida_simple_*(), yang tidak pernah mengambil unnamed_dev_lock.
+          # ============================================================================
+          SUPER_OLD = ("\t\t\tdev = ida_simple_get(&unnamed_dev_ida, DEFAULT_KSU_MNT_MINOR_DEV,\n"
+                       "\t\t\t\t\t     (1 << MINORBITS), GFP_ATOMIC);\n")
+          SUPER_NEW = ("\t\t\tspin_lock(&unnamed_dev_lock);\n" + SUPER_OLD +
+                       "\t\t\tspin_unlock(&unnamed_dev_lock);\n")
+
+          def fix_super_ida(s):
+              if SUPER_NEW in s:
+                  print("super.c: ida_simple_get sudah dibungkus unnamed_dev_lock, dilewati")
+                  return None
+              if "ida_simple_get(&unnamed_dev_ida" not in s:
+                  print("super.c: hunk get_anon_bdev SUSFS tidak ada (pin lebih lama?), dilewati")
+                  return None
+              need(s, SUPER_OLD, 'fs/super.c', 'dev = ida_simple_get(&unnamed_dev_ida, ...)')
+              print("super.c: ida_simple_get(&unnamed_dev_ida) dibungkus unnamed_dev_lock")
+              return s.replace(SUPER_OLD, SUPER_NEW, 1)
+
+          # ============================================================================
+          # 8) fs/namespace.c - cacat SEJENIS di susfs_alloc_non_unshare_ksu_vfsmnt():
+          #    ida_simple_get(&mnt_id_ida, ...) padahal mnt_id_ida di 4.14 dilindungi
+          #    mnt_id_lock (lihat mnt_alloc_id()/mnt_free_id() di file yang sama). Ini
+          #    SUDAH ada sejak pin-pin sebelumnya (revisi ke-19/ke-20 boot normal dengan
+          #    cacat ini), jadi bukan regresi baru - tapi tetap race yang sama.
+          #    Di sini bungkus-lock TIDAK cukup: flag-nya GFP_KERNEL, dan ida_pre_get()
+          #    dengan GFP_KERNEL BOLEH TIDUR -> memanggilnya di dalam spinlock justru
+          #    membuat bug baru yang lebih parah ("sleeping function called from invalid
+          #    context"). Karena itu jalurnya ditulis ulang persis gaya 4.14: ida_pre_get()
+          #    di LUAR lock, ida_get_new_above() di DALAM mnt_id_lock, retry saat -EAGAIN.
+          #    ida_get_new_above() menulis id ke &mnt->mnt_id dan mengembalikan 0, jadi
+          #    di akhir res di-set ulang ke mnt->mnt_id supaya DUA baris upstream
+          #    sesudahnya ("if (res < 0) goto out_free_cache;" dan "mnt->mnt_id = res;")
+          #    tetap benar tanpa perlu dihapus - yang pertama jadi cek yang selalu lolos,
+          #    yang kedua jadi self-assignment.
+          # ============================================================================
+          NS_OLD = "\t\tres = ida_simple_get(&mnt_id_ida, DEFAULT_KSU_MNT_ID, 0, GFP_KERNEL);\n"
+          NS_NEW = ("\t\tdo {\n"
+                    "\t\t\tif (!ida_pre_get(&mnt_id_ida, GFP_KERNEL)) {\n"
+                    "\t\t\t\tres = -ENOMEM;\n"
+                    "\t\t\t\tgoto out_free_cache;\n"
+                    "\t\t\t}\n"
+                    "\t\t\tspin_lock(&mnt_id_lock);\n"
+                    "\t\t\tres = ida_get_new_above(&mnt_id_ida, DEFAULT_KSU_MNT_ID, &mnt->mnt_id);\n"
+                    "\t\t\tspin_unlock(&mnt_id_lock);\n"
+                    "\t\t} while (res == -EAGAIN);\n"
+                    "\t\tif (res < 0)\n"
+                    "\t\t\tgoto out_free_cache;\n"
+                    "\t\tres = mnt->mnt_id;\n")
+
+          def fix_namespace_ida(s):
+              if "ida_get_new_above(&mnt_id_ida, DEFAULT_KSU_MNT_ID" in s:
+                  print("namespace.c: alokasi mnt_id ksu sudah lewat jalur ber-lock, dilewati")
+                  return None
+              if "ida_simple_get(&mnt_id_ida" not in s:
+                  print("namespace.c: tidak ada ida_simple_get(&mnt_id_ida) (struktur patch berubah?), dilewati")
+                  return None
+              need(s, NS_OLD, 'fs/namespace.c', 'res = ida_simple_get(&mnt_id_ida, ...)')
+              print("namespace.c: alokasi mnt_id ksu dipindah ke ida_pre_get+ida_get_new_above di bawah mnt_id_lock")
+              return s.replace(NS_OLD, NS_NEW, 1)
+
+          rw('fs/stat.c', fix_stat_mnt_id)
+          rw('fs/namei.c', fix_namei)
+          rw('fs/stat.c', fix_stat_decl)
+          rw('fs/statfs.c', fix_statfs)
+          rw('fs/susfs.c', fix_susfs_include)
+          rw('fs/susfs.c', fix_susfs_call)
+          rw('fs/proc/fd.c', fix_fd)
+          rw('fs/super.c', fix_super_ida)
+          rw('fs/namespace.c', fix_namespace_ida)
+
+          # ---------------- verifikasi akhir ----------------
+          def rd(p):
+              return open(p, encoding='utf-8', errors='surrogateescape').read()
+
+          err = []
+          st = rd('fs/stat.c')
+          if re.search(MNT_PAT, st, re.M):
+              err.append("fs/stat.c masih memakai stat->mnt_id (assignment aktif, bukan komentar)")
+          if 'filename_lookup(' in st and 'extern int filename_lookup(' not in st:
+              err.append("fs/stat.c memanggil filename_lookup() tanpa deklarasi")
+          if re.search(r'^\+', st, re.M):
+              err.append("fs/stat.c masih punya baris berawalan '+' (sisa marker diff)")
+          nm = rd('fs/namei.c')
+          if 'static int filename_lookup(' in nm:
+              err.append("fs/namei.c: filename_lookup masih static")
+          sf = rd('fs/statfs.c')
+          # Pemeriksaan ini dulu `find(decl) > find(use)`. Kalau extern-nya TIDAK ADA sama
+          # sekali, find() mengembalikan -1 dan -1 > n selalu False -> lolos padahal
+          # fs/statfs.c tidak bisa compile. Sekarang extern WAJIB ada DAN mendahului.
+          i_decl = sf.find('extern int susfs_sus_kstat_spoof_vfs_statfs')
+          i_use = sf.find(STATFS_ANCHOR)
+          if i_use < 0:
+              err.append("fs/statfs.c: susfs_statfs_by_dentry() hilang (patch SUSFS tidak ter-apply?)")
+          elif not (0 <= i_decl < i_use):
+              err.append("fs/statfs.c: extern susfs_sus_kstat_spoof_vfs_statfs tidak ada atau "
+                         "masih di bawah pemakaian (decl=%d, use=%d)" % (i_decl, i_use))
+          su = rd('fs/susfs.c')
+          if '#include <linux/security.h>' not in su:
+              err.append("fs/susfs.c: <linux/security.h> belum ada")
+          if CALL_BAD in su:
+              err.append("fs/susfs.c: masih ada call susfs_mark_inode_sus_kstat 2-argumen")
+          fd = rd('fs/proc/fd.c')
+          if fd.count('{') != fd.count('}'):
+              err.append("fs/proc/fd.c: brace tidak seimbang ({=%d, }=%d)" % (fd.count('{'), fd.count('}')))
+          sp = rd('fs/super.c')
+          if 'ida_simple_get(&unnamed_dev_ida' in sp and SUPER_NEW not in sp:
+              err.append("fs/super.c: ida_simple_get(&unnamed_dev_ida) tidak dilindungi unnamed_dev_lock "
+                         "(race dgn jalur ida_get_new_above di bawah lock itu)")
+          if sp.count('spin_lock(&unnamed_dev_lock);') != sp.count('spin_unlock(&unnamed_dev_lock);'):
+              err.append("fs/super.c: spin_lock/spin_unlock unnamed_dev_lock tidak seimbang (%d vs %d)"
+                         % (sp.count('spin_lock(&unnamed_dev_lock);'), sp.count('spin_unlock(&unnamed_dev_lock);')))
+          ns = rd('fs/namespace.c')
+          if 'ida_simple_get(&mnt_id_ida' in ns:
+              err.append("fs/namespace.c: masih ada ida_simple_get(&mnt_id_ida) - lock-nya campur dgn mnt_id_lock")
+          if ns.count('spin_lock(&mnt_id_lock);') != ns.count('spin_unlock(&mnt_id_lock);'):
+              err.append("fs/namespace.c: spin_lock/spin_unlock mnt_id_lock tidak seimbang (%d vs %d)"
+                         % (ns.count('spin_lock(&mnt_id_lock);'), ns.count('spin_unlock(&mnt_id_lock);')))
+          for _p, _t in (('fs/super.c', sp), ('fs/namespace.c', ns)):
+              if _t.count('{') != _t.count('}'):
+                  err.append("%s: brace tidak seimbang ({=%d, }=%d)" % (_p, _t.count('{'), _t.count('}')))
+          if err:
+              print("\nsusfs-fix: VERIFIKASI GAGAL:")
+              for e in err:
+                  print("  - " + e)
+              sys.exit(1)
+          print("susfs-fix: OK, 6 file SUSFS diverifikasi")
+          FIX_SUSFS_414_PY
           python3 /tmp/fix_susfs_414.py
 
           echo ""
@@ -2203,7 +2609,655 @@ jobs:
           # supaya tambalan KernelSU ikut ter-commit (KSU tetap clean).
           # Idempoten; berkas yang sudah membawa fitur ini dilewati, anchor
           # yang berubah menghentikan build dengan pesan jelas.
-          echo "IyEvdXNyL2Jpbi9lbnYgcHl0aG9uMwoiIiIKQmFja3BvcnQgInN1c2ZzOiBBZGQgcHJpb3JpdHkgdWlkIGZpbHRlciIgKHNpbW9ucHVuay9zdXNmczRrc3UgMzVjYmZlMTE4LApicmFuY2ggZ2tpLWFuZHJvaWQxMi01LjEwLCAyMDI2LTEwLTI0KSBrZSBTVVNGUyA0LjE0IChKYWNrQTFsdG1hbikgKyBCYWthU1UuCgpGaXR1cjogdWlkIGFwbGlrYXNpIHBpbGloYW4gZGlzZW1idW55aWthbiBkYXJpIGdldHByaW9yaXR5L3NldHByaW9yaXR5Lwppb3ByaW9fZ2V0L2lvcHJpb19zZXQgKGRpcGFrYWkgc2ViYWdpYW4gYXBwIHVudHVrIG1lbmdoaXR1bmcgYXBwIHlhbmcKdGVycGFzYW5nKS4gRGlhdHVyIGRhcmkgdXNlcnNwYWNlIGxld2F0IENNRF9TVVNGU19TRVRfUFJJT1JJVFlfVUlEX0ZJTFRFUgooMHg2MDAzMCksIG1pcy4gYGtzdV9zdXNmcyBzZXRfcHJpb3JpdHlfdWlkX2ZpbHRlciBjb20uYSxjb20uYmAuCgpCZWRhIGRlbmdhbiB1cHN0cmVhbSAoV0FKSUIgdW50dWsgNC4xNCk6CiAgLSBrZnJlZV9yY3Uob2xkX2JpdG1hcCwgcmN1KSBkaWJ1bmdrdXMgYGlmIChvbGRfYml0bWFwKWAuIERpIDQuMTQgbWFrcm8KICAgIGtmcmVlX3JjdSBUSURBSyBtZW5nZWNlayBOVUxMIChpbmNsdWRlL2xpbnV4L3JjdXBkYXRlLmg6ODczIGxhbmdzdW5nCiAgICBfX2tmcmVlX3JjdSgmcHRyLT5yY3UsIC4uLikpOyByY3UgYWRhbGFoIGZpZWxkIHBlcnRhbWEsIGphZGkgcGFkYQogICAgcGVtYW5nZ2lsYW4gUEVSVEFNQSAoYml0bWFwIGxhbWEgbWFzaWggTlVMTCkgY2FsbF9yY3UgbWVuZXJpbWEgaGVhZCBOVUxMCiAgICAtPiBwYW5pYy4gVXBzdHJlYW0gYW1hbiBrYXJlbmEgNS4xMCBzdWRhaCBwdW55YSBjZWsgTlVMTCBkaSBrZnJlZV9yY3UuCiAgLSBmcy9zdXNmcy5jIGRpdGFtYmFoICNpbmNsdWRlIDxsaW51eC9tbS5oPiAoa3ZtYWxsb2Mva3ZmcmVlKTsgZGkgNC4xNAogICAgaGVhZGVyIGl0dSBjdW1hIHRlcmJhd2EgdHJhbnNpdGlmIGxld2F0IGZ1c2VfaS5oLgogIC0gU2lzaSBLU1UgbWVtYWthaSBkZWtsYXJhc2kgZXh0ZXJuLCBidWthbiAjaW5jbHVkZSA8bGludXgvc3VzZnMuaD4sIGRhbgogICAgZGlqYWdhIENPTkZJR19LU1VfU1VTRlMgKEJha2FTVSBqdWdhIGRpYmFuZ3VuIHRhbnBhIFNVU0ZTKS4KICAtIFJlc29sdmUgdWxhbmcgdWlkIHNhYXQgcGFja2FnZXMubGlzdCBiZXJ1YmFoIGRpcGFzYW5nIGRpCiAgICB0aHJvbmVfdHJhY2tlci5jIGtzdV9oYW5kbGVfcmVuYW1lKCkgKGphbHVyIDQuMTQpLCBidWthbiBwa2dfb2JzZXJ2ZXIuYy4KClRpYXAgYmVya2FzOiBkaWxld2F0aSBrYWxhdSBwZW5hbmRhbnlhIHN1ZGFoIGFkYSAodXBzdHJlYW0gc3VkYWggbWVtYmF3YQpmaXR1ciBpbmkpLCBzZWxhaW4gaXR1IHNldGlhcCBhbmNob3IgaGFydXMga2V0ZW11IHRlcGF0IHNla2FsaSAoYXRhdSBkdWEga2FsaQpiaWxhIGRpc2VidXQpIC0ga2FsYXUgdGlkYWssIGJlcmhlbnRpIGRlbmdhbiBwZXNhbiBqZWxhcy4KIiIiCmltcG9ydCBzeXMKCmRlZiBydyhwYXRoLCBmbik6CiAgICB3aXRoIG9wZW4ocGF0aCwgZW5jb2Rpbmc9J3V0Zi04JywgZXJyb3JzPSdzdXJyb2dhdGVlc2NhcGUnKSBhcyBmOgogICAgICAgIHMgPSBmLnJlYWQoKQogICAgb3V0ID0gZm4ocykKICAgIGlmIG91dCBpcyBOb25lOgogICAgICAgIHJldHVybgogICAgd2l0aCBvcGVuKHBhdGgsICd3JywgZW5jb2Rpbmc9J3V0Zi04JywgZXJyb3JzPSdzdXJyb2dhdGVlc2NhcGUnKSBhcyBmOgogICAgICAgIGYud3JpdGUob3V0KQoKZGVmIG5lZWQocywgdHh0LCBwYXRoLCBsYWJlbCwgbj0xKToKICAgIGMgPSBzLmNvdW50KHR4dCkKICAgIGlmIGMgIT0gbjoKICAgICAgICBzeXMuZXhpdCgicHJpby11aWQ6IGFuY2hvciAnJXMnIGtldGVtdSAlZCBrYWxpIChoYXJ1cyAlZCkgZGkgJXMiICUgKGxhYmVsLCBjLCBuLCBwYXRoKSkKCmRlZiBiZWZvcmUocywgYW5jaG9yLCBhZGQsIHBhdGgsIGxhYmVsLCBuPTEpOgogICAgbmVlZChzLCBhbmNob3IsIHBhdGgsIGxhYmVsLCBuKQogICAgcmV0dXJuIHMucmVwbGFjZShhbmNob3IsIGFkZCArIGFuY2hvcikKCmRlZiBhZnRlcihzLCBhbmNob3IsIGFkZCwgcGF0aCwgbGFiZWwsIG49MSk6CiAgICBuZWVkKHMsIGFuY2hvciwgcGF0aCwgbGFiZWwsIG4pCiAgICByZXR1cm4gcy5yZXBsYWNlKGFuY2hvciwgYW5jaG9yICsgYWRkKQoKIyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KIyAxKSBpbmNsdWRlL2xpbnV4L3N1c2ZzX2RlZi5oIC0gbm9tb3IgcGVyaW50YWggKyB1a3VyYW4gYml0bWFwCiMgPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09CkRFRl9IID0gJ2luY2x1ZGUvbGludXgvc3VzZnNfZGVmLmgnCgpkZWYgZml4X2RlZl9oKHMpOgogICAgaWYgJ0NNRF9TVVNGU19TRVRfUFJJT1JJVFlfVUlEX0ZJTFRFUicgaW4gczoKICAgICAgICBwcmludCgic3VzZnNfZGVmLmg6IHN1ZGFoIGFkYSwgZGlsZXdhdGkiKQogICAgICAgIHJldHVybiBOb25lCiAgICBzID0gYWZ0ZXIocywgJyNpbmNsdWRlIDxsaW51eC9iaXRzLmg+XG4nLCAnI2luY2x1ZGUgPGxpbnV4L2JpdG1hcC5oPlxuJywgREVGX0gsICcjaW5jbHVkZSA8bGludXgvYml0cy5oPicpCiAgICBzID0gYWZ0ZXIocywgJyNkZWZpbmUgQ01EX1NVU0ZTX0FERF9TVVNfTUFQIDB4NjAwMjBcbicsCiAgICAgICAgICAgICAgJyNkZWZpbmUgQ01EX1NVU0ZTX1NFVF9QUklPUklUWV9VSURfRklMVEVSIDB4NjAwMzBcbicsIERFRl9ILCAnQ01EX1NVU0ZTX0FERF9TVVNfTUFQJykKICAgIHMgPSBiZWZvcmUocywgJ3N0YXRpYyBpbmxpbmUgYm9vbCBzdXNmc19zdGFydHNfd2l0aCgnLAogICAgICAgICAgICAgICAnLyoqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqL1xuJwogICAgICAgICAgICAgICAnLyogZ2V0cHJpb3JpdHkgdWlkIGZpbHRlciAoYml0bWFwKSAgICAgICAqL1xuJwogICAgICAgICAgICAgICAnLyoqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqL1xuJwogICAgICAgICAgICAgICAnLyogVGhlIHVpZHMgdGhhdCBhcmUgaGlkZGVuIGZyb20gdGhlIGFwcHMgdGhhdCBhYnVzZSB0aGUgZ2V0cHJpb3JpdHkgc3lzY2FsbFxuJwogICAgICAgICAgICAgICAnICogdG8gZmluZCBvdXQgdGhlIGV4aXN0aW5nIHVpZHMuIE9ubHkgdGhlIHVpZHMgd2l0aGluIHRoZSBhcHAgdWlkIHJhbmdlXG4nCiAgICAgICAgICAgICAgICcgKiAoMTAwMDAgLSAxOTk5OSkgYXJlIHN1cHBvcnRlZC5cbicKICAgICAgICAgICAgICAgJyAqL1xuJwogICAgICAgICAgICAgICAnI2RlZmluZSBTVVNGU19QUklPUklUWV9VSURfRklMVEVSX01JTl9VSUQgMTAwMDBcbicKICAgICAgICAgICAgICAgJyNkZWZpbmUgU1VTRlNfUFJJT1JJVFlfVUlEX0ZJTFRFUl9NQVhfVUlEIDE5OTk5XG4nCiAgICAgICAgICAgICAgICcjZGVmaW5lIFNVU0ZTX1BSSU9SSVRZX1VJRF9GSUxURVJfVUlEX05VTSAoU1VTRlNfUFJJT1JJVFlfVUlEX0ZJTFRFUl9NQVhfVUlEIC0gU1VTRlNfUFJJT1JJVFlfVUlEX0ZJTFRFUl9NSU5fVUlEICsgMSlcbicKICAgICAgICAgICAgICAgJyNkZWZpbmUgU1VTRlNfUFJJT1JJVFlfVUlEX0ZJTFRFUl9CSVRNQVBfTEVOIEJJVFNfVE9fTE9OR1MoU1VTRlNfUFJJT1JJVFlfVUlEX0ZJTFRFUl9VSURfTlVNKVxuJwogICAgICAgICAgICAgICAnI2RlZmluZSBTVVNGU19BUFBfU1RSX0JVRl9TSVpFIDY1NTM1XG4nCiAgICAgICAgICAgICAgICdcbicsIERFRl9ILCAnc3RhdGljIGlubGluZSBib29sIHN1c2ZzX3N0YXJ0c193aXRoKCcpCiAgICBwcmludCgic3VzZnNfZGVmLmg6IENNRCAweDYwMDMwICsga29uc3RhbnRhIGJpdG1hcCBkaXRhbWJhaGthbiIpCiAgICByZXR1cm4gcwoKIyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KIyAyKSBpbmNsdWRlL2xpbnV4L3N1c2ZzLmggLSBzdHJ1Y3QgKyBwcm90b3RpcGUKIyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KU1VTRlNfSCA9ICdpbmNsdWRlL2xpbnV4L3N1c2ZzLmgnCgpkZWYgZml4X3N1c2ZzX2gocyk6CiAgICBpZiAnc3Rfc3VzZnNfcHJpb3JpdHlfdWlkX2ZpbHRlcicgaW4gczoKICAgICAgICBwcmludCgic3VzZnMuaDogc3VkYWggYWRhLCBkaWxld2F0aSIpCiAgICAgICAgcmV0dXJuIE5vbmUKICAgIHMgPSBiZWZvcmUocywgJy8qIGF2YyBsb2cgc3Bvb2ZpbmcgKi9cbnN0cnVjdCBzdF9zdXNmc19hdmNfbG9nX3Nwb29maW5nIHsnLAogICAgICAgICAgICAgICAnLyogZ2V0cHJpb3JpdHkgdWlkIGZpbHRlciAqL1xuJwogICAgICAgICAgICAgICAnc3RydWN0IHN0X3N1c2ZzX3ByaW9yaXR5X3VpZF9maWx0ZXIge1xuJwogICAgICAgICAgICAgICAnXHRjaGFyICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgYXBwX3N0cmluZ3NbU1VTRlNfQVBQX1NUUl9CVUZfU0laRV07XG4nCiAgICAgICAgICAgICAgICdcdGludCAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBlcnI7XG4nCiAgICAgICAgICAgICAgICd9O1xuJwogICAgICAgICAgICAgICAnXG4nLCBTVVNGU19ILCAnc3RydWN0IHN0X3N1c2ZzX2F2Y19sb2dfc3Bvb2ZpbmcnKQogICAgcyA9IGJlZm9yZShzLCAndm9pZCBzdXNmc19zZXRfYXZjX2xvZ19zcG9vZmluZyh2b2lkIF9fdXNlciAqKnVzZXJfaW5mbyk7JywKICAgICAgICAgICAgICAgJy8qIGdldHByaW9yaXR5IHVpZCBmaWx0ZXIgKi9cbicKICAgICAgICAgICAgICAgJ3ZvaWQgc3VzZnNfc2V0X3ByaW9yaXR5X3VpZF9maWx0ZXIodm9pZCBfX3VzZXIgKip1c2VyX2luZm8pO1xuJwogICAgICAgICAgICAgICAndm9pZCBzdXNmc19wYXJzZV9wcmlvcml0eV9hcHBfc3RyaW5ncyh2b2lkKTtcbicKICAgICAgICAgICAgICAgJ1xuJywgU1VTRlNfSCwgJ3Byb3RvdGlwZSBzdXNmc19zZXRfYXZjX2xvZ19zcG9vZmluZycpCiAgICBwcmludCgic3VzZnMuaDogc3RydWN0IHN0X3N1c2ZzX3ByaW9yaXR5X3VpZF9maWx0ZXIgKyAyIHByb3RvdGlwZSBkaXRhbWJhaGthbiIpCiAgICByZXR1cm4gcwoKIyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KIyAzKSBmcy9zdXNmcy5jIC0gaW1wbGVtZW50YXNpIChzYWxpbmFuIHVwc3RyZWFtICsgZ3VhcmQga2ZyZWVfcmN1IE5VTEwpCiMgPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09ClNVU0ZTX0MgPSAnZnMvc3VzZnMuYycKClNVU0ZTX0NfSEVMUEVSUyA9IHInJycvKgogKiBTd2l0Y2hlcyB0aGUgc2VsaW51eCBkb21haW4gb2YgdGhlIGN1cnJlbnQgcHJvY2VzcyB0byB0aGUgS2VybmVsU1Ugb25lLCBzbwogKiB0aGF0IHRoZSBkYXRhIHBhdGhzIG9mIHRoZSBhcHBzIGNhbiBiZSBhY2Nlc3NlZCBkZXNwaXRlIG9mIHRoZSBzZWxpbnV4CiAqIHJlc3RyaWN0aW9ucy4KICogVGhlIG9yaWdpbmFsIGNyZWRlbnRpYWxzIGFyZSByZXR1cm5lZCwgdGhleSBoYXZlIHRvIGJlIHJlc3RvcmVkIHdpdGgKICogc3VzZnNfcmVzdG9yZV9jcmVkcygpIGFmdGVyd2FyZHMuCiAqIFJldHVybnMgdGhlIG9yaWdpbmFsIGNyZWRlbnRpYWxzIG9uIHN1Y2Nlc3MsIE5VTEwgb24gZmFpbHVyZS4KICovCnN0YXRpYyBzdHJ1Y3QgY3JlZCAqc3VzZnNfc3dpdGNoX3RvX2tzdV9kb21haW4odm9pZCkgewoJc3RydWN0IGNyZWQgKm9yaWdfY3JlZCA9IE5VTEw7CglzdHJ1Y3QgY3JlZCAqY3JlZCA9IE5VTEw7CgoJLyogYSBjb3B5IG9mIHRoZSBjdXJyZW50IGNyZWRlbnRpYWxzLCB3aGljaCBpcyByZXN0b3JlZCBsYXRlciBvbiAqLwoJb3JpZ19jcmVkID0gcHJlcGFyZV9jcmVkcygpOwoJaWYgKCFvcmlnX2NyZWQpIHsKCQlTVVNGU19MT0dFKCJmYWlsZWQgdG8gcHJlcGFyZSBjcmVkcyFcbiIpOwoJCXJldHVybiBOVUxMOwoJfQoKCWNyZWQgPSBwcmVwYXJlX2NyZWRzKCk7CglpZiAoIWNyZWQpIHsKCQlTVVNGU19MT0dFKCJmYWlsZWQgdG8gcHJlcGFyZSBjcmVkcyFcbiIpOwoJCWFib3J0X2NyZWRzKG9yaWdfY3JlZCk7CgkJcmV0dXJuIE5VTEw7Cgl9CgoJc2V0dXBfc2VsaW51eCgidTpyOmtzdTpzMCIsIGNyZWQpOwoJY29tbWl0X2NyZWRzKGNyZWQpOwoKCWlmICghc3VzZnNfaXNfY3VycmVudF9rc3VfZG9tYWluKCkpIHsKCQlTVVNGU19MT0dFKCJkb21haW4gaXMgbm90IGtzdSwgcmVzdG9yaW5nIHRoZSBvcmlnaW5hbCBjcmVkc1xuIik7CgkJY29tbWl0X2NyZWRzKG9yaWdfY3JlZCk7CgkJcmV0dXJuIE5VTEw7Cgl9CgoJcmV0dXJuIG9yaWdfY3JlZDsKfQoKLyoKICogUmVzdG9yZXMgdGhlIG9yaWdpbmFsIGNyZWRlbnRpYWxzIHRoYXQgd2VyZSBzYXZlZCBieQogKiBzdXNmc19zd2l0Y2hfdG9fa3N1X2RvbWFpbigpLgogKi8Kc3RhdGljIHZvaWQgc3VzZnNfcmVzdG9yZV9jcmVkcyhzdHJ1Y3QgY3JlZCAqb3JpZ19jcmVkKSB7CglpZiAoIW9yaWdfY3JlZCkKCQlyZXR1cm47CgoJY29tbWl0X2NyZWRzKG9yaWdfY3JlZCk7Cn0KCicnJwoKU1VTRlNfQ19GRUFUVVJFID0gcicnJy8qIHByaW9yaXR5IHVpZCBmaWx0ZXIgKi8Kc3RydWN0IHN1c2ZzX3ByaW9yaXR5X3VpZF9maWx0ZXJfYml0bWFwIHsKCXN0cnVjdCByY3VfaGVhZAkJCXJjdTsKCXVuc2lnbmVkIGxvbmcJCQliaXRzW1NVU0ZTX1BSSU9SSVRZX1VJRF9GSUxURVJfQklUTUFQX0xFTl07Cn07CgpzdGF0aWMgc3RydWN0IHN1c2ZzX3ByaW9yaXR5X3VpZF9maWx0ZXJfYml0bWFwIF9fcmN1ICpwcmlvcml0eV91aWRfZmlsdGVyX2JpdG1hcDsKc3RhdGljIERFRklORV9NVVRFWChzdXNmc19tdXRleF9sb2NrX3ByaW9yaXR5X3VpZF9maWx0ZXIpOwovKgogKiBUaGUgYXBwIHBhY2thZ2UgbmFtZXMgb2YgdGhlIGFwcHMgdGhhdCBhcmUgY3VycmVudGx5IGZpbHRlcmVkLgogKiBUaGV5IGFyZSBzdG9yZWQgc28gdGhhdCB0aGUgdWlkcyBvZiB0aGUgYXBwcyBjYW4gYmUgcmVzb2x2ZWQgYWdhaW4gd2hlbmV2ZXIKICogdGhlIGFwcHMgYXJlIGluc3RhbGxlZCBvciB1bmluc3RhbGxlZCwgYmVjYXVzZSB0aGUgdWlkIG9mIGFuIGFwcCBjaGFuZ2VzCiAqIHdoZW4gdGhlIGFwcCBpcyByZWluc3RhbGxlZC4KICogUHJvdGVjdGVkIGJ5IHN1c2ZzX211dGV4X2xvY2tfcHJpb3JpdHlfdWlkX2ZpbHRlci4KICovCnN0YXRpYyBjaGFyICpzdXNmc19wcmlvcml0eV9hcHBfc3RyaW5ncyA9IE5VTEw7Ci8qIEVuc3VyZXMgdGhhdCB0aGVyZSBpcyBvbmx5IG9uZSByZXNvbHZpbmcgdGhyZWFkIHJ1bm5pbmcgYXQgdGhlIHNhbWUgdGltZSAqLwpzdGF0aWMgYXRvbWljX3Qgc3VzZnNfcHJpb3JpdHlfYXBwX3N0cmluZ3NfcnVubmluZyA9IEFUT01JQ19JTklUKDApOwoKLyoKICogQ2hlY2tzIHdoZXRoZXIgdGhlIGdpdmVuIHN0cmluZyBpcyBhIHZhbGlkIGFwcCBwYWNrYWdlIG5hbWUuCiAqIFJldHVybnMgdHJ1ZSBpZiBpdCBpcyBhIHZhbGlkIGFwcCBwYWNrYWdlIG5hbWUuCiAqLwpzdGF0aWMgYm9vbCBzdXNmc19pc192YWxpZF9hcHBfbmFtZShjb25zdCBjaGFyICphcHBfbmFtZSkgewoJY29uc3QgY2hhciAqcCA9IGFwcF9uYW1lOwoJc2l6ZV90IGxlbiA9IHN0cmxlbihhcHBfbmFtZSk7CgoJaWYgKGxlbiA9PSAwIHx8IGxlbiA+IDI1NSkKCQlyZXR1cm4gZmFsc2U7CgoJLyogcmVqZWN0IHRoZSByZWxhdGl2ZSBwYXRocyB0byBwcmV2ZW50IGFueSBwYXRoIHRyYXZlcnNhbCAqLwoJaWYgKCFzdHJjbXAoYXBwX25hbWUsICIuIikgfHwgIXN0cmNtcChhcHBfbmFtZSwgIi4uIikpCgkJcmV0dXJuIGZhbHNlOwoKCWZvciAoOyAqcCAhPSAnXDAnOyBwKyspIHsKCQlpZiAoKCpwID49ICdhJyAmJiAqcCA8PSAneicpIHx8ICgqcCA+PSAnQScgJiYgKnAgPD0gJ1onKSB8fAoJCQkoKnAgPj0gJzAnICYmICpwIDw9ICc5JykgfHwgKnAgPT0gJy4nIHx8ICpwID09ICdfJykKCQkJY29udGludWU7CgkJcmV0dXJuIGZhbHNlOwoJfQoKCXJldHVybiB0cnVlOwp9CgovKgogKiBSZXNvbHZlcyB0aGUgdWlkIG9mIHRoZSBnaXZlbiBhcHAgcGFja2FnZSBuYW1lIHdpdGggdGhlIG93bmVyIHVpZCBvZiB0aGUKICogZGF0YSBwYXRoIG9mIHRoZSBhcHAgKCcvZGF0YS9kYXRhLzxhcHBfbmFtZT4nKS4KICogUmV0dXJucyAwIG9uIHN1Y2Nlc3MsIGEgbmVnYXRpdmUgZXJybm8gb24gZmFpbHVyZS4KICovCnN0YXRpYyBpbnQgc3VzZnNfcmVzb2x2ZV9wcmlvcml0eV9hcHBfdWlkKGNvbnN0IGNoYXIgKmFwcF9uYW1lLCB1aWRfdCAqdWlkKSB7CgljaGFyIGFwcF9wYXRoWzUxMl07CglzdHJ1Y3QgcGF0aCBwYXRoOwoJc3RydWN0IGtzdGF0IHN0OwoJaW50IGxlbjsKCWludCByZXQ7CgoJbGVuID0gc2NucHJpbnRmKGFwcF9wYXRoLCBzaXplb2YoYXBwX3BhdGgpLCAiL2RhdGEvZGF0YS8lcyIsIGFwcF9uYW1lKTsKCWlmIChsZW4gPCAwIHx8IGxlbiA+PSBzaXplb2YoYXBwX3BhdGgpKSB7CgkJU1VTRlNfTE9HRSgidGhlIGFwcCBuYW1lICclcycgaXMgdG9vIGxvbmdcbiIsIGFwcF9uYW1lKTsKCQlyZXR1cm4gLUVJTlZBTDsKCX0KCglyZXQgPSBrZXJuX3BhdGgoYXBwX3BhdGgsIExPT0tVUF9GT0xMT1csICZwYXRoKTsKCWlmIChyZXQpIHsKCQlTVVNGU19MT0dFKCJmYWlsZWQgdG8gbG9vayB1cCAnJXMnOiAlZFxuIiwgYXBwX3BhdGgsIHJldCk7CgkJcmV0dXJuIHJldDsKCX0KCglyZXQgPSB2ZnNfZ2V0YXR0cigmcGF0aCwgJnN0LCBTVEFUWF9CQVNJQ19TVEFUUywgMCk7CglwYXRoX3B1dCgmcGF0aCk7CglpZiAocmV0KSB7CgkJU1VTRlNfTE9HRSgiZmFpbGVkIHRvIGdldCB0aGUgYXR0cmlidXRlcyBvZiAnJXMnOiAlZFxuIiwgYXBwX3BhdGgsIHJldCk7CgkJcmV0dXJuIHJldDsKCX0KCgkqdWlkID0gZnJvbV9rdWlkKCZpbml0X3VzZXJfbnMsIHN0LnVpZCk7CglpZiAoKnVpZCA8IFNVU0ZTX1BSSU9SSVRZX1VJRF9GSUxURVJfTUlOX1VJRCB8fAoJCSp1aWQgPiBTVVNGU19QUklPUklUWV9VSURfRklMVEVSX01BWF9VSUQpCgkJcmV0dXJuIC1FSU5WQUw7CgoJcmV0dXJuIDA7Cn0KCi8qCiAqIFBhcnNlcyB0aGUgY29tbWEgc2VwYXJhdGVkIGxpc3Qgb2YgdGhlIGFwcCBwYWNrYWdlIG5hbWVzLCByZXNvbHZlcyB0aGUgdWlkCiAqIG9mIGV2ZXJ5IGFwcCBhbmQgbWFwcyB0aGUgdWlkcyBpbnRvIHRoZSBnaXZlbiBiaXRtYXAuCiAqCiAqIFRoZSBzcGFjZXMgYmVmb3JlIGFuZCBhZnRlciB0aGUgY29tbWFzIGFyZSBpZ25vcmVkLgogKiBUaGUgZ2l2ZW4gc3RyaW5nIGlzIG1vZGlmaWVkIHdoaWxlIGl0IGlzIGJlaW5nIHBhcnNlZC4KICogSWYgJ3NraXBfZmFpbGVkJyBpcyB0cnVlLCB0aGUgYXBwcyB3aG9zZSBkYXRhIHBhdGggY2Fubm90IGJlIGZvdW5kIGFyZQogKiBza2lwcGVkICh0aGV5IGFyZSB1bmluc3RhbGxlZCBhbHJlYWR5KSwgb3RoZXJ3aXNlIGFuIGVycm9yIGlzIHJldHVybmVkLgogKiBSZXR1cm5zIDAgb24gc3VjY2VzcywgYSBuZWdhdGl2ZSBlcnJubyBvbiBmYWlsdXJlLgogKi8Kc3RhdGljIGludCBzdXNmc19wYXJzZV9wcmlvcml0eV9hcHBfbmFtZXMoY2hhciAqYXBwX3N0ciwgdW5zaWduZWQgbG9uZyAqYml0cywgYm9vbCBza2lwX2ZhaWxlZCkgewoJY2hhciAqdG9rZW4gPSBOVUxMOwoJY2hhciAqc2F2ZXB0ciA9IGFwcF9zdHI7Cgl1aWRfdCB1aWQgPSAwOwoJaW50IHJldDsKCgl3aGlsZSAoKHRva2VuID0gc3Ryc2VwKCZzYXZlcHRyLCAiLCIpKSAhPSBOVUxMKSB7CgkJdG9rZW4gPSBzdHJpbSh0b2tlbik7CgkJaWYgKCp0b2tlbiA9PSAnXDAnKSB7CgkJCS8qIHRvbGVyYXRlIHRoZSBlbXB0eSBpdGVtcywgZS5nLiwgImNvbS5mb28sLGNvbS5iYXIiICovCgkJCWNvbnRpbnVlOwoJCX0KCgkJaWYgKCFzdXNmc19pc192YWxpZF9hcHBfbmFtZSh0b2tlbikpIHsKCQkJU1VTRlNfTE9HRSgiaW52YWxpZCBhcHAgbmFtZSAnJXMnXG4iLCB0b2tlbik7CgkJCXJldHVybiAtRUlOVkFMOwoJCX0KCgkJcmV0ID0gc3VzZnNfcmVzb2x2ZV9wcmlvcml0eV9hcHBfdWlkKHRva2VuLCAmdWlkKTsKCQlpZiAocmV0KSB7CgkJCWlmIChza2lwX2ZhaWxlZCkKCQkJCWNvbnRpbnVlOwoJCQlyZXR1cm4gcmV0OwoJCX0KCgkJaWYgKHVpZCA8IFNVU0ZTX1BSSU9SSVRZX1VJRF9GSUxURVJfTUlOX1VJRCB8fCB1aWQgPiBTVVNGU19QUklPUklUWV9VSURfRklMVEVSX01BWF9VSUQpIHsKCQkJU1VTRlNfTE9HRSgidGhlIHVpZCAldSBvZiB0aGUgYXBwICclcycgaXMgb3V0IG9mIHRoZSBhbGxvd2VkIHJhbmdlIFslZCwgJWRdXG4iLAoJCQkJCXVpZCwgdG9rZW4sIFNVU0ZTX1BSSU9SSVRZX1VJRF9GSUxURVJfTUlOX1VJRCwKCQkJCQlTVVNGU19QUklPUklUWV9VSURfRklMVEVSX01BWF9VSUQpOwoJCQlpZiAoIXNraXBfZmFpbGVkKQoJCQkJcmV0dXJuIC1FSU5WQUw7CgkJCWNvbnRpbnVlOwoJCX0KCgkJc2V0X2JpdCh1aWQgLSBTVVNGU19QUklPUklUWV9VSURfRklMVEVSX01JTl9VSUQsIGJpdHMpOwoJCVNVU0ZTX0xPR0koImFwcF9uYW1lICclcycsIHVpZCAnJXUnIGlzIG5vdyBhZGRlZCB0byBwcmlvcml0eV91aWRfZmlsdGVyX2JpdG1hcFxuIiwgdG9rZW4sIHVpZCk7Cgl9CgoJcmV0dXJuIDA7Cn0KCnZvaWQgc3VzZnNfc2V0X3ByaW9yaXR5X3VpZF9maWx0ZXIodm9pZCBfX3VzZXIgKip1c2VyX2luZm8pIHsKCXN0cnVjdCBzdF9zdXNmc19wcmlvcml0eV91aWRfZmlsdGVyICppbmZvID0gTlVMTDsKCXN0cnVjdCBzdXNmc19wcmlvcml0eV91aWRfZmlsdGVyX2JpdG1hcCAqbmV3X2JpdG1hcCA9IE5VTEw7CglzdHJ1Y3Qgc3VzZnNfcHJpb3JpdHlfdWlkX2ZpbHRlcl9iaXRtYXAgKm9sZF9iaXRtYXAgPSBOVUxMOwoJY2hhciAqbmV3X2FwcF9zdHJpbmdzID0gTlVMTDsKCXN0cnVjdCBjcmVkICpvcmlnX2NyZWQgPSBOVUxMOwoJc2l6ZV90IGFwcF9zdHJfbGVuID0gMDsKCWludCBlcnIgPSAwOwoJc3RhdGljIGJvb2wgaXNfdWlkX2ZpbHRlcl9zZXRfYmVmb3JlID0gZmFsc2U7CgoJaW5mbyA9IGt2bWFsbG9jKHNpemVvZigqaW5mbyksIEdGUF9LRVJORUwgfCBfX0dGUF9aRVJPKTsKCWlmICghaW5mbykgewoJCWVyciA9IC1FTk9NRU07CgkJZ290byBvdXRfY29weV90b191c2VyOwoJfQoKCWlmIChjb3B5X2Zyb21fdXNlcihpbmZvLCAoc3RydWN0IHN0X3N1c2ZzX3ByaW9yaXR5X3VpZF9maWx0ZXIgX191c2VyKikqdXNlcl9pbmZvLCBzaXplb2YoKmluZm8pKSkgewoJCWVyciA9IC1FRkFVTFQ7CgkJZ290byBvdXRfY29weV90b191c2VyOwoJfQoKCS8qIHRoZSBhcHAgbmFtZXMgc3RyaW5nIG11c3QgYmUgbnVsbCB0ZXJtaW5hdGVkIHdpdGhpbiB0aGUgYnVmZmVyICovCglpZiAoIW1lbWNocihpbmZvLT5hcHBfc3RyaW5ncywgJ1wwJywgc2l6ZW9mKGluZm8tPmFwcF9zdHJpbmdzKSkpIHsKCQlTVVNGU19MT0dFKCJ0aGUgYXBwIG5hbWVzIHN0cmluZyBpcyBub3QgbnVsbCB0ZXJtaW5hdGVkXG4iKTsKCQllcnIgPSAtRUlOVkFMOwoJCWdvdG8gb3V0X2NvcHlfdG9fdXNlcjsKCX0KCglpZiAoKmluZm8tPmFwcF9zdHJpbmdzID09ICdcMCcpIHsKCQlTVVNGU19MT0dFKCJ0aGUgYXBwIG5hbWVzIHN0cmluZyBjYW5ub3QgYmUgZW1wdHlcbiIpOwoJCWVyciA9IC1FSU5WQUw7CgkJZ290byBvdXRfY29weV90b191c2VyOwoJfQoKCWFwcF9zdHJfbGVuID0gc3RybGVuKGluZm8tPmFwcF9zdHJpbmdzKTsKCgkvKgoJICogVGhlIGFwcCBuYW1lcyBhcmUgc3RvcmVkIGFzIHRoZXkgYXJlLCBzbyB0aGF0IHRoZSB1aWRzIG9mIHRoZSBhcHBzIGNhbgoJICogYmUgcmVzb2x2ZWQgYWdhaW4gbGF0ZXIgb24sIHdoZW4gdGhlIGFwcHMgYXJlIGluc3RhbGxlZCBvciB1bmluc3RhbGxlZC4KCSAqLwoJbmV3X2FwcF9zdHJpbmdzID0ga3ZtYWxsb2MoYXBwX3N0cl9sZW4gKyAxLCBHRlBfS0VSTkVMIHwgX19HRlBfWkVSTyk7CglpZiAoIW5ld19hcHBfc3RyaW5ncykgewoJCWVyciA9IC1FTk9NRU07CgkJZ290byBvdXRfY29weV90b191c2VyOwoJfQoJbWVtY3B5KG5ld19hcHBfc3RyaW5ncywgaW5mby0+YXBwX3N0cmluZ3MsIGFwcF9zdHJfbGVuICsgMSk7CgoJbmV3X2JpdG1hcCA9IChzdHJ1Y3Qgc3VzZnNfcHJpb3JpdHlfdWlkX2ZpbHRlcl9iaXRtYXAgKilremFsbG9jKHNpemVvZigqbmV3X2JpdG1hcCksIEdGUF9LRVJORUwpOwoJaWYgKCFuZXdfYml0bWFwKSB7CgkJZXJyID0gLUVOT01FTTsKCQlnb3RvIG91dF9mcmVlX25ld19hcHBfc3RyaW5nczsKCX0KCgkvKgoJICogVGhlIGRhdGEgcGF0aHMgb2YgdGhlIGFwcHMgY2Fubm90IGJlIGFjY2Vzc2VkIHdpdGggdGhlIHNlbGludXgKCSAqIHJlc3RyaWN0aW9ucyBvZiB0aGUgY2FsbGluZyBwcm9jZXNzLCBoZW5jZSB0aGUgc2VsaW51eCBkb21haW4gaXMKCSAqIHN3aXRjaGVkIHRvIHRoZSBLZXJuZWxTVSBvbmUgYmVmb3JlIHRoZSB1aWRzIGFyZSByZXNvbHZlZC4KCSAqLwoJb3JpZ19jcmVkID0gc3VzZnNfc3dpdGNoX3RvX2tzdV9kb21haW4oKTsKCWlmICghb3JpZ19jcmVkKSB7CgkJZXJyID0gLUVJTlZBTDsKCQlnb3RvIG91dF9mcmVlX25ld19iaXRtYXA7Cgl9CgoJaWYgKGlzX3VpZF9maWx0ZXJfc2V0X2JlZm9yZSkKCQlTVVNGU19MT0dJKCJyZW5ld2luZyB0aGUgcHJpb3JpdHkgdWlkIGZpbHRlclxuIik7CgllcnIgPSBzdXNmc19wYXJzZV9wcmlvcml0eV9hcHBfbmFtZXMoaW5mby0+YXBwX3N0cmluZ3MsIG5ld19iaXRtYXAtPmJpdHMsIGZhbHNlKTsKCglzdXNmc19yZXN0b3JlX2NyZWRzKG9yaWdfY3JlZCk7CglvcmlnX2NyZWQgPSBOVUxMOwoKCWlmIChlcnIpCgkJZ290byBvdXRfZnJlZV9uZXdfYml0bWFwOwoKCS8qCgkgKiBQdWJsaXNoIHRoZSBuZXcgYml0bWFwIGFuZCBkcm9wIHRoZSBvbGQgb25lLgoJICogVGhlIG11dGV4IHNlcmlhbGl6ZXMgdGhlIHdyaXRlcnMsIHdoaWxlIHRoZSByZWFkZXJzIGFyZSBwcm90ZWN0ZWQKCSAqIGJ5IFJDVSwgaGVuY2UgdGhlIHJlYWRlcnMgYWx3YXlzIHNlZSBhIGNvbnNpc3RlbnQgYml0bWFwIGFuZCB0aGV5CgkgKiBuZXZlciBhY2Nlc3MgYSBmcmVlZCBiaXRtYXAuCgkgKi8KCW11dGV4X2xvY2soJnN1c2ZzX211dGV4X2xvY2tfcHJpb3JpdHlfdWlkX2ZpbHRlcik7CglvbGRfYml0bWFwID0gcmN1X2RlcmVmZXJlbmNlX3Byb3RlY3RlZChwcmlvcml0eV91aWRfZmlsdGVyX2JpdG1hcCwgbG9ja2RlcF9pc19oZWxkKCZzdXNmc19tdXRleF9sb2NrX3ByaW9yaXR5X3VpZF9maWx0ZXIpKTsKCXJjdV9hc3NpZ25fcG9pbnRlcihwcmlvcml0eV91aWRfZmlsdGVyX2JpdG1hcCwgbmV3X2JpdG1hcCk7CgluZXdfYml0bWFwID0gTlVMTDsKCWt2ZnJlZShzdXNmc19wcmlvcml0eV9hcHBfc3RyaW5ncyk7CglzdXNmc19wcmlvcml0eV9hcHBfc3RyaW5ncyA9IG5ld19hcHBfc3RyaW5nczsKCW5ld19hcHBfc3RyaW5ncyA9IE5VTEw7CglpZiAoIWlzX3VpZF9maWx0ZXJfc2V0X2JlZm9yZSkKCQlpc191aWRfZmlsdGVyX3NldF9iZWZvcmUgPSB0cnVlOwoJbXV0ZXhfdW5sb2NrKCZzdXNmc19tdXRleF9sb2NrX3ByaW9yaXR5X3VpZF9maWx0ZXIpOwoKCS8qIDQuMTQ6IGtmcmVlX3JjdSgpIGhhcyBubyBOVUxMIGNoZWNrLCB0aGUgZmlyc3QgY2FsbCBoYXMgbm8gb2xkIGJpdG1hcCAqLwoJaWYgKG9sZF9iaXRtYXApCgkJa2ZyZWVfcmN1KG9sZF9iaXRtYXAsIHJjdSk7CgoJU1VTRlNfTE9HSSgidGhlIHByaW9yaXR5IHVpZCBmaWx0ZXIgaXMgc2V0XG4iKTsKCWVyciA9IDA7CgpvdXRfZnJlZV9uZXdfYml0bWFwOgoJaWYgKG5ld19iaXRtYXApCgkJa2ZyZWUobmV3X2JpdG1hcCk7Cm91dF9mcmVlX25ld19hcHBfc3RyaW5nczoKCWlmIChuZXdfYXBwX3N0cmluZ3MpCgkJa3ZmcmVlKG5ld19hcHBfc3RyaW5ncyk7Cm91dF9jb3B5X3RvX3VzZXI6CglpZiAoY29weV90b191c2VyKCYoKHN0cnVjdCBzdF9zdXNmc19wcmlvcml0eV91aWRfZmlsdGVyIF9fdXNlciopKnVzZXJfaW5mbyktPmVyciwgJmVyciwgc2l6ZW9mKGVycikpKSB7CgkJZXJyID0gLUVGQVVMVDsKCX0KCVNVU0ZTX0xPR0koIkNNRF9TVVNGU19TRVRfUFJJT1JJVFlfVUlEX0ZJTFRFUiAtPiByZXQ6ICVkXG4iLCBlcnIpOwoJaWYgKGluZm8pCgkJa3ZmcmVlKGluZm8pOwp9CgovKgogKiBUaGUgdGhyZWFkIHRoYXQgcmVzb2x2ZXMgdGhlIHVpZHMgb2YgdGhlIHN0b3JlZCBhcHAgcGFja2FnZSBuYW1lcyBhZ2FpbiwKICogc28gdGhhdCB0aGUgZmlsdGVyIHN0YXlzIHVwIHRvIGRhdGUgd2hlbiB0aGUgYXBwcyBhcmUgaW5zdGFsbGVkIG9yCiAqIHVuaW5zdGFsbGVkLCBiZWNhdXNlIHRoZSB1aWQgb2YgYW4gYXBwIGNoYW5nZXMgd2hlbiBpdCBpcyByZWluc3RhbGxlZC4KICovCnN0YXRpYyBpbnQgc3VzZnNfcHJpb3JpdHlfYXBwX3N0cmluZ3Nfd29ya2VyKHZvaWQgKmRhdGEpIHsKCXN0cnVjdCBzdXNmc19wcmlvcml0eV91aWRfZmlsdGVyX2JpdG1hcCAqbmV3X2JpdG1hcCA9IE5VTEw7CglzdHJ1Y3Qgc3VzZnNfcHJpb3JpdHlfdWlkX2ZpbHRlcl9iaXRtYXAgKm9sZF9iaXRtYXAgPSBOVUxMOwoJc3RydWN0IGNyZWQgKm9yaWdfY3JlZCA9IE5VTEw7CgljaGFyICphcHBfc3RyaW5ncyA9IE5VTEw7CglzaXplX3QgYXBwX3N0cl9sZW4gPSAwOwoJaW50IHJldCA9IDA7CgoJLyoKCSAqIFRoZSBkYXRhIHBhdGhzIG9mIHRoZSBhcHBzIGNhbm5vdCBiZSBhY2Nlc3NlZCB3aXRoIHRoZSBzZWxpbnV4CgkgKiByZXN0cmljdGlvbnMgb2YgdGhlIGRlZmF1bHQgZG9tYWluIG9mIHRoZSB0aHJlYWQsIGhlbmNlIHRoZSBzZWxpbnV4CgkgKiBkb21haW4gaXMgc3dpdGNoZWQgdG8gdGhlIEtlcm5lbFNVIG9uZS4KCSAqLwoJb3JpZ19jcmVkID0gc3VzZnNfc3dpdGNoX3RvX2tzdV9kb21haW4oKTsKCWlmICghb3JpZ19jcmVkKQoJCWdvdG8gb3V0OwoKCS8qIHRha2UgYSBzbmFwc2hvdCBvZiB0aGUgc3RvcmVkIGFwcCBwYWNrYWdlIG5hbWVzICovCgltdXRleF9sb2NrKCZzdXNmc19tdXRleF9sb2NrX3ByaW9yaXR5X3VpZF9maWx0ZXIpOwoJaWYgKHN1c2ZzX3ByaW9yaXR5X2FwcF9zdHJpbmdzKSB7CgkJYXBwX3N0cl9sZW4gPSBzdHJsZW4oc3VzZnNfcHJpb3JpdHlfYXBwX3N0cmluZ3MpOwoJCWFwcF9zdHJpbmdzID0ga3ZtYWxsb2MoYXBwX3N0cl9sZW4gKyAxLCBHRlBfS0VSTkVMIHwgX19HRlBfWkVSTyk7CgkJaWYgKGFwcF9zdHJpbmdzKQoJCQltZW1jcHkoYXBwX3N0cmluZ3MsIHN1c2ZzX3ByaW9yaXR5X2FwcF9zdHJpbmdzLCBhcHBfc3RyX2xlbiArIDEpOwoJfQoJbXV0ZXhfdW5sb2NrKCZzdXNmc19tdXRleF9sb2NrX3ByaW9yaXR5X3VpZF9maWx0ZXIpOwoKCWlmICghYXBwX3N0cmluZ3MpCgkJZ290byBvdXRfcmVzdG9yZV9jcmVkczsKCgluZXdfYml0bWFwID0gKHN0cnVjdCBzdXNmc19wcmlvcml0eV91aWRfZmlsdGVyX2JpdG1hcCAqKWt6YWxsb2Moc2l6ZW9mKCpuZXdfYml0bWFwKSwgR0ZQX0tFUk5FTCk7CglpZiAoIW5ld19iaXRtYXApCgkJZ290byBvdXRfcmVzdG9yZV9jcmVkczsKCgkvKiB0aGUgYXBwcyB0aGF0IGFyZSB1bmluc3RhbGxlZCBhbHJlYWR5IGFyZSBza2lwcGVkICovCglyZXQgPSBzdXNmc19wYXJzZV9wcmlvcml0eV9hcHBfbmFtZXMoYXBwX3N0cmluZ3MsIG5ld19iaXRtYXAtPmJpdHMsIHRydWUpOwoJaWYgKHJldCkKCQlnb3RvIG91dF9yZXN0b3JlX2NyZWRzOwoKCS8qCgkgKiBUaGUgb2xkIGJpdG1hcCBpcyB6ZXJvZWQgYW5kIHRoZSBuZXdseSByZXNvbHZlZCB1aWRzIGFyZSBtYXBwZWQgaW50bwoJICogdGhlIG5ldyBvbmUsIHdoaWNoIGlzIHRoZW4gcHVibGlzaGVkIHRvIHRoZSByZWFkZXJzLgoJICovCgltdXRleF9sb2NrKCZzdXNmc19tdXRleF9sb2NrX3ByaW9yaXR5X3VpZF9maWx0ZXIpOwoJb2xkX2JpdG1hcCA9IHJjdV9kZXJlZmVyZW5jZV9wcm90ZWN0ZWQocHJpb3JpdHlfdWlkX2ZpbHRlcl9iaXRtYXAsIGxvY2tkZXBfaXNfaGVsZCgmc3VzZnNfbXV0ZXhfbG9ja19wcmlvcml0eV91aWRfZmlsdGVyKSk7CglyY3VfYXNzaWduX3BvaW50ZXIocHJpb3JpdHlfdWlkX2ZpbHRlcl9iaXRtYXAsIG5ld19iaXRtYXApOwoJbmV3X2JpdG1hcCA9IE5VTEw7CgltdXRleF91bmxvY2soJnN1c2ZzX211dGV4X2xvY2tfcHJpb3JpdHlfdWlkX2ZpbHRlcik7CgoJLyogNC4xNDoga2ZyZWVfcmN1KCkgaGFzIG5vIE5VTEwgY2hlY2sgKi8KCWlmIChvbGRfYml0bWFwKQoJCWtmcmVlX3JjdShvbGRfYml0bWFwLCByY3UpOwoKCVNVU0ZTX0xPR0koInRoZSB1aWRzIG9mIHRoZSBwcmlvcml0eSB1aWQgZmlsdGVyIGFyZSByZXNvbHZlZCBhZ2FpblxuIik7CgpvdXRfcmVzdG9yZV9jcmVkczoKCXN1c2ZzX3Jlc3RvcmVfY3JlZHMob3JpZ19jcmVkKTsKCW9yaWdfY3JlZCA9IE5VTEw7Cm91dDoKCWlmIChuZXdfYml0bWFwKQoJCWtmcmVlKG5ld19iaXRtYXApOwoJaWYgKGFwcF9zdHJpbmdzKQoJCWt2ZnJlZShhcHBfc3RyaW5ncyk7CglhdG9taWNfc2V0KCZzdXNmc19wcmlvcml0eV9hcHBfc3RyaW5nc19ydW5uaW5nLCAwKTsKCglyZXR1cm4gcmV0Owp9CgovKgogKiBSZXNvbHZlcyB0aGUgdWlkcyBvZiB0aGUgc3RvcmVkIGFwcCBwYWNrYWdlIG5hbWVzIGFnYWluIGluIGEgbmV3IHRocmVhZCwKICogYmVjYXVzZSB0aGUgcmVzb2x2aW5nIG9mIHRoZSB1aWRzIHJlcXVpcmVzIHRoZSBLZXJuZWxTVSBzZWxpbnV4IGRvbWFpbiwKICogd2hpY2ggbXVzdCBub3QgYmUgYXBwbGllZCB0byB0aGUgY2FsbGluZyBwcm9jZXNzLgogKi8Kdm9pZCBzdXNmc19wYXJzZV9wcmlvcml0eV9hcHBfc3RyaW5ncyh2b2lkKSB7CgkvKiBkbyBub3Qgc3Bhd24gYSBuZXcgdGhyZWFkIGlmIHRoZXJlIGlzIGFscmVhZHkgb25lIHJ1bm5pbmcgKi8KCWlmIChhdG9taWNfY21weGNoZygmc3VzZnNfcHJpb3JpdHlfYXBwX3N0cmluZ3NfcnVubmluZywgMCwgMSkpCgkJcmV0dXJuOwoKCWlmIChJU19FUlIoa3RocmVhZF9ydW4oc3VzZnNfcHJpb3JpdHlfYXBwX3N0cmluZ3Nfd29ya2VyLCBOVUxMLCAic3VzZnNfZ3BzcF9hcHBzdHIiKSkpIHsKCQlhdG9taWNfc2V0KCZzdXNmc19wcmlvcml0eV9hcHBfc3RyaW5nc19ydW5uaW5nLCAwKTsKCQlTVVNGU19MT0dFKCJmYWlsZWQgdG8gY3JlYXRlIHRoZSB0aHJlYWQgc3VzZnNfcHJpb3JpdHlfYXBwX3N0cmluZ3NcbiIpOwoJfQp9CgovKgogKiBMb2NrbGVzcyBsb29rdXAgZm9yIHRoZSBnZXRwcmlvcml0eS9zZXRwcmlvcml0eSBzeXNjYWxsIHBhdGguCiAqIFJldHVybnMgdHJ1ZSBpZiB0aGUgdWlkIGlzIGhpZGRlbiBieSB0aGUgcHJpb3JpdHkgdWlkIGZpbHRlci4KICovCmJvb2wgc3VzZnNfaXNfcHJpb3JpdHlfdWlkX2ZpbHRlcmVkKHVpZF90IHVpZCkgewoJc3RydWN0IHN1c2ZzX3ByaW9yaXR5X3VpZF9maWx0ZXJfYml0bWFwICpiaXRtYXA7CgoJdWlkX3QgYXBwX2lkID0gdWlkICUgMTAwMDAwOwoKCWlmIChhcHBfaWQgPCBTVVNGU19QUklPUklUWV9VSURfRklMVEVSX01JTl9VSUQgfHwKCQlhcHBfaWQgPiBTVVNGU19QUklPUklUWV9VSURfRklMVEVSX01BWF9VSUQpCgkJcmV0dXJuIGZhbHNlOwoKCS8qIG5vIG5lZWQgcmN1X3JlYWRfbG9jaygpIGFuZCByY3VfcmVhZF91bmxvY2soKSBoZXJlIGFzIGNhbGxlciBhbHJlYWR5IGhvbGRzIGl0ICovCgliaXRtYXAgPSByY3VfZGVyZWZlcmVuY2UocHJpb3JpdHlfdWlkX2ZpbHRlcl9iaXRtYXApOwoJaWYgKGxpa2VseShiaXRtYXApKSB7CgkJaWYgKHRlc3RfYml0KGFwcF9pZCAtIFNVU0ZTX1BSSU9SSVRZX1VJRF9GSUxURVJfTUlOX1VJRCwgYml0bWFwLT5iaXRzKSkgewoJCQkvL1NVU0ZTX0xPR0koInVpZCAnJXUnIGlzIGZpbHRlcmVkXG4iLCB1aWQpOwoJCQlyZXR1cm4gdHJ1ZTsKCQl9Cgl9CgoJcmV0dXJuIGZhbHNlOwp9CgonJycKCmRlZiBmaXhfc3VzZnNfYyhzKToKICAgIGlmICdzdXNmc19pc19wcmlvcml0eV91aWRfZmlsdGVyZWQnIGluIHM6CiAgICAgICAgcHJpbnQoInN1c2ZzLmM6IHN1ZGFoIGFkYSwgZGlsZXdhdGkiKQogICAgICAgIHJldHVybiBOb25lCiAgICAjIGR1YSBkZWtsYXJhc2kgeWFuZyBkaXBha2FpIGhlbHBlciBoYXJ1cyBzdWRhaCBhZGEgZGkgc3VzZnMuYyA0LjE0CiAgICBuZWVkKHMsICdleHRlcm4gYm9vbCBzdXNmc19pc19jdXJyZW50X2tzdV9kb21haW4odm9pZCk7XG4nLCBTVVNGU19DLCAnZXh0ZXJuIHN1c2ZzX2lzX2N1cnJlbnRfa3N1X2RvbWFpbicpCiAgICBuZWVkKHMsICdleHRlcm4gdm9pZCBzZXR1cF9zZWxpbnV4KGNvbnN0IGNoYXIgKmRvbWFpbiwgc3RydWN0IGNyZWQgKmNyZWQpO1xuJywgU1VTRlNfQywgJ2V4dGVybiBzZXR1cF9zZWxpbnV4JykKICAgIG5lZWQocywgJyNpbmNsdWRlIDxsaW51eC9rdGhyZWFkLmg+XG4nLCBTVVNGU19DLCAnI2luY2x1ZGUgPGxpbnV4L2t0aHJlYWQuaD4nKQogICAgcyA9IGJlZm9yZShzLCAnI2luY2x1ZGUgPGxpbnV4L3N1c2ZzLmg+XG4nLAogICAgICAgICAgICAgICAnI2luY2x1ZGUgPGxpbnV4L2JpdG1hcC5oPlxuI2luY2x1ZGUgPGxpbnV4L2xpbWl0cy5oPlxuI2luY2x1ZGUgPGxpbnV4L21tLmg+XG4nCiAgICAgICAgICAgICAgICcjaW5jbHVkZSA8bGludXgvcmN1cGRhdGUuaD5cbiNpbmNsdWRlIDxsaW51eC9zdHJpbmcuaD5cbicsCiAgICAgICAgICAgICAgIFNVU0ZTX0MsICcjaW5jbHVkZSA8bGludXgvc3VzZnMuaD4nKQogICAgcyA9IGJlZm9yZShzLCAnLyogc3VzX3BhdGggKi9cbicsIFNVU0ZTX0NfSEVMUEVSUywgU1VTRlNfQywgJy8qIHN1c19wYXRoICovJykKICAgIHMgPSBiZWZvcmUocywgJy8qIHN1c2ZzIGF2YyBsb2cgc3Bvb2ZpbmcgKi9cbicsIFNVU0ZTX0NfRkVBVFVSRSwgU1VTRlNfQywgJy8qIHN1c2ZzIGF2YyBsb2cgc3Bvb2ZpbmcgKi8nKQogICAgcHJpbnQoInN1c2ZzLmM6IHByaW9yaXR5IHVpZCBmaWx0ZXIgZGl0YW1iYWhrYW4gKGtmcmVlX3JjdSBkaWphZ2EgTlVMTCB1bnR1ayA0LjE0KSIpCiAgICByZXR1cm4gcwoKIyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KIyA0KSBrZXJuZWwvc3lzLmMgLSBzZXRwcmlvcml0eS9nZXRwcmlvcml0eQojID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQpTWVNfQyA9ICdrZXJuZWwvc3lzLmMnClNZU19GSU5EID0gJ1x0XHRlbHNlIGlmICghdWlkX2VxKHVpZCwgY3JlZC0+dWlkKSkge1xuXHRcdFx0dXNlciA9IGZpbmRfdXNlcih1aWQpO1xuJwpTWVNfSE9PSyA9ICgnXHRcdGVsc2UgaWYgKCF1aWRfZXEodWlkLCBjcmVkLT51aWQpKSB7XG4nCiAgICAgICAgICAgICcjaWZkZWYgQ09ORklHX0tTVV9TVVNGU1xuJwogICAgICAgICAgICAnXHRcdFx0aWYgKGNyZWQtPnVpZC52YWwgPj0gMTAwMDAgJiYgc3VzZnNfaXNfcHJpb3JpdHlfdWlkX2ZpbHRlcmVkKHVpZC52YWwpKVxuJwogICAgICAgICAgICAnXHRcdFx0XHRnb3RvIG91dF91bmxvY2s7XG4nCiAgICAgICAgICAgICcjZW5kaWYgLy8gI2lmZGVmIENPTkZJR19LU1VfU1VTRlNcbicKICAgICAgICAgICAgJ1x0XHRcdHVzZXIgPSBmaW5kX3VzZXIodWlkKTtcbicpCkVYVEVSTiA9ICgnI2lmZGVmIENPTkZJR19LU1VfU1VTRlNcbicKICAgICAgICAgICdleHRlcm4gYm9vbCBzdXNmc19pc19wcmlvcml0eV91aWRfZmlsdGVyZWQodWlkX3QgdWlkKTtcbicKICAgICAgICAgICcjZW5kaWYgLy8gI2lmZGVmIENPTkZJR19LU1VfU1VTRlNcbicKICAgICAgICAgICdcbicpCgpkZWYgZml4X3N5c19jKHMpOgogICAgaWYgJ3N1c2ZzX2lzX3ByaW9yaXR5X3VpZF9maWx0ZXJlZCcgaW4gczoKICAgICAgICBwcmludCgic3lzLmM6IHN1ZGFoIGFkYSwgZGlsZXdhdGkiKQogICAgICAgIHJldHVybiBOb25lCiAgICBzID0gYmVmb3JlKHMsICdTWVNDQUxMX0RFRklORTMoc2V0cHJpb3JpdHksIGludCwgd2hpY2gsIGludCwgd2hvLCBpbnQsIG5pY2V2YWwpXG4nLCBFWFRFUk4sIFNZU19DLCAnU1lTQ0FMTF9ERUZJTkUzKHNldHByaW9yaXR5JykKICAgIG5lZWQocywgU1lTX0ZJTkQsIFNZU19DLCAnZmluZF91c2VyKHVpZCkgc2V0cHJpb3JpdHkrZ2V0cHJpb3JpdHknLCAyKQogICAgcyA9IHMucmVwbGFjZShTWVNfRklORCwgU1lTX0hPT0spCiAgICBwcmludCgic3lzLmM6IGhvb2sgc2V0cHJpb3JpdHkgKyBnZXRwcmlvcml0eSBkaXBhc2FuZyIpCiAgICByZXR1cm4gcwoKIyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KIyA1KSBibG9jay9pb3ByaW8uYyAtIGlvcHJpb19zZXQvaW9wcmlvX2dldAojID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQpJT1BSSU9fQyA9ICdibG9jay9pb3ByaW8uYycKSU9fRklORCA9ICdcdFx0XHRlbHNlXG5cdFx0XHRcdHVzZXIgPSBmaW5kX3VzZXIodWlkKTtcbicKSU9fSE9PSyA9ICgnXHRcdFx0ZWxzZVxuJwogICAgICAgICAgICcjaWZkZWYgQ09ORklHX0tTVV9TVVNGU1xuJwogICAgICAgICAgICdcdFx0XHR7XG4nCiAgICAgICAgICAgJ1x0XHRcdFx0aWYgKGN1cnJlbnRfdWlkKCkudmFsID49IDEwMDAwICYmIHN1c2ZzX2lzX3ByaW9yaXR5X3VpZF9maWx0ZXJlZCh1aWQudmFsKSlcbicKICAgICAgICAgICAnXHRcdFx0XHRcdGJyZWFrO1xuJwogICAgICAgICAgICdcdFx0XHRcdHVzZXIgPSBmaW5kX3VzZXIodWlkKTtcbicKICAgICAgICAgICAnXHRcdFx0fVxuJwogICAgICAgICAgICcjZWxzZVxuJwogICAgICAgICAgICdcdFx0XHRcdHVzZXIgPSBmaW5kX3VzZXIodWlkKTtcbicKICAgICAgICAgICAnI2VuZGlmIC8vICNpZmRlZiBDT05GSUdfS1NVX1NVU0ZTXG4nKQoKZGVmIGZpeF9pb3ByaW9fYyhzKToKICAgIGlmICdzdXNmc19pc19wcmlvcml0eV91aWRfZmlsdGVyZWQnIGluIHM6CiAgICAgICAgcHJpbnQoImlvcHJpby5jOiBzdWRhaCBhZGEsIGRpbGV3YXRpIikKICAgICAgICByZXR1cm4gTm9uZQogICAgcyA9IGJlZm9yZShzLCAnU1lTQ0FMTF9ERUZJTkUzKGlvcHJpb19zZXQsIGludCwgd2hpY2gsIGludCwgd2hvLCBpbnQsIGlvcHJpbylcbicsIEVYVEVSTiwgSU9QUklPX0MsICdTWVNDQUxMX0RFRklORTMoaW9wcmlvX3NldCcpCiAgICBuZWVkKHMsIElPX0ZJTkQsIElPUFJJT19DLCAnZmluZF91c2VyKHVpZCkgaW9wcmlvX3NldCtpb3ByaW9fZ2V0JywgMikKICAgIHMgPSBzLnJlcGxhY2UoSU9fRklORCwgSU9fSE9PSykKICAgIHByaW50KCJpb3ByaW8uYzogaG9vayBpb3ByaW9fc2V0ICsgaW9wcmlvX2dldCBkaXBhc2FuZyIpCiAgICByZXR1cm4gcwoKIyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KIyA2KSBLZXJuZWxTVS9rZXJuZWwvc3VwZXJjYWxsL2Rpc3BhdGNoLmMgLSBwZXJpbnRhaCAweDYwMDMwCiMgPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09CkRJU1BBVENIX0MgPSAnS2VybmVsU1Uva2VybmVsL3N1cGVyY2FsbC9kaXNwYXRjaC5jJwoKZGVmIGZpeF9kaXNwYXRjaF9jKHMpOgogICAgaWYgJ0NNRF9TVVNGU19TRVRfUFJJT1JJVFlfVUlEX0ZJTFRFUicgaW4gczoKICAgICAgICBwcmludCgiZGlzcGF0Y2guYzogc3VkYWggYWRhLCBkaWxld2F0aSIpCiAgICAgICAgcmV0dXJuIE5vbmUKICAgIHMgPSBhZnRlcihzLCAnI2lmZGVmIENPTkZJR19LU1VfU1VTRlNcbiNpbmNsdWRlIDxsaW51eC9zdXNmc19kZWYuaD5cbiNlbmRpZlxuJywKICAgICAgICAgICAgICAnI2lmZGVmIENPTkZJR19LU1VfU1VTRlNcbicKICAgICAgICAgICAgICAnZXh0ZXJuIHZvaWQgc3VzZnNfc2V0X3ByaW9yaXR5X3VpZF9maWx0ZXIodm9pZCBfX3VzZXIgKip1c2VyX2luZm8pO1xuJwogICAgICAgICAgICAgICcjZW5kaWZcbicsIERJU1BBVENIX0MsICdpbmNsdWRlIHN1c2ZzX2RlZi5oJykKICAgIHMgPSBiZWZvcmUocywgJyAgICBjYXNlIENNRF9TVVNGU19FTkFCTEVfQVZDX0xPR19TUE9PRklORzoge1xuJywKICAgICAgICAgICAgICAgJyAgICBjYXNlIENNRF9TVVNGU19TRVRfUFJJT1JJVFlfVUlEX0ZJTFRFUjoge1xuJwogICAgICAgICAgICAgICAnICAgICAgICBzdXNmc19zZXRfcHJpb3JpdHlfdWlkX2ZpbHRlcihhcmcpO1xuJwogICAgICAgICAgICAgICAnICAgICAgICByZXR1cm4gMDtcbicKICAgICAgICAgICAgICAgJyAgICB9XG4nLCBESVNQQVRDSF9DLCAnY2FzZSBDTURfU1VTRlNfRU5BQkxFX0FWQ19MT0dfU1BPT0ZJTkcnKQogICAgcHJpbnQoImRpc3BhdGNoLmM6IGNhc2UgQ01EX1NVU0ZTX1NFVF9QUklPUklUWV9VSURfRklMVEVSIGRpdGFtYmFoa2FuIikKICAgIHJldHVybiBzCgojID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQojIDcpIEtlcm5lbFNVL2tlcm5lbC9tYW5hZ2VyL3Rocm9uZV90cmFja2VyLmMgLSByZXNvbHZlIHVsYW5nIHVpZCBzYWF0CiMgICAgcGFja2FnZXMubGlzdCBiZXJ1YmFoICh1aWQgYXBwIGJlcnViYWgga2FsYXUgZGlwYXNhbmcgdWxhbmcpLgojICAgIFVwc3RyZWFtIG1lbWFzYW5nbnlhIGRpIHBrZ19vYnNlcnZlci5jLCB0YXBpIGJlcmthcyBpdHUgVElEQUsKIyAgICBkaWtvbXBpbGFzaSBkaSA0LjE0OiBLYnVpbGQgaGFueWEgbWVtYWthaW55YSB1bnR1ayB0cmFjZXBvaW50IGhvb2sKIyAgICBhdGF1IGtlcm5lbCA+PSA2LjguIERpIHNpbmkgcmVuYW1lIHBhY2thZ2VzLmxpc3QudG1wIC0+IHBhY2thZ2VzLmxpc3QKIyAgICBkaXRhbmdrYXAgaG9vayBMU00gaW5vZGVfcmVuYW1lIC0+IGtzdV9oYW5kbGVfcmVuYW1lKCkuCiMgPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09ClRUX0MgPSAnS2VybmVsU1Uva2VybmVsL21hbmFnZXIvdGhyb25lX3RyYWNrZXIuYycKCmRlZiBmaXhfdGhyb25lX3RyYWNrZXJfYyhzKToKICAgIGlmICdzdXNmc19wYXJzZV9wcmlvcml0eV9hcHBfc3RyaW5ncycgaW4gczoKICAgICAgICBwcmludCgidGhyb25lX3RyYWNrZXIuYzogc3VkYWggYWRhLCBkaWxld2F0aSIpCiAgICAgICAgcmV0dXJuIE5vbmUKICAgIHMgPSBhZnRlcihzLCAnI2luY2x1ZGUgImZlYXR1cmUvZHluYW1pY19tYW5hZ2VyLmgiXG4nLAogICAgICAgICAgICAgICcjaWZkZWYgQ09ORklHX0tTVV9TVVNGU1xuJwogICAgICAgICAgICAgICdleHRlcm4gdm9pZCBzdXNmc19wYXJzZV9wcmlvcml0eV9hcHBfc3RyaW5ncyh2b2lkKTtcbicKICAgICAgICAgICAgICAnI2VuZGlmXG4nLCBUVF9DLCAnaW5jbHVkZSBkeW5hbWljX21hbmFnZXIuaCcpCiAgICBzID0gYmVmb3JlKHMsICcgICAgdHJhY2tfdGhyb25lKFRSQUNLX1RIUk9ORV9GUk9NX1JFTkFNRUFUIHwgVFJBQ0tfVEhST05FX0ZPUkNFX1NZTkNIUk9OT1VTKTtcbn1cbicsCiAgICAgICAgICAgICAgICcjaWZkZWYgQ09ORklHX0tTVV9TVVNGU1xuJwogICAgICAgICAgICAgICAnICAgIC8vIFJlbmV3IHRoZSBnZXRwcmlvcml0eSB1aWQgYml0bWFwIGZpbHRlclxuJwogICAgICAgICAgICAgICAnICAgIHN1c2ZzX3BhcnNlX3ByaW9yaXR5X2FwcF9zdHJpbmdzKCk7XG4nCiAgICAgICAgICAgICAgICcjZW5kaWZcblxuJywgVFRfQywgJ3RyYWNrX3Rocm9uZSBkaSBrc3VfaGFuZGxlX3JlbmFtZScpCiAgICBwcmludCgidGhyb25lX3RyYWNrZXIuYzogcmVzb2x2ZSB1bGFuZyB1aWQgZmlsdGVyIGRpcGFzYW5nIGRpIGtzdV9oYW5kbGVfcmVuYW1lIikKICAgIHJldHVybiBzCgpydyhERUZfSCwgZml4X2RlZl9oKQpydyhTVVNGU19ILCBmaXhfc3VzZnNfaCkKcncoU1VTRlNfQywgZml4X3N1c2ZzX2MpCnJ3KFNZU19DLCBmaXhfc3lzX2MpCnJ3KElPUFJJT19DLCBmaXhfaW9wcmlvX2MpCnJ3KERJU1BBVENIX0MsIGZpeF9kaXNwYXRjaF9jKQpydyhUVF9DLCBmaXhfdGhyb25lX3RyYWNrZXJfYykKcHJpbnQoInByaW8tdWlkOiBzZWxlc2FpIikK" | base64 -d > /tmp/fix_susfs_prio_uid.py
+          cat > /tmp/fix_susfs_prio_uid.py <<'FIX_SUSFS_PRIO_UID_PY'
+          #!/usr/bin/env python3
+          """
+          Backport "susfs: Add priority uid filter" (simonpunk/susfs4ksu 35cbfe118,
+          branch gki-android12-5.10, 2026-10-24) ke SUSFS 4.14 (JackA1ltman) + BakaSU.
+
+          Fitur: uid aplikasi pilihan disembunyikan dari getpriority/setpriority/
+          ioprio_get/ioprio_set (dipakai sebagian app untuk menghitung app yang
+          terpasang). Diatur dari userspace lewat CMD_SUSFS_SET_PRIORITY_UID_FILTER
+          (0x60030), mis. `ksu_susfs set_priority_uid_filter com.a,com.b`.
+
+          Beda dengan upstream (WAJIB untuk 4.14):
+            - kfree_rcu(old_bitmap, rcu) dibungkus `if (old_bitmap)`. Di 4.14 makro
+              kfree_rcu TIDAK mengecek NULL (include/linux/rcupdate.h:873 langsung
+              __kfree_rcu(&ptr->rcu, ...)); rcu adalah field pertama, jadi pada
+              pemanggilan PERTAMA (bitmap lama masih NULL) call_rcu menerima head NULL
+              -> panic. Upstream aman karena 5.10 sudah punya cek NULL di kfree_rcu.
+            - fs/susfs.c ditambah #include <linux/mm.h> (kvmalloc/kvfree); di 4.14
+              header itu cuma terbawa transitif lewat fuse_i.h.
+            - Sisi KSU memakai deklarasi extern, bukan #include <linux/susfs.h>, dan
+              dijaga CONFIG_KSU_SUSFS (BakaSU juga dibangun tanpa SUSFS).
+            - Resolve ulang uid saat packages.list berubah dipasang di
+              throne_tracker.c ksu_handle_rename() (jalur 4.14), bukan pkg_observer.c.
+
+          Tiap berkas: dilewati kalau penandanya sudah ada (upstream sudah membawa
+          fitur ini), selain itu setiap anchor harus ketemu tepat sekali (atau dua kali
+          bila disebut) - kalau tidak, berhenti dengan pesan jelas.
+          """
+          import sys
+
+          def rw(path, fn):
+              with open(path, encoding='utf-8', errors='surrogateescape') as f:
+                  s = f.read()
+              out = fn(s)
+              if out is None:
+                  return
+              with open(path, 'w', encoding='utf-8', errors='surrogateescape') as f:
+                  f.write(out)
+
+          def need(s, txt, path, label, n=1):
+              c = s.count(txt)
+              if c != n:
+                  sys.exit("prio-uid: anchor '%s' ketemu %d kali (harus %d) di %s" % (label, c, n, path))
+
+          def before(s, anchor, add, path, label, n=1):
+              need(s, anchor, path, label, n)
+              return s.replace(anchor, add + anchor)
+
+          def after(s, anchor, add, path, label, n=1):
+              need(s, anchor, path, label, n)
+              return s.replace(anchor, anchor + add)
+
+          # =====================================================================
+          # 1) include/linux/susfs_def.h - nomor perintah + ukuran bitmap
+          # =====================================================================
+          DEF_H = 'include/linux/susfs_def.h'
+
+          def fix_def_h(s):
+              if 'CMD_SUSFS_SET_PRIORITY_UID_FILTER' in s:
+                  print("susfs_def.h: sudah ada, dilewati")
+                  return None
+              s = after(s, '#include <linux/bits.h>\n', '#include <linux/bitmap.h>\n', DEF_H, '#include <linux/bits.h>')
+              s = after(s, '#define CMD_SUSFS_ADD_SUS_MAP 0x60020\n',
+                        '#define CMD_SUSFS_SET_PRIORITY_UID_FILTER 0x60030\n', DEF_H, 'CMD_SUSFS_ADD_SUS_MAP')
+              s = before(s, 'static inline bool susfs_starts_with(',
+                         '/*****************************************/\n'
+                         '/* getpriority uid filter (bitmap)       */\n'
+                         '/*****************************************/\n'
+                         '/* The uids that are hidden from the apps that abuse the getpriority syscall\n'
+                         ' * to find out the existing uids. Only the uids within the app uid range\n'
+                         ' * (10000 - 19999) are supported.\n'
+                         ' */\n'
+                         '#define SUSFS_PRIORITY_UID_FILTER_MIN_UID 10000\n'
+                         '#define SUSFS_PRIORITY_UID_FILTER_MAX_UID 19999\n'
+                         '#define SUSFS_PRIORITY_UID_FILTER_UID_NUM (SUSFS_PRIORITY_UID_FILTER_MAX_UID - SUSFS_PRIORITY_UID_FILTER_MIN_UID + 1)\n'
+                         '#define SUSFS_PRIORITY_UID_FILTER_BITMAP_LEN BITS_TO_LONGS(SUSFS_PRIORITY_UID_FILTER_UID_NUM)\n'
+                         '#define SUSFS_APP_STR_BUF_SIZE 65535\n'
+                         '\n', DEF_H, 'static inline bool susfs_starts_with(')
+              print("susfs_def.h: CMD 0x60030 + konstanta bitmap ditambahkan")
+              return s
+
+          # =====================================================================
+          # 2) include/linux/susfs.h - struct + prototipe
+          # =====================================================================
+          SUSFS_H = 'include/linux/susfs.h'
+
+          def fix_susfs_h(s):
+              if 'st_susfs_priority_uid_filter' in s:
+                  print("susfs.h: sudah ada, dilewati")
+                  return None
+              s = before(s, '/* avc log spoofing */\nstruct st_susfs_avc_log_spoofing {',
+                         '/* getpriority uid filter */\n'
+                         'struct st_susfs_priority_uid_filter {\n'
+                         '\tchar                                    app_strings[SUSFS_APP_STR_BUF_SIZE];\n'
+                         '\tint                                     err;\n'
+                         '};\n'
+                         '\n', SUSFS_H, 'struct st_susfs_avc_log_spoofing')
+              s = before(s, 'void susfs_set_avc_log_spoofing(void __user **user_info);',
+                         '/* getpriority uid filter */\n'
+                         'void susfs_set_priority_uid_filter(void __user **user_info);\n'
+                         'void susfs_parse_priority_app_strings(void);\n'
+                         '\n', SUSFS_H, 'prototipe susfs_set_avc_log_spoofing')
+              print("susfs.h: struct st_susfs_priority_uid_filter + 2 prototipe ditambahkan")
+              return s
+
+          # =====================================================================
+          # 3) fs/susfs.c - implementasi (salinan upstream + guard kfree_rcu NULL)
+          # =====================================================================
+          SUSFS_C = 'fs/susfs.c'
+
+          SUSFS_C_HELPERS = r'''/*
+           * Switches the selinux domain of the current process to the KernelSU one, so
+           * that the data paths of the apps can be accessed despite of the selinux
+           * restrictions.
+           * The original credentials are returned, they have to be restored with
+           * susfs_restore_creds() afterwards.
+           * Returns the original credentials on success, NULL on failure.
+           */
+          static struct cred *susfs_switch_to_ksu_domain(void) {
+          	struct cred *orig_cred = NULL;
+          	struct cred *cred = NULL;
+
+          	/* a copy of the current credentials, which is restored later on */
+          	orig_cred = prepare_creds();
+          	if (!orig_cred) {
+          		SUSFS_LOGE("failed to prepare creds!\n");
+          		return NULL;
+          	}
+
+          	cred = prepare_creds();
+          	if (!cred) {
+          		SUSFS_LOGE("failed to prepare creds!\n");
+          		abort_creds(orig_cred);
+          		return NULL;
+          	}
+
+          	setup_selinux("u:r:ksu:s0", cred);
+          	commit_creds(cred);
+
+          	if (!susfs_is_current_ksu_domain()) {
+          		SUSFS_LOGE("domain is not ksu, restoring the original creds\n");
+          		commit_creds(orig_cred);
+          		return NULL;
+          	}
+
+          	return orig_cred;
+          }
+
+          /*
+           * Restores the original credentials that were saved by
+           * susfs_switch_to_ksu_domain().
+           */
+          static void susfs_restore_creds(struct cred *orig_cred) {
+          	if (!orig_cred)
+          		return;
+
+          	commit_creds(orig_cred);
+          }
+
+          '''
+
+          SUSFS_C_FEATURE = r'''/* priority uid filter */
+          struct susfs_priority_uid_filter_bitmap {
+          	struct rcu_head			rcu;
+          	unsigned long			bits[SUSFS_PRIORITY_UID_FILTER_BITMAP_LEN];
+          };
+
+          static struct susfs_priority_uid_filter_bitmap __rcu *priority_uid_filter_bitmap;
+          static DEFINE_MUTEX(susfs_mutex_lock_priority_uid_filter);
+          /*
+           * The app package names of the apps that are currently filtered.
+           * They are stored so that the uids of the apps can be resolved again whenever
+           * the apps are installed or uninstalled, because the uid of an app changes
+           * when the app is reinstalled.
+           * Protected by susfs_mutex_lock_priority_uid_filter.
+           */
+          static char *susfs_priority_app_strings = NULL;
+          /* Ensures that there is only one resolving thread running at the same time */
+          static atomic_t susfs_priority_app_strings_running = ATOMIC_INIT(0);
+
+          /*
+           * Checks whether the given string is a valid app package name.
+           * Returns true if it is a valid app package name.
+           */
+          static bool susfs_is_valid_app_name(const char *app_name) {
+          	const char *p = app_name;
+          	size_t len = strlen(app_name);
+
+          	if (len == 0 || len > 255)
+          		return false;
+
+          	/* reject the relative paths to prevent any path traversal */
+          	if (!strcmp(app_name, ".") || !strcmp(app_name, ".."))
+          		return false;
+
+          	for (; *p != '\0'; p++) {
+          		if ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
+          			(*p >= '0' && *p <= '9') || *p == '.' || *p == '_')
+          			continue;
+          		return false;
+          	}
+
+          	return true;
+          }
+
+          /*
+           * Resolves the uid of the given app package name with the owner uid of the
+           * data path of the app ('/data/data/<app_name>').
+           * Returns 0 on success, a negative errno on failure.
+           */
+          static int susfs_resolve_priority_app_uid(const char *app_name, uid_t *uid) {
+          	char app_path[512];
+          	struct path path;
+          	struct kstat st;
+          	int len;
+          	int ret;
+
+          	len = scnprintf(app_path, sizeof(app_path), "/data/data/%s", app_name);
+          	if (len < 0 || len >= sizeof(app_path)) {
+          		SUSFS_LOGE("the app name '%s' is too long\n", app_name);
+          		return -EINVAL;
+          	}
+
+          	ret = kern_path(app_path, LOOKUP_FOLLOW, &path);
+          	if (ret) {
+          		SUSFS_LOGE("failed to look up '%s': %d\n", app_path, ret);
+          		return ret;
+          	}
+
+          	ret = vfs_getattr(&path, &st, STATX_BASIC_STATS, 0);
+          	path_put(&path);
+          	if (ret) {
+          		SUSFS_LOGE("failed to get the attributes of '%s': %d\n", app_path, ret);
+          		return ret;
+          	}
+
+          	*uid = from_kuid(&init_user_ns, st.uid);
+          	if (*uid < SUSFS_PRIORITY_UID_FILTER_MIN_UID ||
+          		*uid > SUSFS_PRIORITY_UID_FILTER_MAX_UID)
+          		return -EINVAL;
+
+          	return 0;
+          }
+
+          /*
+           * Parses the comma separated list of the app package names, resolves the uid
+           * of every app and maps the uids into the given bitmap.
+           *
+           * The spaces before and after the commas are ignored.
+           * The given string is modified while it is being parsed.
+           * If 'skip_failed' is true, the apps whose data path cannot be found are
+           * skipped (they are uninstalled already), otherwise an error is returned.
+           * Returns 0 on success, a negative errno on failure.
+           */
+          static int susfs_parse_priority_app_names(char *app_str, unsigned long *bits, bool skip_failed) {
+          	char *token = NULL;
+          	char *saveptr = app_str;
+          	uid_t uid = 0;
+          	int ret;
+
+          	while ((token = strsep(&saveptr, ",")) != NULL) {
+          		token = strim(token);
+          		if (*token == '\0') {
+          			/* tolerate the empty items, e.g., "com.foo,,com.bar" */
+          			continue;
+          		}
+
+          		if (!susfs_is_valid_app_name(token)) {
+          			SUSFS_LOGE("invalid app name '%s'\n", token);
+          			return -EINVAL;
+          		}
+
+          		ret = susfs_resolve_priority_app_uid(token, &uid);
+          		if (ret) {
+          			if (skip_failed)
+          				continue;
+          			return ret;
+          		}
+
+          		if (uid < SUSFS_PRIORITY_UID_FILTER_MIN_UID || uid > SUSFS_PRIORITY_UID_FILTER_MAX_UID) {
+          			SUSFS_LOGE("the uid %u of the app '%s' is out of the allowed range [%d, %d]\n",
+          					uid, token, SUSFS_PRIORITY_UID_FILTER_MIN_UID,
+          					SUSFS_PRIORITY_UID_FILTER_MAX_UID);
+          			if (!skip_failed)
+          				return -EINVAL;
+          			continue;
+          		}
+
+          		set_bit(uid - SUSFS_PRIORITY_UID_FILTER_MIN_UID, bits);
+          		SUSFS_LOGI("app_name '%s', uid '%u' is now added to priority_uid_filter_bitmap\n", token, uid);
+          	}
+
+          	return 0;
+          }
+
+          void susfs_set_priority_uid_filter(void __user **user_info) {
+          	struct st_susfs_priority_uid_filter *info = NULL;
+          	struct susfs_priority_uid_filter_bitmap *new_bitmap = NULL;
+          	struct susfs_priority_uid_filter_bitmap *old_bitmap = NULL;
+          	char *new_app_strings = NULL;
+          	struct cred *orig_cred = NULL;
+          	size_t app_str_len = 0;
+          	int err = 0;
+          	static bool is_uid_filter_set_before = false;
+
+          	info = kvmalloc(sizeof(*info), GFP_KERNEL | __GFP_ZERO);
+          	if (!info) {
+          		err = -ENOMEM;
+          		goto out_copy_to_user;
+          	}
+
+          	if (copy_from_user(info, (struct st_susfs_priority_uid_filter __user*)*user_info, sizeof(*info))) {
+          		err = -EFAULT;
+          		goto out_copy_to_user;
+          	}
+
+          	/* the app names string must be null terminated within the buffer */
+          	if (!memchr(info->app_strings, '\0', sizeof(info->app_strings))) {
+          		SUSFS_LOGE("the app names string is not null terminated\n");
+          		err = -EINVAL;
+          		goto out_copy_to_user;
+          	}
+
+          	if (*info->app_strings == '\0') {
+          		SUSFS_LOGE("the app names string cannot be empty\n");
+          		err = -EINVAL;
+          		goto out_copy_to_user;
+          	}
+
+          	app_str_len = strlen(info->app_strings);
+
+          	/*
+          	 * The app names are stored as they are, so that the uids of the apps can
+          	 * be resolved again later on, when the apps are installed or uninstalled.
+          	 */
+          	new_app_strings = kvmalloc(app_str_len + 1, GFP_KERNEL | __GFP_ZERO);
+          	if (!new_app_strings) {
+          		err = -ENOMEM;
+          		goto out_copy_to_user;
+          	}
+          	memcpy(new_app_strings, info->app_strings, app_str_len + 1);
+
+          	new_bitmap = (struct susfs_priority_uid_filter_bitmap *)kzalloc(sizeof(*new_bitmap), GFP_KERNEL);
+          	if (!new_bitmap) {
+          		err = -ENOMEM;
+          		goto out_free_new_app_strings;
+          	}
+
+          	/*
+          	 * The data paths of the apps cannot be accessed with the selinux
+          	 * restrictions of the calling process, hence the selinux domain is
+          	 * switched to the KernelSU one before the uids are resolved.
+          	 */
+          	orig_cred = susfs_switch_to_ksu_domain();
+          	if (!orig_cred) {
+          		err = -EINVAL;
+          		goto out_free_new_bitmap;
+          	}
+
+          	if (is_uid_filter_set_before)
+          		SUSFS_LOGI("renewing the priority uid filter\n");
+          	err = susfs_parse_priority_app_names(info->app_strings, new_bitmap->bits, false);
+
+          	susfs_restore_creds(orig_cred);
+          	orig_cred = NULL;
+
+          	if (err)
+          		goto out_free_new_bitmap;
+
+          	/*
+          	 * Publish the new bitmap and drop the old one.
+          	 * The mutex serializes the writers, while the readers are protected
+          	 * by RCU, hence the readers always see a consistent bitmap and they
+          	 * never access a freed bitmap.
+          	 */
+          	mutex_lock(&susfs_mutex_lock_priority_uid_filter);
+          	old_bitmap = rcu_dereference_protected(priority_uid_filter_bitmap, lockdep_is_held(&susfs_mutex_lock_priority_uid_filter));
+          	rcu_assign_pointer(priority_uid_filter_bitmap, new_bitmap);
+          	new_bitmap = NULL;
+          	kvfree(susfs_priority_app_strings);
+          	susfs_priority_app_strings = new_app_strings;
+          	new_app_strings = NULL;
+          	if (!is_uid_filter_set_before)
+          		is_uid_filter_set_before = true;
+          	mutex_unlock(&susfs_mutex_lock_priority_uid_filter);
+
+          	/* 4.14: kfree_rcu() has no NULL check, the first call has no old bitmap */
+          	if (old_bitmap)
+          		kfree_rcu(old_bitmap, rcu);
+
+          	SUSFS_LOGI("the priority uid filter is set\n");
+          	err = 0;
+
+          out_free_new_bitmap:
+          	if (new_bitmap)
+          		kfree(new_bitmap);
+          out_free_new_app_strings:
+          	if (new_app_strings)
+          		kvfree(new_app_strings);
+          out_copy_to_user:
+          	if (copy_to_user(&((struct st_susfs_priority_uid_filter __user*)*user_info)->err, &err, sizeof(err))) {
+          		err = -EFAULT;
+          	}
+          	SUSFS_LOGI("CMD_SUSFS_SET_PRIORITY_UID_FILTER -> ret: %d\n", err);
+          	if (info)
+          		kvfree(info);
+          }
+
+          /*
+           * The thread that resolves the uids of the stored app package names again,
+           * so that the filter stays up to date when the apps are installed or
+           * uninstalled, because the uid of an app changes when it is reinstalled.
+           */
+          static int susfs_priority_app_strings_worker(void *data) {
+          	struct susfs_priority_uid_filter_bitmap *new_bitmap = NULL;
+          	struct susfs_priority_uid_filter_bitmap *old_bitmap = NULL;
+          	struct cred *orig_cred = NULL;
+          	char *app_strings = NULL;
+          	size_t app_str_len = 0;
+          	int ret = 0;
+
+          	/*
+          	 * The data paths of the apps cannot be accessed with the selinux
+          	 * restrictions of the default domain of the thread, hence the selinux
+          	 * domain is switched to the KernelSU one.
+          	 */
+          	orig_cred = susfs_switch_to_ksu_domain();
+          	if (!orig_cred)
+          		goto out;
+
+          	/* take a snapshot of the stored app package names */
+          	mutex_lock(&susfs_mutex_lock_priority_uid_filter);
+          	if (susfs_priority_app_strings) {
+          		app_str_len = strlen(susfs_priority_app_strings);
+          		app_strings = kvmalloc(app_str_len + 1, GFP_KERNEL | __GFP_ZERO);
+          		if (app_strings)
+          			memcpy(app_strings, susfs_priority_app_strings, app_str_len + 1);
+          	}
+          	mutex_unlock(&susfs_mutex_lock_priority_uid_filter);
+
+          	if (!app_strings)
+          		goto out_restore_creds;
+
+          	new_bitmap = (struct susfs_priority_uid_filter_bitmap *)kzalloc(sizeof(*new_bitmap), GFP_KERNEL);
+          	if (!new_bitmap)
+          		goto out_restore_creds;
+
+          	/* the apps that are uninstalled already are skipped */
+          	ret = susfs_parse_priority_app_names(app_strings, new_bitmap->bits, true);
+          	if (ret)
+          		goto out_restore_creds;
+
+          	/*
+          	 * The old bitmap is zeroed and the newly resolved uids are mapped into
+          	 * the new one, which is then published to the readers.
+          	 */
+          	mutex_lock(&susfs_mutex_lock_priority_uid_filter);
+          	old_bitmap = rcu_dereference_protected(priority_uid_filter_bitmap, lockdep_is_held(&susfs_mutex_lock_priority_uid_filter));
+          	rcu_assign_pointer(priority_uid_filter_bitmap, new_bitmap);
+          	new_bitmap = NULL;
+          	mutex_unlock(&susfs_mutex_lock_priority_uid_filter);
+
+          	/* 4.14: kfree_rcu() has no NULL check */
+          	if (old_bitmap)
+          		kfree_rcu(old_bitmap, rcu);
+
+          	SUSFS_LOGI("the uids of the priority uid filter are resolved again\n");
+
+          out_restore_creds:
+          	susfs_restore_creds(orig_cred);
+          	orig_cred = NULL;
+          out:
+          	if (new_bitmap)
+          		kfree(new_bitmap);
+          	if (app_strings)
+          		kvfree(app_strings);
+          	atomic_set(&susfs_priority_app_strings_running, 0);
+
+          	return ret;
+          }
+
+          /*
+           * Resolves the uids of the stored app package names again in a new thread,
+           * because the resolving of the uids requires the KernelSU selinux domain,
+           * which must not be applied to the calling process.
+           */
+          void susfs_parse_priority_app_strings(void) {
+          	/* do not spawn a new thread if there is already one running */
+          	if (atomic_cmpxchg(&susfs_priority_app_strings_running, 0, 1))
+          		return;
+
+          	if (IS_ERR(kthread_run(susfs_priority_app_strings_worker, NULL, "susfs_gpsp_appstr"))) {
+          		atomic_set(&susfs_priority_app_strings_running, 0);
+          		SUSFS_LOGE("failed to create the thread susfs_priority_app_strings\n");
+          	}
+          }
+
+          /*
+           * Lockless lookup for the getpriority/setpriority syscall path.
+           * Returns true if the uid is hidden by the priority uid filter.
+           */
+          bool susfs_is_priority_uid_filtered(uid_t uid) {
+          	struct susfs_priority_uid_filter_bitmap *bitmap;
+
+          	uid_t app_id = uid % 100000;
+
+          	if (app_id < SUSFS_PRIORITY_UID_FILTER_MIN_UID ||
+          		app_id > SUSFS_PRIORITY_UID_FILTER_MAX_UID)
+          		return false;
+
+          	/* no need rcu_read_lock() and rcu_read_unlock() here as caller already holds it */
+          	bitmap = rcu_dereference(priority_uid_filter_bitmap);
+          	if (likely(bitmap)) {
+          		if (test_bit(app_id - SUSFS_PRIORITY_UID_FILTER_MIN_UID, bitmap->bits)) {
+          			//SUSFS_LOGI("uid '%u' is filtered\n", uid);
+          			return true;
+          		}
+          	}
+
+          	return false;
+          }
+
+          '''
+
+          def fix_susfs_c(s):
+              if 'susfs_is_priority_uid_filtered' in s:
+                  print("susfs.c: sudah ada, dilewati")
+                  return None
+              # dua deklarasi yang dipakai helper harus sudah ada di susfs.c 4.14
+              need(s, 'extern bool susfs_is_current_ksu_domain(void);\n', SUSFS_C, 'extern susfs_is_current_ksu_domain')
+              need(s, 'extern void setup_selinux(const char *domain, struct cred *cred);\n', SUSFS_C, 'extern setup_selinux')
+              need(s, '#include <linux/kthread.h>\n', SUSFS_C, '#include <linux/kthread.h>')
+              s = before(s, '#include <linux/susfs.h>\n',
+                         '#include <linux/bitmap.h>\n#include <linux/limits.h>\n#include <linux/mm.h>\n'
+                         '#include <linux/rcupdate.h>\n#include <linux/string.h>\n',
+                         SUSFS_C, '#include <linux/susfs.h>')
+              s = before(s, '/* sus_path */\n', SUSFS_C_HELPERS, SUSFS_C, '/* sus_path */')
+              s = before(s, '/* susfs avc log spoofing */\n', SUSFS_C_FEATURE, SUSFS_C, '/* susfs avc log spoofing */')
+              print("susfs.c: priority uid filter ditambahkan (kfree_rcu dijaga NULL untuk 4.14)")
+              return s
+
+          # =====================================================================
+          # 4) kernel/sys.c - setpriority/getpriority
+          # =====================================================================
+          SYS_C = 'kernel/sys.c'
+          SYS_FIND = '\t\telse if (!uid_eq(uid, cred->uid)) {\n\t\t\tuser = find_user(uid);\n'
+          SYS_HOOK = ('\t\telse if (!uid_eq(uid, cred->uid)) {\n'
+                      '#ifdef CONFIG_KSU_SUSFS\n'
+                      '\t\t\tif (cred->uid.val >= 10000 && susfs_is_priority_uid_filtered(uid.val))\n'
+                      '\t\t\t\tgoto out_unlock;\n'
+                      '#endif // #ifdef CONFIG_KSU_SUSFS\n'
+                      '\t\t\tuser = find_user(uid);\n')
+          EXTERN = ('#ifdef CONFIG_KSU_SUSFS\n'
+                    'extern bool susfs_is_priority_uid_filtered(uid_t uid);\n'
+                    '#endif // #ifdef CONFIG_KSU_SUSFS\n'
+                    '\n')
+
+          def fix_sys_c(s):
+              if 'susfs_is_priority_uid_filtered' in s:
+                  print("sys.c: sudah ada, dilewati")
+                  return None
+              s = before(s, 'SYSCALL_DEFINE3(setpriority, int, which, int, who, int, niceval)\n', EXTERN, SYS_C, 'SYSCALL_DEFINE3(setpriority')
+              need(s, SYS_FIND, SYS_C, 'find_user(uid) setpriority+getpriority', 2)
+              s = s.replace(SYS_FIND, SYS_HOOK)
+              print("sys.c: hook setpriority + getpriority dipasang")
+              return s
+
+          # =====================================================================
+          # 5) block/ioprio.c - ioprio_set/ioprio_get
+          # =====================================================================
+          IOPRIO_C = 'block/ioprio.c'
+          IO_FIND = '\t\t\telse\n\t\t\t\tuser = find_user(uid);\n'
+          IO_HOOK = ('\t\t\telse\n'
+                     '#ifdef CONFIG_KSU_SUSFS\n'
+                     '\t\t\t{\n'
+                     '\t\t\t\tif (current_uid().val >= 10000 && susfs_is_priority_uid_filtered(uid.val))\n'
+                     '\t\t\t\t\tbreak;\n'
+                     '\t\t\t\tuser = find_user(uid);\n'
+                     '\t\t\t}\n'
+                     '#else\n'
+                     '\t\t\t\tuser = find_user(uid);\n'
+                     '#endif // #ifdef CONFIG_KSU_SUSFS\n')
+
+          def fix_ioprio_c(s):
+              if 'susfs_is_priority_uid_filtered' in s:
+                  print("ioprio.c: sudah ada, dilewati")
+                  return None
+              s = before(s, 'SYSCALL_DEFINE3(ioprio_set, int, which, int, who, int, ioprio)\n', EXTERN, IOPRIO_C, 'SYSCALL_DEFINE3(ioprio_set')
+              need(s, IO_FIND, IOPRIO_C, 'find_user(uid) ioprio_set+ioprio_get', 2)
+              s = s.replace(IO_FIND, IO_HOOK)
+              print("ioprio.c: hook ioprio_set + ioprio_get dipasang")
+              return s
+
+          # =====================================================================
+          # 6) KernelSU/kernel/supercall/dispatch.c - perintah 0x60030
+          # =====================================================================
+          DISPATCH_C = 'KernelSU/kernel/supercall/dispatch.c'
+
+          def fix_dispatch_c(s):
+              if 'CMD_SUSFS_SET_PRIORITY_UID_FILTER' in s:
+                  print("dispatch.c: sudah ada, dilewati")
+                  return None
+              s = after(s, '#ifdef CONFIG_KSU_SUSFS\n#include <linux/susfs_def.h>\n#endif\n',
+                        '#ifdef CONFIG_KSU_SUSFS\n'
+                        'extern void susfs_set_priority_uid_filter(void __user **user_info);\n'
+                        '#endif\n', DISPATCH_C, 'include susfs_def.h')
+              s = before(s, '    case CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING: {\n',
+                         '    case CMD_SUSFS_SET_PRIORITY_UID_FILTER: {\n'
+                         '        susfs_set_priority_uid_filter(arg);\n'
+                         '        return 0;\n'
+                         '    }\n', DISPATCH_C, 'case CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING')
+              print("dispatch.c: case CMD_SUSFS_SET_PRIORITY_UID_FILTER ditambahkan")
+              return s
+
+          # =====================================================================
+          # 7) KernelSU/kernel/manager/throne_tracker.c - resolve ulang uid saat
+          #    packages.list berubah (uid app berubah kalau dipasang ulang).
+          #    Upstream memasangnya di pkg_observer.c, tapi berkas itu TIDAK
+          #    dikompilasi di 4.14: Kbuild hanya memakainya untuk tracepoint hook
+          #    atau kernel >= 6.8. Di sini rename packages.list.tmp -> packages.list
+          #    ditangkap hook LSM inode_rename -> ksu_handle_rename().
+          # =====================================================================
+          TT_C = 'KernelSU/kernel/manager/throne_tracker.c'
+
+          def fix_throne_tracker_c(s):
+              if 'susfs_parse_priority_app_strings' in s:
+                  print("throne_tracker.c: sudah ada, dilewati")
+                  return None
+              s = after(s, '#include "feature/dynamic_manager.h"\n',
+                        '#ifdef CONFIG_KSU_SUSFS\n'
+                        'extern void susfs_parse_priority_app_strings(void);\n'
+                        '#endif\n', TT_C, 'include dynamic_manager.h')
+              s = before(s, '    track_throne(TRACK_THRONE_FROM_RENAMEAT | TRACK_THRONE_FORCE_SYNCHRONOUS);\n}\n',
+                         '#ifdef CONFIG_KSU_SUSFS\n'
+                         '    // Renew the getpriority uid bitmap filter\n'
+                         '    susfs_parse_priority_app_strings();\n'
+                         '#endif\n\n', TT_C, 'track_throne di ksu_handle_rename')
+              print("throne_tracker.c: resolve ulang uid filter dipasang di ksu_handle_rename")
+              return s
+
+          rw(DEF_H, fix_def_h)
+          rw(SUSFS_H, fix_susfs_h)
+          rw(SUSFS_C, fix_susfs_c)
+          rw(SYS_C, fix_sys_c)
+          rw(IOPRIO_C, fix_ioprio_c)
+          rw(DISPATCH_C, fix_dispatch_c)
+          rw(TT_C, fix_throne_tracker_c)
+          print("prio-uid: selesai")
+          FIX_SUSFS_PRIO_UID_PY
           python3 /tmp/fix_susfs_prio_uid.py
 
           echo ""
@@ -3480,7 +4534,60 @@ jobs:
           test -f AnyKernel3/tools/ak3-core.sh || { echo "ERROR: tools/ak3-core.sh tidak ada di AnyKernel3"; exit 1; }
           rm -rf AnyKernel3/.git
 
-          echo "IyMjIEFueUtlcm5lbDMgUmFtZGlzayBNb2QgU2NyaXB0CiMjIG9zbTBzaXMgQCB4ZGEtZGV2ZWxvcGVycwoKIyMjIEFueUtlcm5lbCBzZXR1cAojIGJlZ2luIHByb3BlcnRpZXMKcHJvcGVydGllcygpIHsgJwprZXJuZWwuc3RyaW5nPXNwaGluWCBLZXJuZWwgYnkgZmpyWFRSCmRvLmRldmljZWNoZWNrPTEKZG8ubW9kdWxlcz0wCmRvLnN5c3RlbWxlc3M9MQpkby5jbGVhbnVwPTEKZG8uY2xlYW51cG9uYWJvcnQ9MApkZXZpY2UubmFtZTE9ZmxldXIKZGV2aWNlLm5hbWUyPW1pZWwKZGV2aWNlLm5hbWUzPXNlYQpkZXZpY2UubmFtZTQ9b2NlYW4KZGV2aWNlLm5hbWU1PXJvc2VtYXJ5CmRldmljZS5uYW1lNj1zZWNyZXQKZGV2aWNlLm5hbWU3PW1hbHRvc2UKc3VwcG9ydGVkLnZlcnNpb25zPTExLjAtMTQuMApzdXBwb3J0ZWQucGF0Y2hsZXZlbHM9Cic7IH0gIyBlbmQgcHJvcGVydGllcwoKIyMjIEFueUtlcm5lbCBpbnN0YWxsCiMgYmVnaW4gYXR0cmlidXRlcwphdHRyaWJ1dGVzKCkgewpzZXRfcGVybV9yZWN1cnNpdmUgMCAwIDc1NSA2NDQgJHJhbWRpc2svKjsKc2V0X3Blcm1fcmVjdXJzaXZlIDAgMCA3NTAgNzUwICRyYW1kaXNrL2luaXQqICRyYW1kaXNrL3NiaW47Cn0gIyBlbmQgYXR0cmlidXRlcwoKCiMjIGJvb3Qgc2hlbGwgdmFyaWFibGVzCmJsb2NrPS9kZXYvYmxvY2svYnktbmFtZS9ib290OwojIGlzX3Nsb3RfZGV2aWNlPWF1dG8sIEJVS0FOIDEuIEtlbHVhcmdhIE1UNjc4MSAocm9zZW1hcnkvZmxldXIvc2VhLy4uLikgYWRhbGFoCiMgZGV2aWNlIEEtb25seTogdGlkYWsgYWRhIHJvLmJvb3Quc2xvdF9zdWZmaXggbWF1cHVuIGFuZHJvaWRib290LnNsb3QuIERlbmdhbgojIGlzX3Nsb3RfZGV2aWNlPTEsIHRvb2xzL2FrMy1jb3JlLnNoIChzZXR1cF9haykgbWVuamFsYW5rYW46CiMgICAgIGlmIFsgISAiJHNsb3QiIC1hICIkaXNfc2xvdF9kZXZpY2UiID09IDEgXTsgdGhlbgojICAgICAgIGFib3J0ICJVbmFibGUgdG8gZGV0ZXJtaW5lIGFjdGl2ZSBzbG90LiBBYm9ydGluZy4uLiI7CiMgc2VoaW5nZ2EgemlwIEdBR0FMIGRpLWZsYXNoIHNlYmVsdW0gbWVueWVudHVoIHBhcnRpc2kgYm9vdC4gTmlsYWkgImF1dG8iCiMgdGV0YXAgbWVuZGV0ZWtzaSBzbG90IGthbGF1IG1lbWFuZyBhZGEgKGRldmljZSBBL0IpLCB0YXBpIGxhbmp1dCBub3JtYWwKIyBrYWxhdSB0aWRhayBhZGEgLSBqYWRpIGFtYW4gdW50dWsga2VkdWEgamVuaXMgZGV2aWNlLgppc19zbG90X2RldmljZT1hdXRvOwpyYW1kaXNrX2NvbXByZXNzaW9uPWF1dG87CnBhdGNoX3ZibWV0YV9mbGFnPWF1dG87CgojIGltcG9ydCBmdW5jdGlvbnMvdmFyaWFibGVzIGFuZCBzZXR1cCBwYXRjaGluZyAtIHNlZSBmb3IgcmVmZXJlbmNlIChETyBOT1QgUkVNT1ZFKQouIHRvb2xzL2FrMy1jb3JlLnNoICYmIGF0dHJpYnV0ZXM7CgojIGJvb3QgaW5zdGFsbApkdW1wX2Jvb3Q7ICMgdXNlIHNwbGl0X2Jvb3QgdG8gc2tpcCByYW1kaXNrIHVucGFjaywgZS5nLiBmb3IgZGV2aWNlcyB3aXRoIGluaXRfYm9vdCByYW1kaXNrCndyaXRlX2Jvb3Q7ICMgdXNlIGZsYXNoX2Jvb3QgdG8gc2tpcCByYW1kaXNrIHJlcGFjaywgZS5nLiBmb3IgZGV2aWNlcyB3aXRoIGluaXRfYm9vdCByYW1kaXNrCiMjIGVuZCBib290IGluc3RhbGwK" | base64 -d > AnyKernel3/anykernel.sh
+          cat > AnyKernel3/anykernel.sh <<'ANYKERNEL_SH'
+          ### AnyKernel3 Ramdisk Mod Script
+          ## osm0sis @ xda-developers
+
+          ### AnyKernel setup
+          # begin properties
+          properties() { '
+          kernel.string=sphinX Kernel by fjrXTR
+          do.devicecheck=1
+          do.modules=0
+          do.systemless=1
+          do.cleanup=1
+          do.cleanuponabort=0
+          device.name1=fleur
+          device.name2=miel
+          device.name3=sea
+          device.name4=ocean
+          device.name5=rosemary
+          device.name6=secret
+          device.name7=maltose
+          supported.versions=11.0-14.0
+          supported.patchlevels=
+          '; } # end properties
+
+          ### AnyKernel install
+          # begin attributes
+          attributes() {
+          set_perm_recursive 0 0 755 644 $ramdisk/*;
+          set_perm_recursive 0 0 750 750 $ramdisk/init* $ramdisk/sbin;
+          } # end attributes
+
+
+          ## boot shell variables
+          block=/dev/block/by-name/boot;
+          # is_slot_device=auto, BUKAN 1. Keluarga MT6781 (rosemary/fleur/sea/...) adalah
+          # device A-only: tidak ada ro.boot.slot_suffix maupun androidboot.slot. Dengan
+          # is_slot_device=1, tools/ak3-core.sh (setup_ak) menjalankan:
+          #     if [ ! "$slot" -a "$is_slot_device" == 1 ]; then
+          #       abort "Unable to determine active slot. Aborting...";
+          # sehingga zip GAGAL di-flash sebelum menyentuh partisi boot. Nilai "auto"
+          # tetap mendeteksi slot kalau memang ada (device A/B), tapi lanjut normal
+          # kalau tidak ada - jadi aman untuk kedua jenis device.
+          is_slot_device=auto;
+          ramdisk_compression=auto;
+          patch_vbmeta_flag=auto;
+
+          # import functions/variables and setup patching - see for reference (DO NOT REMOVE)
+          . tools/ak3-core.sh && attributes;
+
+          # boot install
+          dump_boot; # use split_boot to skip ramdisk unpack, e.g. for devices with init_boot ramdisk
+          write_boot; # use flash_boot to skip ramdisk repack, e.g. for devices with init_boot ramdisk
+          ## end boot install
+          ANYKERNEL_SH
 
           cp "${{ steps.kimg.outputs.path }}" "AnyKernel3/${{ steps.kimg.outputs.name }}"
 
