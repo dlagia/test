@@ -4,7 +4,7 @@
 # (https://github.com/dlagia/Build-Kernel_scripts)
 #
 # Fitur yang terpasang:
-# 1. ReSukiSU + SuSFS (via dlagia/Build-Kernel_scripts integrate_ksu_susfs.sh)
+# 1. BakaSU (eks-ReSukiSU) + SuSFS (via dlagia/Build-Kernel_scripts integrate_ksu_susfs.sh)
 # 2. Defconfig SuSFS lengkap (via dlagia/Build-Kernel_scripts ksu-susfs_defconfig)
 # 3. NoMount (branch dev milik maxsteeel/nomount) + compiler biner CLI nm
 # 4. Toolchain: proton-clang (kdrag0n) + cross-compile GCC
@@ -1674,7 +1674,7 @@ jobs:
           }
           echo "OK: source kernel ter-pin di $KERNEL_PIN"
 
-      - name: Integrasikan ReSukiSU & SuSFS (dlagia/Build-Kernel_scripts)
+      - name: Integrasikan BakaSU & SuSFS (dlagia/Build-Kernel_scripts)
         working-directory: kernel
         run: |
           export KERNEL_DIR=$(pwd)
@@ -1777,12 +1777,12 @@ jobs:
           # menghitung BARIS dan akan selalu mengembalikan 1 lalu gagal palsu.
           KSU_HIT=$(grep -o "$KSU_PIN" integrate_ksu_susfs.sh | wc -l | tr -d ' ')
           if [ "$KSU_HIT" != "2" ]; then
-            echo "ERROR: pin ReSukiSU gagal disisipkan (harus 2 kemunculan: URL + argumen, dapat $KSU_HIT)."
-            echo "Struktur integrate_ksu_susfs.sh berubah? Baris yang menyebut ReSukiSU:"
+            echo "ERROR: pin BakaSU gagal disisipkan (harus 2 kemunculan: URL + argumen, dapat $KSU_HIT)."
+            echo "Struktur integrate_ksu_susfs.sh berubah? Baris yang menyebut ReSukiSU/BakaSU:"
             grep -nE 'ReSukiSU|BakaSU' integrate_ksu_susfs.sh || true
             exit 1
           fi
-          echo "[+] ReSukiSU di-PIN ke ${KSU_PIN} (URL setup.sh + argumen checkout)"
+          echo "[+] BakaSU di-PIN ke ${KSU_PIN} (URL setup.sh + argumen checkout)"
 
           # ----- PIN SUMBER PATCH SUSFS (revisi ke-9, 2026-09-10) -----
           # integrate_ksu_susfs.sh mengunduh susfs_inline_hook_patches.sh dan
@@ -2001,13 +2001,13 @@ jobs:
             # integrate_ksu_susfs.sh, jadi baris inilah satu-satunya tempat
             # keadaan ini terlihat di log - dan sekarang ia sekalian membuktikan
             # penggantinya ada, bukan sekadar mengumumkan yang tidak ada.
-            echo "Tidak perlu ditambal: ReSukiSU memakai hook LSM, bukan panggilan di hooks.c."
+            echo "Tidak perlu ditambal: BakaSU memakai hook LSM, bukan panggilan di hooks.c."
             if [ -d KernelSU/kernel ]; then
               grep -rq 'ksu_handle_selinux_setprocattr' KernelSU/kernel/ || {
                 echo "ERROR: pemanggilan ksu_hide_setprocattr tidak ada DAN pengganti"
                 echo "  LSM-nya (ksu_handle_selinux_setprocattr) juga tidak ada."
                 echo "  Berarti tidak ada satu pun proteksi setprocattr yang terpasang -"
-                echo "  ReSukiSU berubah bentuk, penambalan hooks.c perlu ditinjau ulang."
+                echo "  BakaSU berubah bentuk, penambalan hooks.c perlu ditinjau ulang."
                 exit 1
               }
               echo "OK: ksu_handle_selinux_setprocattr ada di KernelSU/kernel (pengganti yang sah)"
@@ -2030,7 +2030,7 @@ jobs:
           echo "OK: fs/Makefile berisi obj-\$(CONFIG_KSU_SUSFS) += susfs.o"
 
           echo ""
-          echo "== Verifikasi hook inline SuSFS (syarat ReSukiSU inline_hook_check.mk) =="
+          echo "== Verifikasi hook inline SuSFS (syarat BakaSU inline_hook_check.mk) =="
           for pair in \
             "ksu_handle_execveat:fs/exec.c" \
             "ksu_handle_faccessat:fs/open.c" \
@@ -2077,10 +2077,10 @@ jobs:
             echo "setup.sh mungkin gagal checkout (commit dihapus / force-push upstream)."
             exit 1
           }
-          echo "OK: ReSukiSU ter-pin di $KSU_PIN"
+          echo "OK: BakaSU ter-pin di $KSU_PIN"
 
           echo "KSU_SHA=$(git -C KernelSU rev-parse --short HEAD)" >> "$GITHUB_ENV"
-          echo "ReSukiSU commit: $(git -C KernelSU rev-parse HEAD)"
+          echo "BakaSU commit: $(git -C KernelSU rev-parse HEAD)"
           echo "Integrasi KernelSU + SuSFS via dlagia/Build-Kernel_scripts: SUKSES"
 
       # ===== BUKTI SIMULASI (revisi ke-17, 2026-09-12) =====
@@ -2189,7 +2189,7 @@ jobs:
           # panic; kalau dipasang di boot-completed.sh jadi bootloop.
           # Pemakaian: `ksu_susfs set_priority_uid_filter com.a,com.b` dengan
           # ksu_susfs dari susfs4ksu 35cbfe118 ke atas (ksud BakaSU belum
-          # punya perintah ini). Step ini harus sebelum "Commit ReSukiSU"
+          # punya perintah ini). Step ini harus sebelum "Commit BakaSU"
           # supaya tambalan KernelSU ikut ter-commit (KSU tetap clean).
           # Idempoten; berkas yang sudah membawa fitur ini dilewati, anchor
           # yang berubah menghentikan build dengan pesan jelas.
@@ -2202,7 +2202,7 @@ jobs:
           grep -n 'CMD_SUSFS_SET_PRIORITY_UID_FILTER' include/linux/susfs_def.h KernelSU/kernel/supercall/dispatch.c || true
           grep -n 'susfs_parse_priority_app_strings' KernelSU/kernel/manager/throne_tracker.c || true
 
-      - name: Commit ReSukiSU + bersihkan dirty
+      - name: Commit BakaSU + bersihkan dirty
         working-directory: kernel
         run: |
           echo "==================== Cek status KernelSU sebelum commit ===================="
@@ -3215,7 +3215,7 @@ jobs:
           make O=out "${HOST_TOOLS[@]}" rosemary_defconfig
 
           echo ""
-          echo "==================== RESOLVED ReSukiSU & SuSFS CONFIG ===================="
+          echo "==================== RESOLVED BakaSU & SuSFS CONFIG ===================="
           grep -E '^(CONFIG_KSU|CONFIG_KALLSYMS)' out/.config || true
 
           grep -q '^CONFIG_KSU=y$' out/.config || { echo "ERROR: CONFIG_KSU tidak resolve ke y"; exit 1; }
@@ -3497,7 +3497,7 @@ jobs:
             echo "| Komponen | Commit |"
             echo "|---|---|"
             echo "| Kernel (rosemary-13) | \`${KERNEL_SHA:-?}\` |"
-            echo "| ReSukiSU (di-PIN) | \`${KSU_SHA:-?}\` |"
+            echo "| BakaSU (di-PIN) | \`${KSU_SHA:-?}\` |"
             echo "| NoMount (di-PIN, ART) | \`${NOMOUNT_SHA:-?}\` |"
             echo ""
             # Alasan yang sama dengan blok kembarannya di step "Terbitkan
@@ -3591,7 +3591,7 @@ jobs:
             printf 'Build otomatis dari commit `%s`.\n\n' "${GITHUB_SHA:0:9}"
             printf -- '| bagian | commit |\n|---|---|\n'
             printf -- '| kernel | `%s` |\n' "$KERNEL_SHA"
-            printf -- '| ReSukiSU | `%s` |\n' "$KSU_SHA"
+            printf -- '| BakaSU | `%s` |\n' "$KSU_SHA"
             printf -- '| NoMount | `%s` |\n' "$NOMOUNT_SHA"
             # Revisi ke-46: KEDELAPAN pin, bukan tiga. Sejak revisi ke-45c
             # pertanyaan "dua rilis ini isinya sama atau tidak?" dijawab persis
