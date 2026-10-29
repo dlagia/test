@@ -4032,6 +4032,131 @@ jobs:
                 "zram default_compressor zstd -> lz4")
           PY
 
+      - name: Tambal CVE-2026-43499 (rtmutex remove_waiter, upstream 3bfdc63936dd + 40a25d59e85b)
+        working-directory: kernel
+        run: |
+          # Revisi ke-100 (2026-10-29, permintaan pemilik): CVE-2026-43499
+          # "GhostLock", CVSS 7.8, use-after-free di rtmutex yang dipakai futex
+          # PI. remove_waiter() juga dipanggil rt_mutex_start_proxy_lock() dari
+          # futex_requeue() (FUTEX_CMP_REQUEUE_PI) untuk task LAIN, tapi tetap
+          # memakai `current`: dequeue tanpa pi_lock milik waiter, pi_blocked_on
+          # task waiter tidak dikosongkan (pointer menggantung = UAF, exploit
+          # root publik ada), dan rantai PI disesuaikan untuk task yang salah.
+          # Bug ada sejak 2.6.39, jadi 4.14 kita kena; 4.14 sudah EOL sehingga
+          # tidak ada backport stable. Diporting manual:
+          #   - torvalds 3bfdc63936dd "rtmutex: Use waiter::task instead of
+          #     current in remove_waiter()" (perbaikan inti).
+          #   - torvalds 40a25d59e85b "locking/rtmutex: Skip remove_waiter()
+          #     when waiter is not enqueued" (Fixes: 3bfdc63936dd). Tanpa ini
+          #     perbaikan inti justru membuat NULL deref: saat deadlock langsung
+          #     (pemilik lock = task) task_blocks_on_rt_mutex() keluar -EDEADLK
+          #     sebelum mengisi waiter->task, dan rt_waiter futex diinisialisasi
+          #     task = NULL. Sekalian remove_waiter() hanya untuk ret < 0, bukan
+          #     ret == 1 (lock langsung didapat, waiter tidak pernah antre).
+          # SENGAJA TIDAK dipakai: torvalds 74e144274af3 (cek self-deadlock di
+          # futex_requeue) - di-revert upstream 39def6d250d3 karena membocorkan
+          # pi_state; kasusnya sudah tertutup oleh 40a25d59e85b.
+          # Beda dengan upstream: scoped_guard() belum ada di 4.14, jadi tetap
+          # raw_spin_lock/raw_spin_unlock biasa (urutan kunci sama: wait_lock
+          # lalu pi_lock milik task waiter, seperti task_blocks_on_rt_mutex()).
+          # Idempoten; anchor yang berubah menghentikan build dengan pesan jelas.
+          cat > /tmp/fix_cve_2026_43499.py <<'FIX_CVE_2026_43499_PY'
+          #!/usr/bin/env python3
+          """
+          Port CVE-2026-43499 ke kernel/locking/rtmutex.c 4.14:
+          torvalds 3bfdc63936dd + 40a25d59e85b (tanpa 74e144274af3, sudah di-revert).
+          """
+          import sys
+
+          PATH = 'kernel/locking/rtmutex.c'
+
+          def die(msg):
+              sys.exit('cve-2026-43499: ' + msg)
+
+          def fungsi(s, kepala):
+              """Kembalikan (awal, akhir) badan fungsi dari kepala sampai '\n}\n'."""
+              if s.count(kepala) != 1:
+                  die("kepala '%s' ketemu %d kali (harus 1)" % (kepala, s.count(kepala)))
+              a = s.index(kepala)
+              b = s.index('\n}\n', a) + 3
+              return a, b
+
+          def ganti(teks, lama, baru, label):
+              c = teks.count(lama)
+              if c != 1:
+                  die("anchor '%s' ketemu %d kali (harus 1)" % (label, c))
+              return teks.replace(lama, baru)
+
+          with open(PATH, encoding='utf-8', errors='surrogateescape') as f:
+              s = f.read()
+
+          # ---- 1) remove_waiter(): waiter->task, bukan current (3bfdc63936dd)
+          #         + lewati waiter yang tidak pernah antre (40a25d59e85b)
+          a, b = fungsi(s, 'static void remove_waiter(struct rt_mutex *lock,')
+          rw = s[a:b]
+          if 'waiter_task' in rw:
+              print('remove_waiter: sudah memakai waiter->task, dilewati')
+          else:
+              rw = ganti(rw,
+                         '\tstruct task_struct *owner = rt_mutex_owner(lock);\n',
+                         '\tstruct task_struct *owner = rt_mutex_owner(lock);\n'
+                         '\tstruct task_struct *waiter_task = waiter->task;\n',
+                         'deklarasi owner')
+              rw = ganti(rw,
+                         '\traw_spin_lock(&current->pi_lock);\n'
+                         '\trt_mutex_dequeue(lock, waiter);\n'
+                         '\tcurrent->pi_blocked_on = NULL;\n'
+                         '\traw_spin_unlock(&current->pi_lock);\n',
+                         '\tif (!waiter_task) /* never enqueued */\n'
+                         '\t\treturn;\n'
+                         '\n'
+                         '\traw_spin_lock(&waiter_task->pi_lock);\n'
+                         '\trt_mutex_dequeue(lock, waiter);\n'
+                         '\twaiter_task->pi_blocked_on = NULL;\n'
+                         '\traw_spin_unlock(&waiter_task->pi_lock);\n',
+                         'dequeue memakai current')
+              rw = ganti(rw,
+                         'next_lock, NULL, current);\n',
+                         'next_lock, NULL, waiter_task);\n',
+                         'rt_mutex_adjust_prio_chain(..., current)')
+              if 'current' in rw:
+                  die('remove_waiter masih menyebut current sesudah ditambal')
+              s = s[:a] + rw + s[b:]
+              s = ganti(s,
+                        ' * have just failed to try_to_take_rt_mutex().\n'
+                        ' */\n'
+                        'static void remove_waiter(',
+                        ' * have just failed to try_to_take_rt_mutex().\n'
+                        ' *\n'
+                        ' * When invoked from rt_mutex_start_proxy_lock() waiter::task != current !\n'
+                        ' */\n'
+                        'static void remove_waiter(',
+                        'komentar remove_waiter')
+              print('remove_waiter: memakai waiter->task + guard waiter belum antre')
+
+          # ---- 2) rt_mutex_start_proxy_lock(): remove_waiter hanya untuk ret < 0
+          a, b = fungsi(s, 'int rt_mutex_start_proxy_lock(struct rt_mutex *lock,')
+          sp = s[a:b]
+          if 'if (unlikely(ret < 0))\n\t\tremove_waiter(lock, waiter);' in sp:
+              print('rt_mutex_start_proxy_lock: sudah ret < 0, dilewati')
+          else:
+              sp = ganti(sp,
+                         '\tif (unlikely(ret))\n\t\tremove_waiter(lock, waiter);\n',
+                         '\tif (unlikely(ret < 0))\n\t\tremove_waiter(lock, waiter);\n',
+                         'if (unlikely(ret)) remove_waiter')
+              s = s[:a] + sp + s[b:]
+              print('rt_mutex_start_proxy_lock: remove_waiter hanya untuk ret < 0')
+
+          with open(PATH, 'w', encoding='utf-8', errors='surrogateescape') as f:
+              f.write(s)
+          print('cve-2026-43499: selesai')
+          FIX_CVE_2026_43499_PY
+          python3 /tmp/fix_cve_2026_43499.py
+
+          echo ""
+          echo "== Ringkasan CVE-2026-43499 =="
+          grep -n 'waiter_task\|ret < 0))' kernel/locking/rtmutex.c || true
+
       - name: Aktifkan KSU & SuSFS di defconfig (termasuk dlagia ksu-susfs_defconfig)
         working-directory: kernel
         run: |
