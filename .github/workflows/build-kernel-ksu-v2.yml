@@ -2585,7 +2585,7 @@ jobs:
           grep -n 'spin_lock(&unnamed_dev_lock);' fs/super.c | head -3 || true
           grep -c 'ida_simple_get' fs/super.c fs/namespace.c || true
 
-      - name: Backport SUSFS priority uid filter (simonpunk 35cbfe118) ke 4.14 + BakaSU
+      - name: Backport SUSFS priority uid filter (simonpunk 35cbfe118 + eb95da080) ke 4.14 + BakaSU
         working-directory: kernel
         run: |
           # Revisi ke-95 (2026-10-25, permintaan pemilik): fitur baru SUSFS
@@ -2609,11 +2609,18 @@ jobs:
           # supaya tambalan KernelSU ikut ter-commit (KSU tetap clean).
           # Idempoten; berkas yang sudah membawa fitur ini dilewati, anchor
           # yang berubah menghentikan build dengan pesan jelas.
+          # Revisi ke-99 (2026-10-29): ikut simonpunk eb95da080 (2026-10-27, "Fix
+          # UAF bugs and worker not able to run", sudah di semua branch gki):
+          # synchronize_rcu() sebelum kfree_rcu(old_bitmap) di set filter dan di
+          # worker, dan worker resolve ulang uid baru dijalankan SESUDAH
+          # track_throne() (di sini: di akhir ksu_handle_rename).
           cat > /tmp/fix_susfs_prio_uid.py <<'FIX_SUSFS_PRIO_UID_PY'
           #!/usr/bin/env python3
           """
           Backport "susfs: Add priority uid filter" (simonpunk/susfs4ksu 35cbfe118,
-          branch gki-android12-5.10, 2026-10-24) ke SUSFS 4.14 (JackA1ltman) + BakaSU.
+          branch gki-android12-5.10, 2026-10-24) ke SUSFS 4.14 (JackA1ltman) + BakaSU,
+          termasuk perbaikan eb95da080 (2026-10-27): synchronize_rcu() sebelum
+          kfree_rcu(old_bitmap) dan worker resolve ulang uid sesudah track_throne().
 
           Fitur: uid aplikasi pilihan disembunyikan dari getpriority/setpriority/
           ioprio_get/ioprio_set (dipakai sebagian app untuk menghitung app yang
@@ -2631,7 +2638,8 @@ jobs:
             - Sisi KSU memakai deklarasi extern, bukan #include <linux/susfs.h>, dan
               dijaga CONFIG_KSU_SUSFS (BakaSU juga dibangun tanpa SUSFS).
             - Resolve ulang uid saat packages.list berubah dipasang di
-              throne_tracker.c ksu_handle_rename() (jalur 4.14), bukan pkg_observer.c.
+              throne_tracker.c ksu_handle_rename() (jalur 4.14), bukan pkg_observer.c;
+              seperti upstream eb95da080, dipanggil sesudah track_throne().
 
           Tiap berkas: dilewati kalau penandanya sudah ada (upstream sudah membawa
           fitur ini), selain itu setiap anchor harus ketemu tepat sekali (atau dua kali
@@ -2994,7 +3002,7 @@ jobs:
           	if (!is_uid_filter_set_before)
           		is_uid_filter_set_before = true;
           	mutex_unlock(&susfs_mutex_lock_priority_uid_filter);
-
+          	synchronize_rcu();
           	/* 4.14: kfree_rcu() has no NULL check, the first call has no old bitmap */
           	if (old_bitmap)
           		kfree_rcu(old_bitmap, rcu);
@@ -3070,7 +3078,7 @@ jobs:
           	rcu_assign_pointer(priority_uid_filter_bitmap, new_bitmap);
           	new_bitmap = NULL;
           	mutex_unlock(&susfs_mutex_lock_priority_uid_filter);
-
+          	synchronize_rcu();
           	/* 4.14: kfree_rcu() has no NULL check */
           	if (old_bitmap)
           		kfree_rcu(old_bitmap, rcu);
@@ -3147,7 +3155,7 @@ jobs:
                          SUSFS_C, '#include <linux/susfs.h>')
               s = before(s, '/* sus_path */\n', SUSFS_C_HELPERS, SUSFS_C, '/* sus_path */')
               s = before(s, '/* susfs avc log spoofing */\n', SUSFS_C_FEATURE, SUSFS_C, '/* susfs avc log spoofing */')
-              print("susfs.c: priority uid filter ditambahkan (kfree_rcu dijaga NULL untuk 4.14)")
+              print("susfs.c: priority uid filter ditambahkan (synchronize_rcu eb95da080, kfree_rcu dijaga NULL untuk 4.14)")
               return s
 
           # =====================================================================
@@ -3230,6 +3238,11 @@ jobs:
           #    dikompilasi di 4.14: Kbuild hanya memakainya untuk tracepoint hook
           #    atau kernel >= 6.8. Di sini rename packages.list.tmp -> packages.list
           #    ditangkap hook LSM inode_rename -> ksu_handle_rename().
+          #    Revisi ke-99 ikut eb95da080: upstream memindahkan panggilan dari
+          #    ksu_defer_track_throne() ke task_work SESUDAH track_throne(), jadi
+          #    di sini dipasang sesudah track_throne() sinkron di akhir
+          #    ksu_handle_rename(). Worker-nya kthread sendiri (cuma membaca
+          #    /data/data/<pkg>), jadi rename tidak ikut menunggu.
           # =====================================================================
           TT_C = 'KernelSU/kernel/manager/throne_tracker.c'
 
@@ -3241,12 +3254,15 @@ jobs:
                         '#ifdef CONFIG_KSU_SUSFS\n'
                         'extern void susfs_parse_priority_app_strings(void);\n'
                         '#endif\n', TT_C, 'include dynamic_manager.h')
-              s = before(s, '    track_throne(TRACK_THRONE_FROM_RENAMEAT | TRACK_THRONE_FORCE_SYNCHRONOUS);\n}\n',
-                         '#ifdef CONFIG_KSU_SUSFS\n'
-                         '    // Renew the getpriority uid bitmap filter\n'
-                         '    susfs_parse_priority_app_strings();\n'
-                         '#endif\n\n', TT_C, 'track_throne di ksu_handle_rename')
-              print("throne_tracker.c: resolve ulang uid filter dipasang di ksu_handle_rename")
+              tt = '    track_throne(TRACK_THRONE_FROM_RENAMEAT | TRACK_THRONE_FORCE_SYNCHRONOUS);\n'
+              need(s, tt + '}\n', TT_C, 'track_throne di akhir ksu_handle_rename')
+              s = s.replace(tt + '}\n', tt +
+                            '#ifdef CONFIG_KSU_SUSFS\n'
+                            '    // Renew the getpriority uid bitmap filter\n'
+                            '    susfs_parse_priority_app_strings();\n'
+                            '#endif\n'
+                            '}\n')
+              print("throne_tracker.c: resolve ulang uid filter dipasang sesudah track_throne di ksu_handle_rename")
               return s
 
           rw(DEF_H, fix_def_h)
