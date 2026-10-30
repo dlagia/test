@@ -4157,6 +4157,180 @@ jobs:
           echo "== Ringkasan CVE-2026-43499 =="
           grep -n 'waiter_task\|ret < 0))' kernel/locking/rtmutex.c || true
 
+      - name: Samakan /proc/version dengan uname palsu SUSFS (spoof_uname)
+        working-directory: kernel
+        run: |
+          # Revisi ke-101 (2026-10-30, permintaan pemilik): kebocoran #2 hasil
+          # audit penyembunyian di HP. SUSFS spoof_uname (BRENE
+          # config_spoof_uname=1) hanya menambal syscall newuname() di
+          # kernel/sys.c, jadi `uname -r` = 4.14.332-g<hex> palsu, sementara
+          # /proc/version tetap membaca utsname() asli: "4.14.332-perf ...
+          # Thu Oct 29 2026". Dua nilai yang bertentangan = sinyal kernel
+          # custom. Tambalan ini memakai fungsi SUSFS yang sama
+          # (susfs_spoof_uname + static key susfs_is_uname_spoof_buffer_set),
+          # jadi semua jalur ikut nilai yang diset BRENE tiap boot dan tetap
+          # asli selama spoof belum diset:
+          #   1) fs/proc/version.c version_proc_show(): release + version palsu.
+          #   2) kernel/utsname_sysctl.c proc_do_uts_string(): baca
+          #      /proc/sys/kernel/osrelease dan /proc/sys/kernel/version (label
+          #      SELinux `proc`, app/shell ditolak, root masih melihat nilai asli).
+          #   3) kernel/sys.c override_release(): personality UNAME26 dulu
+          #      dihitung dari konstanta UTS_RELEASE -> "2.6.74-perf" bocor.
+          # Yang TIDAK berubah: "(build@kernel) (Proton clang ...)" di
+          # /proc/version adalah konstanta compile-time (KBUILD_BUILD_USER/HOST
+          # di step Compile + versi compiler), bukan bagian utsname.
+          # Harus SESUDAH step Integrasikan BakaSU & SuSFS (hunk newuname SUSFS
+          # wajib sudah ada di kernel/sys.c; fixer berhenti kalau belum).
+          # Idempoten; anchor yang berubah menghentikan build dengan pesan jelas.
+          cat > /tmp/fix_susfs_uname_proc.py <<'FIX_SUSFS_UNAME_PROC_PY'
+          #!/usr/bin/env python3
+          """
+          SUSFS spoof_uname 4.14: samakan /proc/version, /proc/sys/kernel/{osrelease,version}
+          dan uname() UNAME26 dengan nilai palsu newuname() (susfs_spoof_uname).
+          """
+          import sys
+
+          MARK = 'susfs_is_uname_spoof_buffer_set'
+          EXTERN = ('#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME\n'
+                    '#include <linux/jump_label.h>\n'
+                    'extern struct static_key_false susfs_is_uname_spoof_buffer_set;\n'
+                    'extern void susfs_spoof_uname(struct new_utsname* tmp);\n'
+                    '#endif\n')
+
+          def die(msg):
+              sys.exit('susfs-uname-proc: ' + msg)
+
+          def ganti(teks, lama, baru, label):
+              c = teks.count(lama)
+              if c != 1:
+                  die("anchor '%s' ketemu %d kali (harus 1)" % (label, c))
+              return teks.replace(lama, baru)
+
+          def baca(path):
+              with open(path, encoding='utf-8', errors='surrogateescape', newline='') as f:
+                  return f.read()
+
+          def tulis(path, s):
+              with open(path, 'w', encoding='utf-8', errors='surrogateescape', newline='') as f:
+                  f.write(s)
+
+          # ---- 1) fs/proc/version.c: banner memakai release/version palsu
+          PATH = 'fs/proc/version.c'
+          s = baca(PATH)
+          if MARK in s:
+              print(PATH + ': sudah ditambal, dilewati')
+          else:
+              s = ganti(s,
+                        '#include <linux/utsname.h>\n',
+                        '#include <linux/utsname.h>\n' + EXTERN,
+                        'include utsname.h')
+              s = ganti(s,
+                        'static int version_proc_show(struct seq_file *m, void *v)\n'
+                        '{\n',
+                        'static int version_proc_show(struct seq_file *m, void *v)\n'
+                        '{\n'
+                        '#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME\n'
+                        '\tif (static_branch_likely(&susfs_is_uname_spoof_buffer_set)) {\n'
+                        '\t\tstruct new_utsname tmp;\n'
+                        '\n'
+                        '\t\tdown_read(&uts_sem);\n'
+                        '\t\tmemcpy(&tmp, utsname(), sizeof(tmp));\n'
+                        '\t\tsusfs_spoof_uname(&tmp);\n'
+                        '\t\tup_read(&uts_sem);\n'
+                        '\t\tseq_printf(m, linux_proc_banner,\n'
+                        '\t\t\ttmp.sysname,\n'
+                        '\t\t\ttmp.release,\n'
+                        '\t\t\ttmp.version);\n'
+                        '\t\treturn 0;\n'
+                        '\t}\n'
+                        '#endif\n',
+                        'kepala version_proc_show')
+              tulis(PATH, s)
+              print(PATH + ': /proc/version memakai uname palsu SUSFS')
+
+          # ---- 2) kernel/utsname_sysctl.c: osrelease/version dibaca = nilai palsu
+          PATH = 'kernel/utsname_sysctl.c'
+          s = baca(PATH)
+          if MARK in s:
+              print(PATH + ': sudah ditambal, dilewati')
+          else:
+              s = ganti(s,
+                        '#include <linux/rwsem.h>\n',
+                        '#include <linux/rwsem.h>\n' + EXTERN,
+                        'include rwsem.h')
+              s = ganti(s,
+                        '\tmemcpy(tmp_data, get_uts(table), sizeof(tmp_data));\n'
+                        '\tup_read(&uts_sem);\n',
+                        '\tmemcpy(tmp_data, get_uts(table), sizeof(tmp_data));\n'
+                        '#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME\n'
+                        '\tif (!write && static_branch_likely(&susfs_is_uname_spoof_buffer_set) &&\n'
+                        '\t    (table->data == init_uts_ns.name.release ||\n'
+                        '\t     table->data == init_uts_ns.name.version)) {\n'
+                        '\t\tstruct new_utsname tmp;\n'
+                        '\n'
+                        '\t\tmemcpy(&tmp, utsname(), sizeof(tmp));\n'
+                        '\t\tsusfs_spoof_uname(&tmp);\n'
+                        '\t\tmemcpy(tmp_data, table->data == init_uts_ns.name.release ?\n'
+                        '\t\t       tmp.release : tmp.version, sizeof(tmp_data));\n'
+                        '\t}\n'
+                        '#endif\n'
+                        '\tup_read(&uts_sem);\n',
+                        'memcpy tmp_data get_uts')
+              tulis(PATH, s)
+              print(PATH + ': osrelease/version memakai uname palsu SUSFS')
+
+          # ---- 3) kernel/sys.c override_release(): UNAME26 berangkat dari release palsu,
+          #         bukan konstanta UTS_RELEASE ("4.14.332-perf" -> "2.6.74-perf")
+          PATH = 'kernel/sys.c'
+          s = baca(PATH)
+          a = s.find('static int override_release(char __user *release, size_t len)\n{\n')
+          if a < 0 or s.count('static int override_release(') != 1:
+              die('override_release tidak ketemu tepat 1 kali')
+          b = s.index('\n}\n', a) + 3
+          orl = s[a:b]
+          if MARK in orl:
+              print(PATH + ': override_release sudah ditambal, dilewati')
+          else:
+              if MARK not in s:
+                  die('hunk newuname SUSFS belum ada di kernel/sys.c (urutan step salah?)')
+              orl = ganti(orl,
+                          '\t\tsize_t copy;\n'
+                          '\n'
+                          '\t\twhile (*rest) {\n',
+                          '\t\tsize_t copy;\n'
+                          '#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME\n'
+                          '\t\tstruct new_utsname tmp;\n'
+                          '\n'
+                          '\t\tif (static_branch_likely(&susfs_is_uname_spoof_buffer_set)) {\n'
+                          '\t\t\tdown_read(&uts_sem);\n'
+                          '\t\t\tmemcpy(&tmp, utsname(), sizeof(tmp));\n'
+                          '\t\t\tsusfs_spoof_uname(&tmp);\n'
+                          '\t\t\tup_read(&uts_sem);\n'
+                          '\t\t\trest = tmp.release;\n'
+                          '\t\t}\n'
+                          '#endif\n'
+                          '\n'
+                          '\t\twhile (*rest) {\n',
+                          'deklarasi override_release')
+              s = s[:a] + orl + s[b:]
+              # extern milik hunk newuname SUSFS ada SESUDAH override_release; deklarasi
+              # ulang extern yang sama sah di C, ditaruh sebelum komentar fungsinya.
+              s = ganti(s,
+                        '/*\n * Work around broken programs that cannot handle "Linux 3.0".\n',
+                        EXTERN.replace('#include <linux/jump_label.h>\n', '') + '\n'
+                        '/*\n * Work around broken programs that cannot handle "Linux 3.0".\n',
+                        'komentar override_release')
+              tulis(PATH, s)
+              print(PATH + ': override_release (UNAME26) memakai release palsu SUSFS')
+
+          print('susfs-uname-proc: selesai')
+          FIX_SUSFS_UNAME_PROC_PY
+          python3 /tmp/fix_susfs_uname_proc.py
+
+          echo ""
+          echo "== Ringkasan spoof uname /proc =="
+          grep -n 'susfs_spoof_uname(&tmp)' fs/proc/version.c kernel/utsname_sysctl.c kernel/sys.c || true
+
       - name: Aktifkan KSU & SuSFS di defconfig (termasuk dlagia ksu-susfs_defconfig)
         working-directory: kernel
         run: |
