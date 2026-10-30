@@ -4192,6 +4192,82 @@ jobs:
           echo "== Ringkasan CVE-2026-43499 =="
           grep -n 'waiter_task\|ret < 0))' kernel/locking/rtmutex.c || true
 
+      - name: Tambal WARN flush_work di blk-core (upstream 2e3c18d0ada1)
+        working-directory: kernel
+        run: |
+          # Revisi ke-104 (2026-10-31, permintaan pemilik): tiap boot apexd
+          # menghapus dm device APEX yang tak terpakai -> dm_destroy ->
+          # blk_cleanup_queue -> blk_sync_queue -> cancel_work_sync(&q->timeout_work)
+          # -> 28 baris "WARNING kernel/workqueue.c:2929 flush_work". Pohon kernel
+          # ini membawa backport torvalds 4d43d395fed1 ("workqueue: Try to catch
+          # flush_work() without INIT_WORK()", WARN_ON(!work->func)), tapi tidak
+          # membawa pasangannya di block: blk_alloc_queue_node() masih
+          # INIT_WORK(&q->timeout_work, NULL), dan queue bio-based (dm) tidak pernah
+          # mengisinya ulang. Diporting manual torvalds 2e3c18d0ada1 "block: pass
+          # no-op callback to INIT_WORK()". Beda dari upstream: nama fungsi no-op
+          # blk_timeout_work_noop, karena di 4.14 blk_timeout_work adalah handler
+          # timeout legacy asli (block/blk.h) yang dipasang ulang oleh
+          # blk_init_allocated_queue(); blk-mq memasang blk_mq_timeout_work sendiri.
+          # Untuk queue bio-based timeout_work tidak pernah dijadwalkan, jadi
+          # perilaku tetap sama, hanya WARN yang hilang.
+          # Idempoten; anchor yang berubah menghentikan build dengan pesan jelas.
+          cat > /tmp/fix_blk_timeout_work.py <<'FIX_BLK_TIMEOUT_WORK_PY'
+          #!/usr/bin/env python3
+          """
+          Port torvalds 2e3c18d0ada1 "block: pass no-op callback to INIT_WORK()" ke
+          block/blk-core.c 4.14: q->timeout_work tidak lagi di-INIT_WORK(..., NULL).
+          """
+          import sys
+
+          PATH = 'block/blk-core.c'
+          NOOP = 'blk_timeout_work_noop'
+
+          def die(msg):
+              sys.exit('blk-timeout-work: ' + msg)
+
+          def ganti(teks, lama, baru, label):
+              c = teks.count(lama)
+              if c != 1:
+                  die("anchor '%s' ketemu %d kali (harus 1)" % (label, c))
+              return teks.replace(lama, baru)
+
+          with open(PATH, encoding='utf-8', errors='surrogateescape', newline='') as f:
+              s = f.read()
+
+          if NOOP in s:
+              print(PATH + ': sudah ditambal, dilewati')
+          elif 'INIT_WORK(&q->timeout_work, NULL);' not in s:
+              print(PATH + ': timeout_work tidak lagi di-INIT_WORK NULL (upstream), dilewati')
+          else:
+              # nama sendiri: blk_timeout_work di 4.14 adalah handler timeout legacy
+              # asli (block/blk.h), dipasang ulang oleh blk_init_allocated_queue()
+              s = ganti(s,
+                        'struct request_queue *blk_alloc_queue_node(',
+                        '/*\n'
+                        ' * Bio-based queues never run timeout_work, but blk_sync_queue() still\n'
+                        ' * cancels it; give it a valid callback so flush_work() does not WARN.\n'
+                        ' * Request-based and blk-mq queues re-initialize it with their handler.\n'
+                        ' */\n'
+                        'static void ' + NOOP + '(struct work_struct *work)\n'
+                        '{\n'
+                        '}\n'
+                        '\n'
+                        'struct request_queue *blk_alloc_queue_node(',
+                        'blk_alloc_queue_node(')
+              s = ganti(s,
+                        '\tINIT_WORK(&q->timeout_work, NULL);\n',
+                        '\tINIT_WORK(&q->timeout_work, ' + NOOP + ');\n',
+                        'INIT_WORK(&q->timeout_work, NULL)')
+              with open(PATH, 'w', encoding='utf-8', errors='surrogateescape', newline='') as f:
+                  f.write(s)
+              print(PATH + ': timeout_work memakai callback no-op (2e3c18d0ada1)')
+          FIX_BLK_TIMEOUT_WORK_PY
+          python3 /tmp/fix_blk_timeout_work.py
+
+          echo ""
+          echo "== Ringkasan timeout_work blk-core =="
+          grep -n 'INIT_WORK(&q->timeout_work' block/blk-core.c || true
+
       - name: Samakan /proc/version dengan uname palsu SUSFS (spoof_uname)
         working-directory: kernel
         run: |
