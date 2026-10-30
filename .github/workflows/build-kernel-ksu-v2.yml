@@ -2614,6 +2614,16 @@ jobs:
           # synchronize_rcu() sebelum kfree_rcu(old_bitmap) di set filter dan di
           # worker, dan worker resolve ulang uid baru dijalankan SESUDAH
           # track_throne() (di sini: di akhir ksu_handle_rename).
+          # Revisi ke-102 (2026-10-30): SUSFS_PIN naik ke JackA1ltman f2c53613f.
+          # Patch 4.14 upstream (38bbbd593 + 2464d7a28, "belum diuji" kata
+          # pembuatnya di issue #202) kini membawa fitur ini sendiri untuk
+          # susfs_def.h/susfs.h/fs/susfs.c/sys.c/ioprio.c - isinya sama dengan
+          # salinan kita KECUALI guard NULL kfree_rcu(old_bitmap) (plus #if
+          # STATX_BASIC_STATS, no-op di 4.14). Tanpa guard, set filter PERTAMA
+          # (BRENE "Hide third party apps" saat boot) = call_rcu(NULL) = bootloop.
+          # Jadi berkas lain tetap dilewati, tapi di fs/susfs.c guard selalu
+          # dipasang (dan <linux/mm.h> untuk kvmalloc/kvfree). Sisi BakaSU
+          # (dispatch.c, throne_tracker.c) tidak dibawa upstream, tetap dari sini.
           cat > /tmp/fix_susfs_prio_uid.py <<'FIX_SUSFS_PRIO_UID_PY'
           #!/usr/bin/env python3
           """
@@ -2643,7 +2653,9 @@ jobs:
 
           Tiap berkas: dilewati kalau penandanya sudah ada (upstream sudah membawa
           fitur ini), selain itu setiap anchor harus ketemu tepat sekali (atau dua kali
-          bila disebut) - kalau tidak, berhenti dengan pesan jelas.
+          bila disebut) - kalau tidak, berhenti dengan pesan jelas. Kecuali fs/susfs.c:
+          kalau fiturnya dari upstream (JackA1ltman 38bbbd593 ke atas), guard NULL
+          kfree_rcu tetap dipasang karena upstream membawanya tanpa guard.
           """
           import sys
 
@@ -3141,10 +3153,32 @@ jobs:
 
           '''
 
+          def guard_upstream_susfs_c(s):
+              """Fitur sudah dari upstream: pasang guard NULL kfree_rcu (4.14)."""
+              need(s, 'kfree_rcu(old_bitmap, rcu);\n', SUSFS_C, 'kfree_rcu(old_bitmap, rcu)', 2)
+              bare = '\tsynchronize_rcu();\n\tkfree_rcu(old_bitmap, rcu);\n'
+              out = None
+              if s.count(bare) == 0:
+                  need(s, '\tif (old_bitmap)\n\t\tkfree_rcu(old_bitmap, rcu);\n', SUSFS_C,
+                       'kfree_rcu(old_bitmap) sudah dijaga', 2)
+                  print("susfs.c: sudah ada, kfree_rcu sudah dijaga NULL, dilewati")
+              else:
+                  need(s, bare, SUSFS_C, 'synchronize_rcu + kfree_rcu(old_bitmap) upstream', 2)
+                  out = s.replace(bare,
+                                  '\tsynchronize_rcu();\n'
+                                  '\t/* 4.14: kfree_rcu() has no NULL check, the first call has no old bitmap */\n'
+                                  '\tif (old_bitmap)\n'
+                                  '\t\tkfree_rcu(old_bitmap, rcu);\n')
+                  print("susfs.c: fitur dari upstream, kfree_rcu(old_bitmap) dijaga NULL di 2 tempat (4.14)")
+              if '#include <linux/mm.h>\n' not in (out or s):
+                  out = before(out or s, '#include <linux/susfs.h>\n', '#include <linux/mm.h>\n',
+                               SUSFS_C, '#include <linux/susfs.h>')
+                  print("susfs.c: #include <linux/mm.h> ditambahkan (kvmalloc/kvfree)")
+              return out
+
           def fix_susfs_c(s):
               if 'susfs_is_priority_uid_filtered' in s:
-                  print("susfs.c: sudah ada, dilewati")
-                  return None
+                  return guard_upstream_susfs_c(s)
               # dua deklarasi yang dipakai helper harus sudah ada di susfs.c 4.14
               need(s, 'extern bool susfs_is_current_ksu_domain(void);\n', SUSFS_C, 'extern susfs_is_current_ksu_domain')
               need(s, 'extern void setup_selinux(const char *domain, struct cred *cred);\n', SUSFS_C, 'extern setup_selinux')
@@ -3279,6 +3313,7 @@ jobs:
           echo ""
           echo "== Ringkasan priority uid filter =="
           grep -c 'susfs_is_priority_uid_filtered' kernel/sys.c block/ioprio.c fs/susfs.c || true
+          echo "kfree_rcu(old_bitmap) dijaga NULL: $(grep -c 'if (old_bitmap)' fs/susfs.c || true) (harus 2)"
           grep -n 'CMD_SUSFS_SET_PRIORITY_UID_FILTER' include/linux/susfs_def.h KernelSU/kernel/supercall/dispatch.c || true
           grep -n 'susfs_parse_priority_app_strings' KernelSU/kernel/manager/throne_tracker.c || true
 
