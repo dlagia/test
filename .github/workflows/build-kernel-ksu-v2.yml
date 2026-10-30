@@ -4211,9 +4211,15 @@ jobs:
           #      SELinux `proc`, app/shell ditolak, root masih melihat nilai asli).
           #   3) kernel/sys.c override_release(): personality UNAME26 dulu
           #      dihitung dari konstanta UTS_RELEASE -> "2.6.74-perf" bocor.
-          # Yang TIDAK berubah: "(build@kernel) (Proton clang ...)" di
-          # /proc/version adalah konstanta compile-time (KBUILD_BUILD_USER/HOST
-          # di step Compile + versi compiler), bukan bagian utsname.
+          # Revisi ke-103 (2026-10-30, permintaan pemilik): banner compiler ikut
+          # dipalsu. "(build@kernel) (Proton clang 13 ..., GNU ld 2.36.1)" adalah
+          # konstanta compile-time (KBUILD_BUILD_USER/HOST + LINUX_COMPILER), jadi
+          # selama spoof uname aktif version_proc_show() kini mencetak banner stok:
+          # compiler = .comment ke-11 modul /vendor/lib/modules stok (Android
+          # 6443078/r383902 clang 11.0.1, vermagic 4.14.186-perf-g15987c3eee85),
+          # format 4.14 asli tanpa versi linker; user@host = ro.build.user@
+          # ro.build.host ROM V14.0.11.0.TKLMIXM. Kalau ROM diganti, sesuaikan dua
+          # #define SUSFS_FAKE_* di fixer. Banner asli tetap di dmesg (linux_banner).
           # Harus SESUDAH step Integrasikan BakaSU & SuSFS (hunk newuname SUSFS
           # wajib sudah ada di kernel/sys.c; fixer berhenti kalau belum).
           # Idempoten; anchor yang berubah menghentikan build dengan pesan jelas.
@@ -4231,6 +4237,16 @@ jobs:
                     'extern struct static_key_false susfs_is_uname_spoof_buffer_set;\n'
                     'extern void susfs_spoof_uname(struct new_utsname* tmp);\n'
                     '#endif\n')
+
+          # Banner kernel stok rosemary (MIUI V14.0.11.0.TKLMIXM), dipakai /proc/version
+          # selama spoof uname aktif. Compiler = .comment ke-11 modul /vendor/lib/modules
+          # stok (vermagic 4.14.186-perf-g15987c3eee85); format 4.14 asli hanya compiler,
+          # tanpa versi linker. user@host = ro.build.user@ro.build.host ROM.
+          FAKE = ('#define SUSFS_FAKE_COMPILE_BY_HOST '
+                  '"builder@pangu-build-component-system-115492-p5hb9-hn64f-hk4c5"\n'
+                  '#define SUSFS_FAKE_COMPILER "Android (6443078 based on r383902) '
+                  'clang version 11.0.1 (https://android.googlesource.com/toolchain/'
+                  'llvm-project b397f81060ce6d701042b782172ed13bee898b79)"\n')
 
           def die(msg):
               sys.exit('susfs-uname-proc: ' + msg)
@@ -4257,7 +4273,7 @@ jobs:
           else:
               s = ganti(s,
                         '#include <linux/utsname.h>\n',
-                        '#include <linux/utsname.h>\n' + EXTERN,
+                        '#include <linux/utsname.h>\n' + EXTERN.replace('#endif\n', FAKE + '#endif\n'),
                         'include utsname.h')
               s = ganti(s,
                         'static int version_proc_show(struct seq_file *m, void *v)\n'
@@ -4272,7 +4288,9 @@ jobs:
                         '\t\tmemcpy(&tmp, utsname(), sizeof(tmp));\n'
                         '\t\tsusfs_spoof_uname(&tmp);\n'
                         '\t\tup_read(&uts_sem);\n'
-                        '\t\tseq_printf(m, linux_proc_banner,\n'
+                        '\t\t/* stock banner instead of this build\'s LINUX_COMPILE_BY/HOST/COMPILER */\n'
+                        '\t\tseq_printf(m, "%s version %s (" SUSFS_FAKE_COMPILE_BY_HOST ") ("\n'
+                        '\t\t\t   SUSFS_FAKE_COMPILER ") %s\\n",\n'
                         '\t\t\ttmp.sysname,\n'
                         '\t\t\ttmp.release,\n'
                         '\t\t\ttmp.version);\n'
@@ -4281,7 +4299,7 @@ jobs:
                         '#endif\n',
                         'kepala version_proc_show')
               tulis(PATH, s)
-              print(PATH + ': /proc/version memakai uname palsu SUSFS')
+              print(PATH + ': /proc/version memakai uname palsu SUSFS + banner compiler stok')
 
           # ---- 2) kernel/utsname_sysctl.c: osrelease/version dibaca = nilai palsu
           PATH = 'kernel/utsname_sysctl.c'
@@ -4365,6 +4383,7 @@ jobs:
           echo ""
           echo "== Ringkasan spoof uname /proc =="
           grep -n 'susfs_spoof_uname(&tmp)' fs/proc/version.c kernel/utsname_sysctl.c kernel/sys.c || true
+          grep -n 'define SUSFS_FAKE_' fs/proc/version.c || true
 
       - name: Aktifkan KSU & SuSFS di defconfig (termasuk dlagia ksu-susfs_defconfig)
         working-directory: kernel
