@@ -1904,6 +1904,27 @@ jobs:
           # </dev/null: script punya prompt interaktif "read -t 10" utk penanganan
           # reject. Di runner tidak ada tty, jadi dipaksa non-interaktif supaya
           # tidak menggantung 10 detik dan hasilnya deterministik.
+          # Revisi ke-110 (2026-11-01, permintaan pemilik): urutan ikut sumbernya,
+          # JackA1ltman/NonGKI_Kernel_Build_2nd. Di sana action patch-susfs memasang
+          # susfs_patch_to_<ver>.patch DULU, baru action patch-no-kprobe menjalankan
+          # susfs_inline_hook_patches.sh. Script dlagia membaliknya (hook dulu, baru
+          # patch). Di sini script hook hanya dipindah ke /tmp oleh integrate script,
+          # lalu dijalankan sendiri SESUDAH patch + sanitizer, dengan output terlihat
+          # (dulu dibuang ke /dev/null). Simulasi lokal 27 file kernel 602782dab +
+          # patch/hook JackA1ltman 16cb19cc2: kedua urutan menghasilkan source
+          # IDENTIK, reject sama-sama hanya fs/proc/task_mmu.c, dan hook tidak
+          # melewati satu file pun ("contains KernelSU" = 0).
+          rm -f /tmp/susfs_inline_hook_patches.sh
+          sed -i 's|bash susfs_inline_hook_patches.sh >/dev/null 2>&1|mv susfs_inline_hook_patches.sh /tmp/susfs_inline_hook_patches.sh|' integrate_ksu_susfs.sh
+          if grep -q 'mv susfs_inline_hook_patches.sh /tmp/susfs_inline_hook_patches.sh' integrate_ksu_susfs.sh \
+             && ! grep -q 'bash susfs_inline_hook_patches.sh' integrate_ksu_susfs.sh; then
+            echo "OK: inline hook SUSFS ditunda sampai sesudah patch SUSFS (urutan JackA1ltman)"
+          else
+            echo "ERROR: baris pemanggil susfs_inline_hook_patches.sh tak ditemukan - script upstream berubah."
+            grep -n 'susfs_inline_hook_patches' integrate_ksu_susfs.sh || true
+            exit 1
+          fi
+
           bash integrate_ksu_susfs.sh < /dev/null
           rm -f integrate_ksu_susfs.sh
 
@@ -1919,6 +1940,26 @@ jobs:
             exit 1
           }
           echo "OK: sanitizer patch SUSFS terbukti dijalankan, tanpa kegagalan keras"
+
+          echo ""
+          echo "== Inline hook SUSFS (sesudah patch SUSFS, urutan JackA1ltman) =="
+          test -s /tmp/susfs_inline_hook_patches.sh || {
+            echo "ERROR: /tmp/susfs_inline_hook_patches.sh tidak ada - integrate script tidak mengunduhnya."
+            exit 1
+          }
+          if ! bash /tmp/susfs_inline_hook_patches.sh ./ > /tmp/susfs_hook.log 2>&1; then
+            cat /tmp/susfs_hook.log
+            echo "ERROR: susfs_inline_hook_patches.sh gagal."
+            exit 1
+          fi
+          cat /tmp/susfs_hook.log
+          if grep -q 'contains KernelSU' /tmp/susfs_hook.log; then
+            echo "ERROR: hook script melewati file yang sudah berisi ksu_handle -"
+            echo "  sesudah patch SUSFS seharusnya nol (simulasi revisi ke-110)."
+            exit 1
+          fi
+          rm -f /tmp/susfs_inline_hook_patches.sh
+          echo "OK: inline hook SUSFS dijalankan sesudah patch SUSFS"
 
           echo ""
           echo "== AUDIT REJECT PATCH SUSFS =="
@@ -4705,8 +4746,9 @@ jobs:
           #    ENABLE_LOG, HIDE_KSU_SUSFS_SYMBOLS, SPOOF_CMDLINE_OR_BOOTCONFIG,
           #    OPEN_REDIRECT, SUS_MAP), dan tidak ada simbol pengganti bernama
           #    umount apa pun. Kconfig membuangnya diam-diam. TIDAK BERBAHAYA -
-          #    try_umount di ReSukiSU tidak lagi digerbangi Kconfig - jadi dibiarkan
-          #    apa adanya; jangan panik lagi kalau melihatnya hilang dari .config.
+          #    try_umount di ReSukiSU tidak lagi digerbangi Kconfig. Sejak revisi
+          #    ke-110 (permintaan pemilik) baris itu dibuang dari $DEF sesudah
+          #    diunduh; Kconfig BakaSU 516d3e87f juga tidak memuat simbol itu.
           #
           # 3. Kesembilan sub-opsi itu sudah "default y" begitu KSU_SUSFS menyala,
           #    jadi menyetelnya di defconfig bersifat mengulang tapi tidak merusak.
@@ -4728,6 +4770,14 @@ jobs:
           #    Sembunyikan path semacam itu lewat NoMount, bukan SUS_PATH.
           echo "[+] Mengunduh dan menggabungkan ksu-susfs_defconfig dari dlagia/Build-Kernel_scripts (pinned commit)..."
           curl -fsSL "https://raw.githubusercontent.com/dlagia/Build-Kernel_scripts/${SCRIPTS_PIN}/defconfig/ksu-susfs_defconfig" >> "$DEF"
+          # Revisi ke-110: baris mati CONFIG_KSU_SUSFS_TRY_UMOUNT dibuang (lihat
+          # butir 2 di atas). Kalau dlagia kelak menghapusnya sendiri, N_TU = 0.
+          N_TU=$(grep -c '^CONFIG_KSU_SUSFS_TRY_UMOUNT=' "$DEF" || true)
+          sed -i '/^CONFIG_KSU_SUSFS_TRY_UMOUNT=/d' "$DEF"
+          if grep -q 'KSU_SUSFS_TRY_UMOUNT' "$DEF"; then
+            echo "ERROR: KSU_SUSFS_TRY_UMOUNT masih ada di $DEF"; exit 1
+          fi
+          echo "[defconfig] baris mati CONFIG_KSU_SUSFS_TRY_UMOUNT dibuang ($N_TU baris; simbol tidak ada di Kconfig BakaSU)"
 
           {
             echo ""
