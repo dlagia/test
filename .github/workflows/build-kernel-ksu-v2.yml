@@ -8,7 +8,13 @@
 # 2. Defconfig SuSFS lengkap (via dlagia/Build-Kernel_scripts ksu-susfs_defconfig)
 # 3. NoMount (branch dev milik maxsteeel/nomount) + compiler biner CLI nm
 # 4. Toolchain: proton-clang (kdrag0n) + cross-compile GCC
-# 5. Packaging: AnyKernel3 zip flashable (template fjrXTR)
+# 5. Packaging: AnyKernel3 zip flashable (vlxlxlv/AnyKernel3 branch mt6781,
+#    eks-fjrXTR)
+# 6. BBR + fq, setelan memori (swappiness 100, zram lz4), backport SUSFS
+#    priority uid filter, tambalan CVE-2026-43499 dan WARN flush_work
+#    blk-core, /proc/version disamakan dengan uname palsu SUSFS
+# Kedelapan sumber dipin SHA di pins.env; riwayat revisi di bawah dan di
+# pins.env.
 #
 # CATATAN PERBAIKAN (versi ini):
 # - fs/proc/task_mmu.c: patch SUSFS 4.14 upstream tidak cocok dengan source
@@ -1413,6 +1419,11 @@ jobs:
     # actions/runner-images#14254).
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    # Revisi ke-108: izin minimum. Gerbang hanya MEMBACA (rilis Latest,
+    # ref tag, compare, contents pins.env); contents: write cukup di job
+    # build yang menerbitkan rilis.
+    permissions:
+      contents: read
     outputs:
       lanjut: ${{ steps.nilai.outputs.lanjut }}
     steps:
@@ -1644,7 +1655,7 @@ jobs:
         run: |
           git clone --depth=1 -b rosemary-13 \
             https://github.com/dlagia/android_kernel_xiaomi_rosemary.git kernel
-          echo "KERNEL_SHA=$(git -C kernel rev-parse --short HEAD)" >> "$GITHUB_ENV"
+          echo "KERNEL_SHA=$(git -C kernel rev-parse --short=9 HEAD)" >> "$GITHUB_ENV"
           echo "Kernel source commit: $(git -C kernel rev-parse HEAD)"
 
           # ----- ASSERT SHA SOURCE KERNEL (revisi ke-18, 2026-09-12) -----
@@ -2079,7 +2090,7 @@ jobs:
           }
           echo "OK: BakaSU ter-pin di $KSU_PIN"
 
-          echo "KSU_SHA=$(git -C KernelSU rev-parse --short HEAD)" >> "$GITHUB_ENV"
+          echo "KSU_SHA=$(git -C KernelSU rev-parse --short=9 HEAD)" >> "$GITHUB_ENV"
           echo "BakaSU commit: $(git -C KernelSU rev-parse HEAD)"
           echo "Integrasi KernelSU + SuSFS via dlagia/Build-Kernel_scripts: SUKSES"
 
@@ -2622,8 +2633,12 @@ jobs:
           # STATX_BASIC_STATS, no-op di 4.14). Tanpa guard, set filter PERTAMA
           # (BRENE "Hide third party apps" saat boot) = call_rcu(NULL) = bootloop.
           # Jadi berkas lain tetap dilewati, tapi di fs/susfs.c guard selalu
-          # dipasang (dan <linux/mm.h> untuk kvmalloc/kvfree). Sisi BakaSU
+          # dipastikan ada (dan <linux/mm.h> untuk kvmalloc/kvfree). Sisi BakaSU
           # (dispatch.c, throne_tracker.c) tidak dibawa upstream, tetap dari sini.
+          # Revisi ke-107 (2026-10-31): SUSFS_PIN 16cb19cc2 - upstream kini
+          # menjaga kedua kfree_rcu(old_bitmap) sendiri. Fixer mengenalinya
+          # ("sudah dijaga NULL, dilewati"; need() tetap menuntut tepat 2
+          # guard), kode C fs/susfs.c identik dengan revisi ke-106.
           cat > /tmp/fix_susfs_prio_uid.py <<'FIX_SUSFS_PRIO_UID_PY'
           #!/usr/bin/env python3
           """
@@ -2655,7 +2670,8 @@ jobs:
           fitur ini), selain itu setiap anchor harus ketemu tepat sekali (atau dua kali
           bila disebut) - kalau tidak, berhenti dengan pesan jelas. Kecuali fs/susfs.c:
           kalau fiturnya dari upstream (JackA1ltman 38bbbd593 ke atas), guard NULL
-          kfree_rcu tetap dipasang karena upstream membawanya tanpa guard.
+          kfree_rcu dipasang bila belum ada (pin 6d787e15d ke bawah membawanya
+          tanpa guard; pin 16cb19cc2 ke atas sudah menjaganya sendiri -> dilewati).
           """
           import sys
 
@@ -3849,7 +3865,7 @@ jobs:
           }
           echo "OK: fs/Makefile berisi obj-\$(CONFIG_NOMOUNT) += nomount/"
 
-          echo "NOMOUNT_SHA=$(git -C NoMount rev-parse --short HEAD)" >> "$GITHUB_ENV"
+          echo "NOMOUNT_SHA=$(git -C NoMount rev-parse --short=9 HEAD)" >> "$GITHUB_ENV"
           echo "NoMount branch dev: OK"
 
       - name: Pastikan tidak ada residu Re:Kernel & Baseband-guard
@@ -5060,6 +5076,7 @@ jobs:
             echo "|---|---|"
             echo "| Kernel (rosemary-13) | \`${KERNEL_SHA:-?}\` |"
             echo "| BakaSU (di-PIN) | \`${KSU_SHA:-?}\` |"
+            echo "| SUSFS (di-PIN) | \`$(printf '%.9s' "${SUSFS_PIN:-?}")\` |"
             echo "| NoMount (di-PIN, ART) | \`${NOMOUNT_SHA:-?}\` |"
             echo ""
             # Alasan yang sama dengan blok kembarannya di step "Terbitkan
@@ -5154,6 +5171,7 @@ jobs:
             printf -- '| bagian | commit |\n|---|---|\n'
             printf -- '| kernel | `%s` |\n' "$KERNEL_SHA"
             printf -- '| BakaSU | `%s` |\n' "$KSU_SHA"
+            printf -- '| SUSFS | `%.9s` |\n' "$SUSFS_PIN"
             printf -- '| NoMount | `%s` |\n' "$NOMOUNT_SHA"
             # Revisi ke-46: KEDELAPAN pin, bukan tiga. Sejak revisi ke-45c
             # pertanyaan "dua rilis ini isinya sama atau tidak?" dijawab persis
