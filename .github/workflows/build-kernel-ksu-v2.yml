@@ -2694,6 +2694,12 @@ jobs:
           # seperti upstream yang dipicu pkg_observer.c sesudah rename. Tanpa itu
           # worker bisa membaca daftar LAMA: uid app yang baru dipasang/dipasang ulang
           # lolos dari filter.
+          # Revisi ke-112 (2026-11-01): SUSFS_PIN JackA1ltman bd505f994 membawa
+          # resolver dd55dfb98 sendiri (byte-identik salinan di bawah) tapi set
+          # filter masih skip_failed false, dan <linux/vmalloc.h> diganti
+          # <linux/hash.h>. Fixer kini mengubah flag itu jadi true (= simonpunk) dan
+          # tetap memastikan <linux/vmalloc.h>. Fungsi sus_type/avd_allowed baru
+          # (simonpunk d6a6a120, selinux_hide) tidak punya pemanggil di 4.14.
           cat > /tmp/fix_susfs_prio_uid.py <<'FIX_SUSFS_PRIO_UID_PY'
           #!/usr/bin/env python3
           """
@@ -3386,8 +3392,14 @@ jobs:
               j = s.index('\n}\n', i) + 3
               out = None
               if '"/data/system/packages.list"' in s[i:j]:
-                  need(s, DD55_SET_NEW, SUSFS_C, 'set filter skip_failed true')
-                  print("susfs.c: resolver packages.list (dd55dfb98) sudah ada, dilewati")
+                  # JackA1ltman bd505f994 membawa resolver dd55dfb98, tapi set filter
+                  # masih skip_failed false; simonpunk dd55dfb98 memakai true.
+                  if s.count(DD55_SET_NEW) == 0 and s.count(DD55_SET_OLD) == 1:
+                      out = s.replace(DD55_SET_OLD, DD55_SET_NEW)
+                      print("susfs.c: resolver packages.list (dd55dfb98) sudah ada; set filter dijadikan skip_failed true")
+                  else:
+                      need(s, DD55_SET_NEW, SUSFS_C, 'set filter skip_failed true')
+                      print("susfs.c: resolver packages.list (dd55dfb98) sudah ada, dilewati")
               else:
                   need(s[i:j], 'kern_path(app_path, LOOKUP_FOLLOW, &path);\n', SUSFS_C, 'resolver lama /data/data/<pkg>')
                   need(s, DD55_CMT_OLD, SUSFS_C, 'komentar resolver lama')
