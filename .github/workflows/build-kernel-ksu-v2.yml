@@ -2596,7 +2596,7 @@ jobs:
           grep -n 'spin_lock(&unnamed_dev_lock);' fs/super.c | head -3 || true
           grep -c 'ida_simple_get' fs/super.c fs/namespace.c || true
 
-      - name: Backport SUSFS priority uid filter (simonpunk 35cbfe118 + eb95da080) ke 4.14 + BakaSU
+      - name: Backport SUSFS priority uid filter (simonpunk 35cbfe118 + eb95da080 + dd55dfb98) ke 4.14 + BakaSU
         working-directory: kernel
         run: |
           # Revisi ke-95 (2026-10-25, permintaan pemilik): fitur baru SUSFS
@@ -2639,13 +2639,29 @@ jobs:
           # menjaga kedua kfree_rcu(old_bitmap) sendiri. Fixer mengenalinya
           # ("sudah dijaga NULL, dilewati"; need() tetap menuntut tepat 2
           # guard), kode C fs/susfs.c identik dengan revisi ke-106.
+          # Revisi ke-109 (2026-11-01, permintaan pemilik): ikut simonpunk dd55dfb98
+          # (2026-11-01, "Refactor uid parser", baru di gki-android14-6.1-dev; patch
+          # 4.14 JackA1ltman 16cb19cc2 belum membawanya): uid app dibaca dari
+          # /data/system/packages.list, bukan pemilik /data/data/<pkg> (sebagian app
+          # tidak punya direktori itu), dan set filter selalu skip_failed (satu paket
+          # yang tidak ketemu tidak lagi menggagalkan seluruh set). Dipasang di
+          # fs/susfs.c dari jalur mana pun fiturnya datang; <linux/vmalloc.h> dipastikan
+          # ada (JackA1ltman 16cb19cc2 sudah membawanya, salinan lama belum). Sisi BakaSU:
+          # hook rename 4.14 dipanggil DI DALAM vfs_rename, sebelum packages.list
+          # diganti (BakaSU sendiri membaca packages.list.tmp di situ), jadi worker
+          # kini ditunda lewat task_work (jalan sesudah syscall rename kembali),
+          # seperti upstream yang dipicu pkg_observer.c sesudah rename. Tanpa itu
+          # worker bisa membaca daftar LAMA: uid app yang baru dipasang/dipasang ulang
+          # lolos dari filter.
           cat > /tmp/fix_susfs_prio_uid.py <<'FIX_SUSFS_PRIO_UID_PY'
           #!/usr/bin/env python3
           """
           Backport "susfs: Add priority uid filter" (simonpunk/susfs4ksu 35cbfe118,
           branch gki-android12-5.10, 2026-10-24) ke SUSFS 4.14 (JackA1ltman) + BakaSU,
           termasuk perbaikan eb95da080 (2026-10-27): synchronize_rcu() sebelum
-          kfree_rcu(old_bitmap) dan worker resolve ulang uid sesudah track_throne().
+          kfree_rcu(old_bitmap) dan worker resolve ulang uid sesudah track_throne(),
+          dan dd55dfb98 (2026-11-01): uid dibaca dari /data/system/packages.list,
+          set filter selalu skip_failed.
 
           Fitur: uid aplikasi pilihan disembunyikan dari getpriority/setpriority/
           ioprio_get/ioprio_set (dipakai sebagian app untuk menghitung app yang
@@ -2664,7 +2680,11 @@ jobs:
               dijaga CONFIG_KSU_SUSFS (BakaSU juga dibangun tanpa SUSFS).
             - Resolve ulang uid saat packages.list berubah dipasang di
               throne_tracker.c ksu_handle_rename() (jalur 4.14), bukan pkg_observer.c;
-              seperti upstream eb95da080, dipanggil sesudah track_throne().
+              seperti upstream eb95da080, dipanggil sesudah track_throne(), dan
+              ditunda lewat task_work sampai rename selesai (hook 4.14 jalan di dalam
+              vfs_rename, packages.list masih isi lama; resolver dd55dfb98 membacanya).
+            - fs/susfs.c dipastikan punya #include <linux/vmalloc.h> (vmalloc/vfree
+              resolver dd55dfb98); upstream 6.1 mengandalkan include transitif.
 
           Tiap berkas: dilewati kalau penandanya sudah ada (upstream sudah membawa
           fitur ini), selain itu setiap anchor harus ketemu tepat sekali (atau dua kali
@@ -3209,6 +3229,143 @@ jobs:
               return s
 
           # =====================================================================
+          # 3b) fs/susfs.c - simonpunk dd55dfb98 (2026-11-01, "Refactor uid parser"):
+          #     uid app dibaca dari /data/system/packages.list (bukan pemilik
+          #     /data/data/<pkg>), dan set filter selalu skip_failed. Dipasang dari
+          #     jalur mana pun fiturnya datang (upstream JackA1ltman atau salinan di
+          #     atas); resolver = salinan byte upstream dd55dfb98.
+          # =====================================================================
+          DD55_RES_HEAD = 'static int susfs_resolve_priority_app_uid(const char *app_name, uid_t *uid) {\n'
+          DD55_CMT_OLD = (' * Resolves the uid of the given app package name with the owner uid of the\n'
+                          " * data path of the app ('/data/data/<app_name>').\n")
+          DD55_CMT_NEW = ' * Resolves the uid of the given app package name from /data/system/packages.list.\n'
+          DD55_SET_OLD = '\terr = susfs_parse_priority_app_names(info->app_strings, new_bitmap->bits, false);\n'
+          DD55_SET_NEW = '\terr = susfs_parse_priority_app_names(info->app_strings, new_bitmap->bits, true);\n'
+
+          DD55_RESOLVER = r'''static int susfs_resolve_priority_app_uid(const char *app_name, uid_t *uid) {
+          	struct file *fp;
+          	char *buf = NULL;
+          	char *line, *tmp, *p;
+          	char *pkg_name, *uid_str;
+          	loff_t pos = 0;
+          	size_t size;
+          	unsigned long val;
+          	int ret = -ENOENT;
+
+          	if (!app_name || !*app_name || !uid)
+          		return -EINVAL;
+
+          	if (!susfs_is_valid_app_name(app_name))
+          		return -EINVAL;
+
+          	fp = filp_open("/data/system/packages.list", O_RDONLY, 0);
+          	if (IS_ERR(fp)) {
+          		ret = PTR_ERR(fp);
+          		SUSFS_LOGE("failed to open /data/system/packages.list: %d\n", ret);
+          		return ret;
+          	}
+
+          	size = i_size_read(file_inode(fp));
+          	if (size <= 0 || size > (4 * 1024 * 1024)) {
+          		filp_close(fp, NULL);
+          		return -EFBIG;
+          	}
+
+          	buf = vmalloc(size + 1);
+          	if (!buf) {
+          		filp_close(fp, NULL);
+          		return -ENOMEM;
+          	}
+          	buf[size] = '\0';
+
+          	ret = kernel_read(fp, buf, size, &pos);
+          	filp_close(fp, NULL);
+          	if (ret != (int)size) {
+          		vfree(buf);
+          		return -EIO;
+          	}
+
+          	line = buf;
+          	while (line && *line) {
+          		p = strchr(line, '\n');
+          		if (p) {
+          			*p = '\0';
+          			tmp = p + 1;
+          		} else {
+          			tmp = NULL;
+          		}
+
+          		/* skip empty lines */
+          		if (*line == '\0' || *line == '\r') {
+          			line = tmp;
+          			continue;
+          		}
+
+          		/* packages.list format: <package> <uid> <gid> ... */
+          		pkg_name = strsep(&line, " \t");
+          		if (!pkg_name || *pkg_name == '\0') {
+          			line = tmp;
+          			continue;
+          		}
+
+          		uid_str = strsep(&line, " \t");
+          		if (!uid_str || *uid_str == '\0') {
+          			line = tmp;
+          			continue;
+          		}
+
+          		if (!strcmp(pkg_name, app_name)) {
+          			if (kstrtoul(uid_str, 10, &val)) {
+          				vfree(buf);
+          				return -EINVAL;
+          			}
+
+          			*uid = (uid_t)val % 100000;
+
+          			vfree(buf);
+
+          			if (*uid < SUSFS_PRIORITY_UID_FILTER_MIN_UID ||
+          			    *uid > SUSFS_PRIORITY_UID_FILTER_MAX_UID)
+          				return -EINVAL;
+
+          			return 0;
+          		}
+
+          		line = tmp;
+          	}
+
+          	vfree(buf);
+          	return -ENOENT;
+          }
+          '''
+
+          def dd55_susfs_c(s):
+              need(s, DD55_RES_HEAD, SUSFS_C, 'susfs_resolve_priority_app_uid(')
+              i = s.index(DD55_RES_HEAD)
+              j = s.index('\n}\n', i) + 3
+              out = None
+              if '"/data/system/packages.list"' in s[i:j]:
+                  need(s, DD55_SET_NEW, SUSFS_C, 'set filter skip_failed true')
+                  print("susfs.c: resolver packages.list (dd55dfb98) sudah ada, dilewati")
+              else:
+                  need(s[i:j], 'kern_path(app_path, LOOKUP_FOLLOW, &path);\n', SUSFS_C, 'resolver lama /data/data/<pkg>')
+                  need(s, DD55_CMT_OLD, SUSFS_C, 'komentar resolver lama')
+                  need(s, DD55_SET_OLD, SUSFS_C, 'set filter skip_failed false')
+                  out = s[:i] + DD55_RESOLVER + s[j:]
+                  out = out.replace(DD55_CMT_OLD, DD55_CMT_NEW).replace(DD55_SET_OLD, DD55_SET_NEW)
+                  print("susfs.c: resolver uid dari /data/system/packages.list + set filter skip_failed (dd55dfb98)")
+              if '#include <linux/vmalloc.h>\n' not in (out or s):
+                  out = before(out or s, '#include <linux/susfs.h>\n', '#include <linux/vmalloc.h>\n',
+                               SUSFS_C, '#include <linux/susfs.h>')
+                  print("susfs.c: #include <linux/vmalloc.h> ditambahkan (vmalloc/vfree resolver dd55dfb98)")
+              return out
+
+          def fix_susfs_c_all(s):
+              out = fix_susfs_c(s)
+              out2 = dd55_susfs_c(s if out is None else out)
+              return out if out2 is None else out2
+
+          # =====================================================================
           # 4) kernel/sys.c - setpriority/getpriority
           # =====================================================================
           SYS_C = 'kernel/sys.c'
@@ -3291,8 +3448,12 @@ jobs:
           #    Revisi ke-99 ikut eb95da080: upstream memindahkan panggilan dari
           #    ksu_defer_track_throne() ke task_work SESUDAH track_throne(), jadi
           #    di sini dipasang sesudah track_throne() sinkron di akhir
-          #    ksu_handle_rename(). Worker-nya kthread sendiri (cuma membaca
-          #    /data/data/<pkg>), jadi rename tidak ikut menunggu.
+          #    ksu_handle_rename(). Worker-nya kthread sendiri, jadi rename tidak
+          #    ikut menunggu. Revisi ke-109 (dd55dfb98: worker membaca
+          #    /data/system/packages.list): hook ini jalan di dalam vfs_rename,
+          #    SEBELUM packages.list diganti, jadi worker ditunda lewat task_work
+          #    (TWA_RESUME = true di 4.14 lewat compat/kernel_compat.h) dan baru
+          #    jalan sesudah syscall rename kembali; gagal alokasi = langsung.
           # =====================================================================
           TT_C = 'KernelSU/kernel/manager/throne_tracker.c'
 
@@ -3302,22 +3463,50 @@ jobs:
                   return None
               s = after(s, '#include "feature/dynamic_manager.h"\n',
                         '#ifdef CONFIG_KSU_SUSFS\n'
+                        '#include <linux/task_work.h>\n'
+                        '\n'
                         'extern void susfs_parse_priority_app_strings(void);\n'
+                        '\n'
+                        '// 4.14: ksu_handle_rename() runs from security_inode_rename(), inside\n'
+                        '// vfs_rename(), while packages.list still holds the old list. The\n'
+                        '// priority uid filter re-reads packages.list (susfs4ksu dd55dfb98), so\n'
+                        '// renew it from task_work, which runs once the rename syscall returns,\n'
+                        '// like upstream does from pkg_observer.c after the rename.\n'
+                        'static void susfs_priority_uid_filter_tw_func(struct callback_head *cb)\n'
+                        '{\n'
+                        '    kfree(cb);\n'
+                        '    // Only spawns the resolving kthread, no path lookup in current\n'
+                        '    susfs_parse_priority_app_strings();\n'
+                        '}\n'
+                        '\n'
+                        'static void susfs_defer_priority_uid_filter(void)\n'
+                        '{\n'
+                        '    struct callback_head *cb = kzalloc(sizeof(*cb), GFP_KERNEL);\n'
+                        '\n'
+                        '    if (cb) {\n'
+                        '        init_task_work(cb, susfs_priority_uid_filter_tw_func);\n'
+                        '        if (!task_work_add(current, cb, TWA_RESUME))\n'
+                        '            return;\n'
+                        '        kfree(cb);\n'
+                        '    }\n'
+                        '    pr_warn("defer priority uid filter renew failed, run it now\\n");\n'
+                        '    susfs_parse_priority_app_strings();\n'
+                        '}\n'
                         '#endif\n', TT_C, 'include dynamic_manager.h')
               tt = '    track_throne(TRACK_THRONE_FROM_RENAMEAT | TRACK_THRONE_FORCE_SYNCHRONOUS);\n'
               need(s, tt + '}\n', TT_C, 'track_throne di akhir ksu_handle_rename')
               s = s.replace(tt + '}\n', tt +
                             '#ifdef CONFIG_KSU_SUSFS\n'
-                            '    // Renew the getpriority uid bitmap filter\n'
-                            '    susfs_parse_priority_app_strings();\n'
+                            '    // Renew the getpriority uid bitmap filter once the rename is done\n'
+                            '    susfs_defer_priority_uid_filter();\n'
                             '#endif\n'
                             '}\n')
-              print("throne_tracker.c: resolve ulang uid filter dipasang sesudah track_throne di ksu_handle_rename")
+              print("throne_tracker.c: resolve ulang uid filter dipasang sesudah track_throne di ksu_handle_rename (task_work, sesudah rename)")
               return s
 
           rw(DEF_H, fix_def_h)
           rw(SUSFS_H, fix_susfs_h)
-          rw(SUSFS_C, fix_susfs_c)
+          rw(SUSFS_C, fix_susfs_c_all)
           rw(SYS_C, fix_sys_c)
           rw(IOPRIO_C, fix_ioprio_c)
           rw(DISPATCH_C, fix_dispatch_c)
@@ -3331,7 +3520,8 @@ jobs:
           grep -c 'susfs_is_priority_uid_filtered' kernel/sys.c block/ioprio.c fs/susfs.c || true
           echo "kfree_rcu(old_bitmap) dijaga NULL: $(grep -c 'if (old_bitmap)' fs/susfs.c || true) (harus 2)"
           grep -n 'CMD_SUSFS_SET_PRIORITY_UID_FILTER' include/linux/susfs_def.h KernelSU/kernel/supercall/dispatch.c || true
-          grep -n 'susfs_parse_priority_app_strings' KernelSU/kernel/manager/throne_tracker.c || true
+          echo "resolver packages.list (dd55dfb98): $(grep -c '"/data/system/packages.list"' fs/susfs.c || true) (harus 1), skip_failed true: $(grep -c 'new_bitmap->bits, true);' fs/susfs.c || true) (harus 2)"
+          grep -n 'susfs_parse_priority_app_strings\|susfs_defer_priority_uid_filter\|task_work_add' KernelSU/kernel/manager/throne_tracker.c || true
 
       - name: Commit BakaSU + bersihkan dirty
         working-directory: kernel
