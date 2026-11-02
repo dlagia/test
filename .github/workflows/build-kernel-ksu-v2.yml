@@ -2637,7 +2637,7 @@ jobs:
           grep -n 'spin_lock(&unnamed_dev_lock);' fs/super.c | head -3 || true
           grep -c 'ida_simple_get' fs/super.c fs/namespace.c || true
 
-      - name: Backport SUSFS priority uid filter (simonpunk 35cbfe118 + eb95da080 + dd55dfb98 + aa61fe062) ke 4.14 + BakaSU
+      - name: Backport SUSFS priority uid filter (simonpunk 35cbfe118 + eb95da080 + dd55dfb98 + aa61fe062 + b0e47464) ke 4.14 + BakaSU
         working-directory: kernel
         run: |
           # Revisi ke-95 (2026-10-25, permintaan pemilik): fitur baru SUSFS
@@ -2711,6 +2711,13 @@ jobs:
           # OPEN_REDIRECT (satu-satunya pemakainya), dan enabled_features
           # melaporkan opsi itu. Dengan =y (defconfig + assert .config) kode yang
           # dikompilasi sama dengan sebelumnya ditambah satu baris enabled_features.
+          # Revisi ke-115 (2026-11-02): simonpunk b0e47464 (gki-android12-5.10,
+          # sesudah aa61fe062): resolver membuka /data/system/packages.list dengan
+          # O_RDONLY | O_NOATIME supaya atime berkas itu tidak berubah tiap
+          # dibaca. Di 4.14 may_open() menolak O_NOATIME bila pemanggil bukan
+          # pemilik dan tanpa CAP_FOWNER; kedua jalur resolver (set filter dan
+          # worker kthread) berjalan sebagai uid 0 di domain u:r:ksu:s0 (lewat
+          # susfs_switch_to_ksu_domain), sama dengan upstream.
           cat > /tmp/fix_susfs_prio_uid.py <<'FIX_SUSFS_PRIO_UID_PY'
           #!/usr/bin/env python3
           """
@@ -2719,8 +2726,9 @@ jobs:
           termasuk perbaikan eb95da080 (2026-10-27): synchronize_rcu() sebelum
           kfree_rcu(old_bitmap) dan worker resolve ulang uid sesudah track_throne(),
           dan dd55dfb98 (2026-11-01): uid dibaca dari /data/system/packages.list,
-          set filter selalu skip_failed, dan aa61fe062 (2026-11-02): fitur jadi opsi
-          Kconfig CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER dan semua kodenya digerbangi.
+          set filter selalu skip_failed, aa61fe062 (2026-11-02): fitur jadi opsi
+          Kconfig CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER dan semua kodenya digerbangi,
+          dan b0e47464 (2026-11-02): packages.list dibuka dengan O_NOATIME.
 
           Fitur: uid aplikasi pilihan disembunyikan dari getpriority/setpriority/
           ioprio_get/ioprio_set (dipakai sebagian app untuk menghitung app yang
@@ -3425,10 +3433,28 @@ jobs:
                   print("susfs.c: #include <linux/vmalloc.h> ditambahkan (vmalloc/vfree resolver dd55dfb98)")
               return out
 
+          # simonpunk b0e47464 (2026-11-02): resolver membuka packages.list dengan
+          # O_NOATIME (atime berkas tidak berubah tiap dibaca). Dipasang sesudah
+          # dd55, dari jalur mana pun resolvernya datang.
+          B0E4_OLD = '\tfp = filp_open("/data/system/packages.list", O_RDONLY, 0);\n'
+          B0E4_NEW = '\tfp = filp_open("/data/system/packages.list", O_RDONLY | O_NOATIME, 0);\n'
+
+          def b0e4_susfs_c(s):
+              if B0E4_OLD not in s:
+                  need(s, B0E4_NEW, SUSFS_C, 'filp_open packages.list O_NOATIME')
+                  print("susfs.c: filp_open packages.list sudah O_NOATIME (b0e47464), dilewati")
+                  return None
+              need(s, B0E4_OLD, SUSFS_C, 'filp_open packages.list O_RDONLY')
+              print("susfs.c: filp_open packages.list kini O_RDONLY | O_NOATIME (b0e47464)")
+              return s.replace(B0E4_OLD, B0E4_NEW)
+
           def fix_susfs_c_all(s):
-              out = fix_susfs_c(s)
-              out2 = dd55_susfs_c(s if out is None else out)
-              return out if out2 is None else out2
+              ubah = False
+              for fn in (fix_susfs_c, dd55_susfs_c, b0e4_susfs_c):
+                  out = fn(s)
+                  if out is not None:
+                      s, ubah = out, True
+              return s if ubah else None
 
           # =====================================================================
           # 4) kernel/sys.c - setpriority/getpriority
@@ -3772,6 +3798,7 @@ jobs:
           grep -c 'susfs_is_priority_uid_filtered' kernel/sys.c block/ioprio.c fs/susfs.c || true
           echo "kfree_rcu(old_bitmap) dijaga NULL: $(grep -c 'if (old_bitmap)' fs/susfs.c || true) (harus 2)"
           grep -n 'CMD_SUSFS_SET_PRIORITY_UID_FILTER' include/linux/susfs_def.h KernelSU/kernel/supercall/dispatch.c || true
+          echo "filp_open packages.list O_NOATIME (b0e47464): $(grep -c '"/data/system/packages.list", O_RDONLY | O_NOATIME, 0);' fs/susfs.c || true) (harus 1)"
           echo "resolver packages.list (dd55dfb98): $(grep -c '"/data/system/packages.list"' fs/susfs.c || true) (harus 1), skip_failed true: $(grep -c 'new_bitmap->bits, true);' fs/susfs.c || true) (harus 2)"
           grep -n 'susfs_parse_priority_app_strings\|susfs_defer_priority_uid_filter\|task_work_add' KernelSU/kernel/manager/throne_tracker.c || true
           echo "gerbang CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER (aa61fe062):"
