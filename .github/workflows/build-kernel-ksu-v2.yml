@@ -3934,18 +3934,36 @@ jobs:
             # Revisi ke-87: sejak e077d8b68 resolver dipecah jadi
             # nm_resolve_rule_from_leaf / nm_resolve_rule_default; tiap resolver
             # tepat satu atomic_inc + satu path_get.
-            N_RESOLVE="$(grep -cE "^static bool nm_resolve_rule(_from_leaf|_default)?\(" "$NM" || true)"
+            # Revisi ke-113: sejak 3effd3810 resolver mengembalikan int (1 = ada
+            # rule, 0 = tidak, <0 = -ENOMEM dari kmemdup nama). Bentuk int hanya
+            # aman kalau SETIAP pemanggil mengembalikan ERR_PTR untuk nilai negatif
+            # SEBELUM nm_materialize_rule() - kalau tidak, -ENOMEM dibaca "ketemu"
+            # dan rule_info kosong ikut dimaterialisasi. Nama + saved_parent yang
+            # dibawa resolver dilepas tepat sekali di nm_materialize_rule().
+            N_RESOLVE="$(grep -cE "^static (bool|int) nm_resolve_rule(_from_leaf|_default)?\(" "$NM" || true)"
+            N_RINT="$(grep -cE "^static int nm_resolve_rule(_from_leaf|_default)?\(" "$NM" || true)"
+            N_INTOK=1
+            if [ "$N_RINT" != "0" ]; then
+              N_CALL="$(grep -cE "found = nm_resolve_rule(_from_leaf|_default)?\(" "$NM" || true)"
+              N_NEG="$(grep -cF "if (found < 0) return ERR_PTR(found);" "$NM" || true)"
+              N_SPUT="$(grep -cF "dput(rule_info->saved_parent)" "$NM" || true)"
+              N_NFREE="$(grep -cF "kfree(rule_info->r_name)" "$NM" || true)"
+              echo "Resolver int: pemanggil=$N_CALL cek-negatif=$N_NEG dput-saved_parent=$N_SPUT kfree-r_name=$N_NFREE"
+              if [ "$N_CALL" -lt 1 ] || [ "$N_NEG" != "$N_CALL" ] || [ "$N_SPUT" != "1" ] || [ "$N_NFREE" != "1" ]; then
+                N_INTOK=0
+              fi
+            fi
             N_INC="$(grep -c "atomic_inc(&out->this_dir->refs)" "$NM" || true)"
             N_PGET="$(grep -c "path_get(&out->r_path)" "$NM" || true)"
             N_MAT="$(grep -c "^static struct dentry \*nm_materialize_rule(" "$NM" || true)"
             N_DPUT="$(grep -c "nm_dir_put(rule_info->this_dir)" "$NM" || true)"
             N_PPUT="$(grep -c "path_put(&rule_info->r_path)" "$NM" || true)"
             if [ "$N_RESOLVE" -ge 1 ] && [ "$N_INC" = "$N_RESOLVE" ] && [ "$N_PGET" = "$N_RESOLVE" ] \
-               && [ "$N_MAT" = "1" ] && [ "$N_DPUT" = "1" ] && [ "$N_PPUT" = "1" ]; then
+               && [ "$N_MAT" = "1" ] && [ "$N_DPUT" = "1" ] && [ "$N_PPUT" = "1" ] && [ "$N_INTOK" = "1" ]; then
               echo "OK: struktur nm_resolve_rule + nm_materialize_rule (refs/r_path seimbang)"
               echo "Catatan: keamanan refcount nm_resolve_rule dari audit di pins.env, bukan dari guard ini"
             else
-              echo "ERROR: guard NoMount gagal. get_path=$N_GET_PATH resolve=$N_RESOLVE inc=$N_INC pget=$N_PGET mat=$N_MAT dput=$N_DPUT pput=$N_PPUT"
+              echo "ERROR: guard NoMount gagal. get_path=$N_GET_PATH resolve=$N_RESOLVE inc=$N_INC pget=$N_PGET mat=$N_MAT dput=$N_DPUT pput=$N_PPUT int-ok=$N_INTOK"
               grep -n "__nomount_get_rule_info(" "$NM" || true
               exit 1
             fi
