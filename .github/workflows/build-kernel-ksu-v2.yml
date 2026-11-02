@@ -2637,7 +2637,7 @@ jobs:
           grep -n 'spin_lock(&unnamed_dev_lock);' fs/super.c | head -3 || true
           grep -c 'ida_simple_get' fs/super.c fs/namespace.c || true
 
-      - name: Backport SUSFS priority uid filter (simonpunk 35cbfe118 + eb95da080 + dd55dfb98) ke 4.14 + BakaSU
+      - name: Backport SUSFS priority uid filter (simonpunk 35cbfe118 + eb95da080 + dd55dfb98 + aa61fe062) ke 4.14 + BakaSU
         working-directory: kernel
         run: |
           # Revisi ke-95 (2026-10-25, permintaan pemilik): fitur baru SUSFS
@@ -2700,6 +2700,17 @@ jobs:
           # <linux/hash.h>. Fixer kini mengubah flag itu jadi true (= simonpunk) dan
           # tetap memastikan <linux/vmalloc.h>. Fungsi sus_type/avd_allowed baru
           # (simonpunk d6a6a120, selinux_hide) tidak punya pemanggil di 4.14.
+          # Revisi ke-114 (2026-11-02, permintaan pemilik): simonpunk aa61fe062
+          # ("Make priority_uid_filter as new feature", gki-android12-5.10) belum
+          # ada di JackA1ltman, jadi dipasang di sini (bagian 8 fixer): opsi
+          # Kconfig KSU_SUSFS_PRIORITY_UID_FILTER (default y) di menu BakaSU
+          # "KernelSU - SUSFS", semua kode prio di susfs.h/susfs.c/sys.c/ioprio.c
+          # dan sisi BakaSU (dispatch.c, throne_tracker.c) digerbangi opsi itu,
+          # konstanta bitmap pindah dari susfs_def.h ke susfs.c,
+          # SUSFS_APP_STR_BUF_SIZE ke susfs.h, enum UID_SCHEME di bawah
+          # OPEN_REDIRECT (satu-satunya pemakainya), dan enabled_features
+          # melaporkan opsi itu. Dengan =y (defconfig + assert .config) kode yang
+          # dikompilasi sama dengan sebelumnya ditambah satu baris enabled_features.
           cat > /tmp/fix_susfs_prio_uid.py <<'FIX_SUSFS_PRIO_UID_PY'
           #!/usr/bin/env python3
           """
@@ -2708,7 +2719,8 @@ jobs:
           termasuk perbaikan eb95da080 (2026-10-27): synchronize_rcu() sebelum
           kfree_rcu(old_bitmap) dan worker resolve ulang uid sesudah track_throne(),
           dan dd55dfb98 (2026-11-01): uid dibaca dari /data/system/packages.list,
-          set filter selalu skip_failed.
+          set filter selalu skip_failed, dan aa61fe062 (2026-11-02): fitur jadi opsi
+          Kconfig CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER dan semua kodenya digerbangi.
 
           Fitur: uid aplikasi pilihan disembunyikan dari getpriority/setpriority/
           ioprio_get/ioprio_set (dipakai sebagian app untuk menghitung app yang
@@ -3480,14 +3492,16 @@ jobs:
                   print("dispatch.c: sudah ada, dilewati")
                   return None
               s = after(s, '#ifdef CONFIG_KSU_SUSFS\n#include <linux/susfs_def.h>\n#endif\n',
-                        '#ifdef CONFIG_KSU_SUSFS\n'
+                        '#ifdef CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER\n'
                         'extern void susfs_set_priority_uid_filter(void __user **user_info);\n'
-                        '#endif\n', DISPATCH_C, 'include susfs_def.h')
+                        '#endif // #ifdef CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER\n', DISPATCH_C, 'include susfs_def.h')
               s = before(s, '    case CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING: {\n',
+                         '#ifdef CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER\n'
                          '    case CMD_SUSFS_SET_PRIORITY_UID_FILTER: {\n'
                          '        susfs_set_priority_uid_filter(arg);\n'
                          '        return 0;\n'
-                         '    }\n', DISPATCH_C, 'case CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING')
+                         '    }\n'
+                         '#endif // #ifdef CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER\n', DISPATCH_C, 'case CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING')
               print("dispatch.c: case CMD_SUSFS_SET_PRIORITY_UID_FILTER ditambahkan")
               return s
 
@@ -3515,7 +3529,7 @@ jobs:
                   print("throne_tracker.c: sudah ada, dilewati")
                   return None
               s = after(s, '#include "feature/dynamic_manager.h"\n',
-                        '#ifdef CONFIG_KSU_SUSFS\n'
+                        '#ifdef CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER\n'
                         '#include <linux/task_work.h>\n'
                         '\n'
                         'extern void susfs_parse_priority_app_strings(void);\n'
@@ -3545,17 +3559,195 @@ jobs:
                         '    pr_warn("defer priority uid filter renew failed, run it now\\n");\n'
                         '    susfs_parse_priority_app_strings();\n'
                         '}\n'
-                        '#endif\n', TT_C, 'include dynamic_manager.h')
+                        '#endif // #ifdef CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER\n', TT_C, 'include dynamic_manager.h')
               tt = '    track_throne(TRACK_THRONE_FROM_RENAMEAT | TRACK_THRONE_FORCE_SYNCHRONOUS);\n'
               need(s, tt + '}\n', TT_C, 'track_throne di akhir ksu_handle_rename')
               s = s.replace(tt + '}\n', tt +
-                            '#ifdef CONFIG_KSU_SUSFS\n'
+                            '#ifdef CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER\n'
                             '    // Renew the getpriority uid bitmap filter once the rename is done\n'
                             '    susfs_defer_priority_uid_filter();\n'
-                            '#endif\n'
+                            '#endif // #ifdef CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER\n'
                             '}\n')
               print("throne_tracker.c: resolve ulang uid filter dipasang sesudah track_throne di ksu_handle_rename (task_work, sesudah rename)")
               return s
+
+          # =====================================================================
+          # 8) simonpunk aa61fe062 (2026-11-02, gki-android12-5.10, "Make
+          #    priority_uid_filter as new feature"): fitur jadi opsi Kconfig
+          #    CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER (default y, depends on KSU_SUSFS)
+          #    dan semua kodenya digerbangi opsi itu. Dipasang dari jalur mana pun
+          #    fiturnya datang (patch JackA1ltman atau salinan di atas); tiap berkas
+          #    dilewati kalau gerbangnya sudah ada. dispatch.c dan throne_tracker.c
+          #    (bagian 6 dan 7, milik kita) langsung memakai gerbang yang sama.
+          #    Tidak diikutkan: komentar #endif di susfs.h (kosmetik saja).
+          # =====================================================================
+          PRIO = 'CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER'
+          IFP = '#ifdef ' + PRIO + '\n'
+          ENDP = '#endif // #ifdef ' + PRIO + '\n'
+          KCONFIG = 'KernelSU/kernel/Kconfig'
+
+          BITMAP_DEFS = ('/*****************************************/\n'
+                         '/* getpriority uid filter (bitmap)       */\n'
+                         '/*****************************************/\n'
+                         '/* The uids that are hidden from the apps that abuse the getpriority syscall\n'
+                         ' * to find out the existing uids. Only the uids within the app uid range\n'
+                         ' * (10000 - 19999) are supported.\n'
+                         ' */\n'
+                         '#define SUSFS_PRIORITY_UID_FILTER_MIN_UID 10000\n'
+                         '#define SUSFS_PRIORITY_UID_FILTER_MAX_UID 19999\n'
+                         '#define SUSFS_PRIORITY_UID_FILTER_UID_NUM (SUSFS_PRIORITY_UID_FILTER_MAX_UID - SUSFS_PRIORITY_UID_FILTER_MIN_UID + 1)\n'
+                         '#define SUSFS_PRIORITY_UID_FILTER_BITMAP_LEN BITS_TO_LONGS(SUSFS_PRIORITY_UID_FILTER_UID_NUM)\n')
+          APP_STR = '#define SUSFS_APP_STR_BUF_SIZE 65535\n'
+
+          KCONFIG_OPT = ('config KSU_SUSFS_PRIORITY_UID_FILTER\n'
+                         '    bool "Enable to allow adding user-defined uids that will be hidden from getpriority/setpriority/ioprio_get/ioprio_set syscall"\n'
+                         '    depends on KSU_SUSFS\n'
+                         '    default y\n'
+                         '    help\n'
+                         '        - Allow hiding user-defined uids from syscalls like getpriority/setpriority/ioprio_get/ioprio_set.\n'
+                         '        - Effective on all processes with uid >= 10000.\n'
+                         '\n')
+
+          def gate(txt):
+              """Blok hook lama (CONFIG_KSU_SUSFS) -> gerbang PRIORITY_UID_FILTER."""
+              # per baris utuh: '#endif // #ifdef CONFIG_KSU_SUSFS' memuat '#ifdef ...'
+              out = []
+              for l in txt.split('\n'):
+                  if l == '#endif // #ifdef CONFIG_KSU_SUSFS':
+                      l = ENDP[:-1]
+                  elif l == '#ifdef CONFIG_KSU_SUSFS':
+                      l = IFP[:-1]
+                  out.append(l)
+              return '\n'.join(out)
+
+          def nline(s, line):
+              """Jumlah baris yang PERSIS sama dengan line (tanpa newline)."""
+              return s.split('\n').count(line.rstrip('\n'))
+
+          def aa61_kconfig(s):
+              if 'config KSU_SUSFS_PRIORITY_UID_FILTER\n' in s:
+                  need(s, 'config KSU_SUSFS_PRIORITY_UID_FILTER\n', KCONFIG, 'config KSU_SUSFS_PRIORITY_UID_FILTER')
+                  print("Kconfig: KSU_SUSFS_PRIORITY_UID_FILTER sudah ada, dilewati")
+                  return None
+              need(s, 'menu "KernelSU - SUSFS"\n', KCONFIG, 'menu "KernelSU - SUSFS"')
+              need(s, 'config KSU_SUSFS_SUS_MAP\n', KCONFIG, 'config KSU_SUSFS_SUS_MAP')
+              i = s.index('config KSU_SUSFS_SUS_MAP\n')
+              if s.index('menu "KernelSU - SUSFS"\n') > i:
+                  sys.exit("prio-uid: KSU_SUSFS_SUS_MAP tidak berada di menu KernelSU - SUSFS (%s)" % KCONFIG)
+              j = s.find('\nendmenu\n', i)
+              if j < 0 or '\nconfig ' in s[i:j] or '\nmenu' in s[i:j] or '\nif ' in s[i:j]:
+                  sys.exit("prio-uid: KSU_SUSFS_SUS_MAP bukan opsi terakhir menu KernelSU - SUSFS (%s)" % KCONFIG)
+              print("Kconfig: opsi KSU_SUSFS_PRIORITY_UID_FILTER (default y) ditambahkan ke menu KernelSU - SUSFS")
+              return s[:j + 1] + KCONFIG_OPT + s[j + 1:]
+
+          def aa61_def_h(s):
+              if BITMAP_DEFS not in s and APP_STR not in s:
+                  print("susfs_def.h: konstanta bitmap sudah pindah, dilewati")
+                  return None
+              need(s, BITMAP_DEFS + APP_STR + '\n', DEF_H, 'blok bitmap + SUSFS_APP_STR_BUF_SIZE')
+              s = s.replace(BITMAP_DEFS + APP_STR + '\n', '')
+              if 'SUSFS_PRIORITY_UID_FILTER_' in s or 'SUSFS_APP_STR_BUF_SIZE' in s:
+                  sys.exit("prio-uid: susfs_def.h masih memakai konstanta prio sesudah dipindah")
+              print("susfs_def.h: konstanta bitmap dipindah ke susfs.c, SUSFS_APP_STR_BUF_SIZE ke susfs.h")
+              return s
+
+          SUSFS_H_STRUCT = '/* getpriority uid filter */\nstruct st_susfs_priority_uid_filter {\n'
+          SUSFS_H_PROTO = ('/* getpriority uid filter */\n'
+                           'void susfs_set_priority_uid_filter(void __user **user_info);\n'
+                           'void susfs_parse_priority_app_strings(void);\n')
+
+          def aa61_susfs_h(s):
+              if PRIO in s:
+                  print("susfs.h: gerbang PRIORITY_UID_FILTER sudah ada, dilewati")
+                  return None
+              if APP_STR in s:
+                  sys.exit("prio-uid: susfs.h sudah punya SUSFS_APP_STR_BUF_SIZE tanpa gerbang - bentuk tak dikenal")
+              need(s, 'enum UID_SCHEME {\n', SUSFS_H, 'enum UID_SCHEME')
+              i = s.index('enum UID_SCHEME {\n')
+              j = s.index('};\n', i) + 3
+              s = (s[:i] + '#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\n' + s[i:j]
+                   + '#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\n' + s[j:])
+              need(s, SUSFS_H_STRUCT, SUSFS_H, 'struct st_susfs_priority_uid_filter')
+              i = s.index(SUSFS_H_STRUCT)
+              j = s.index('};\n', i) + 3
+              head = '/* getpriority uid filter */\n'
+              s = s[:i] + head + IFP + APP_STR + s[i + len(head):j] + ENDP + s[j:]
+              s = after(s, SUSFS_H_PROTO, ENDP, SUSFS_H, 'prototipe priority uid filter')
+              s = s.replace(SUSFS_H_PROTO, '/* getpriority uid filter */\n' + IFP + SUSFS_H_PROTO[len(head):])
+              print("susfs.h: struct + prototipe digerbangi, enum UID_SCHEME di bawah OPEN_REDIRECT")
+              return s
+
+          SUSFS_C_HEAD = '/* priority uid filter */\nstruct susfs_priority_uid_filter_bitmap {\n'
+          SUSFS_C_FN = 'bool susfs_is_priority_uid_filtered(uid_t uid) {\n'
+          SUSFS_C_TAIL = '\treturn false;\n}\n\n/* susfs avc log spoofing */\n'
+          FEAT_SUS_MAP = ('#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n'
+                          '\tinfo->err = copy_config_to_buf("CONFIG_KSU_SUSFS_SUS_MAP\\n", buf_ptr, &copied_size, SUSFS_ENABLED_FEATURES_SIZE);\n'
+                          '\tif (info->err) goto out_copy_to_user;\n'
+                          '\tbuf_ptr = info->enabled_features + copied_size;\n'
+                          '#endif\n')
+          FEAT_PRIO = (IFP +
+                       '\tinfo->err = copy_config_to_buf("CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER\\n", buf_ptr, &copied_size, SUSFS_ENABLED_FEATURES_SIZE);\n'
+                       '\tif (info->err) goto out_copy_to_user;\n'
+                       '\tbuf_ptr = info->enabled_features + copied_size;\n' + ENDP)
+          PRIO_NAMES = ('priority_uid_filter_bitmap', 'SUSFS_PRIORITY_UID_FILTER_', 'susfs_priority_app_',
+                        'susfs_mutex_lock_priority_uid_filter', 'susfs_set_priority_uid_filter',
+                        'susfs_parse_priority_app', 'susfs_is_priority_uid_filtered', 'susfs_resolve_priority_app_uid')
+
+          def aa61_susfs_c(s):
+              if PRIO in s:
+                  print("susfs.c: gerbang PRIORITY_UID_FILTER sudah ada, dilewati")
+                  return None
+              need(s, SUSFS_C_HEAD, SUSFS_C, '/* priority uid filter */ + struct bitmap')
+              need(s, SUSFS_C_FN, SUSFS_C, 'susfs_is_priority_uid_filtered(')
+              need(s, SUSFS_C_TAIL, SUSFS_C, 'akhir susfs_is_priority_uid_filtered + avc log spoofing')
+              need(s, '#include <linux/bitmap.h>\n', SUSFS_C, '#include <linux/bitmap.h>')
+              a = s.index(SUSFS_C_HEAD)
+              f = s.index(SUSFS_C_FN)
+              t = s.index(SUSFS_C_TAIL)
+              if not (a < f < t) or s.index('\n}\n', f) + 1 != t + len('\treturn false;\n'):
+                  sys.exit("prio-uid: seksi priority uid filter di susfs.c tidak berakhir di susfs_is_priority_uid_filtered")
+              e = t + len('\treturn false;\n}\n')
+              luar = s[:a] + s[e:]
+              for nm in PRIO_NAMES:
+                  if nm in luar:
+                      sys.exit("prio-uid: '%s' dipakai di luar seksi priority uid filter susfs.c - gerbang akan memutusnya" % nm)
+              need(s, FEAT_SUS_MAP + '\n\tinfo->err = 0;\nout_copy_to_user:', SUSFS_C, 'fitur SUS_MAP terakhir di susfs_get_enabled_features')
+              s = s[:a] + '/* priority uid filter */\n' + IFP + BITMAP_DEFS + '\n' + s[a + len('/* priority uid filter */\n'):e] + ENDP + s[e:]
+              s = s.replace(FEAT_SUS_MAP, FEAT_SUS_MAP + FEAT_PRIO)
+              print("susfs.c: seksi priority uid filter digerbangi (+ konstanta bitmap), CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER di enabled_features")
+              return s
+
+          def aa61_hooks(path, blocks):
+              def fn(s):
+                  if PRIO in s:
+                      for b, n in blocks:
+                          need(s, gate(b), path, 'blok hook bergerbang', n)
+                      print("%s: gerbang PRIORITY_UID_FILTER sudah ada, dilewati" % path)
+                      return None
+                  for b, n in blocks:
+                      need(s, b, path, 'blok hook CONFIG_KSU_SUSFS', n)
+                      s = s.replace(b, gate(b))
+                  print("%s: hook priority uid filter kini digerbangi CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER" % path)
+                  return s
+              return fn
+
+          # Hitungan akhir: setiap #ifdef/#endif gerbang di tiap berkas.
+          AA61_CEK = ((SUSFS_H, 2), (SUSFS_C, 2), (SYS_C, 3), (IOPRIO_C, 3), (DISPATCH_C, 2), (TT_C, 2))
+
+          def aa61_cek():
+              for path, n in AA61_CEK:
+                  with open(path, encoding='utf-8', errors='surrogateescape') as f:
+                      s = f.read()
+                  if nline(s, IFP) != n or nline(s, ENDP) != n:
+                      sys.exit("prio-uid: %s punya %d #ifdef / %d #endif PRIORITY_UID_FILTER (harus %d)"
+                               % (path, nline(s, IFP), nline(s, ENDP), n))
+              with open(DEF_H, encoding='utf-8', errors='surrogateescape') as f:
+                  if 'SUSFS_PRIORITY_UID_FILTER_' in f.read():
+                      sys.exit("prio-uid: konstanta bitmap masih di susfs_def.h")
+              with open(KCONFIG, encoding='utf-8', errors='surrogateescape') as f:
+                  if f.read().count('config KSU_SUSFS_PRIORITY_UID_FILTER\n') != 1:
+                      sys.exit("prio-uid: Kconfig tidak punya tepat satu config KSU_SUSFS_PRIORITY_UID_FILTER")
+              print("aa61fe062: gerbang lengkap (susfs.h 2, susfs.c 2, sys.c 3, ioprio.c 3, dispatch.c 2, throne_tracker.c 2, Kconfig 1)")
 
           rw(DEF_H, fix_def_h)
           rw(SUSFS_H, fix_susfs_h)
@@ -3564,6 +3756,13 @@ jobs:
           rw(IOPRIO_C, fix_ioprio_c)
           rw(DISPATCH_C, fix_dispatch_c)
           rw(TT_C, fix_throne_tracker_c)
+          rw(KCONFIG, aa61_kconfig)
+          rw(DEF_H, aa61_def_h)
+          rw(SUSFS_H, aa61_susfs_h)
+          rw(SUSFS_C, aa61_susfs_c)
+          rw(SYS_C, aa61_hooks(SYS_C, ((EXTERN, 1), (SYS_HOOK, 2))))
+          rw(IOPRIO_C, aa61_hooks(IOPRIO_C, ((EXTERN, 1), (IO_HOOK, 2))))
+          aa61_cek()
           print("prio-uid: selesai")
           FIX_SUSFS_PRIO_UID_PY
           python3 /tmp/fix_susfs_prio_uid.py
@@ -3575,6 +3774,9 @@ jobs:
           grep -n 'CMD_SUSFS_SET_PRIORITY_UID_FILTER' include/linux/susfs_def.h KernelSU/kernel/supercall/dispatch.c || true
           echo "resolver packages.list (dd55dfb98): $(grep -c '"/data/system/packages.list"' fs/susfs.c || true) (harus 1), skip_failed true: $(grep -c 'new_bitmap->bits, true);' fs/susfs.c || true) (harus 2)"
           grep -n 'susfs_parse_priority_app_strings\|susfs_defer_priority_uid_filter\|task_work_add' KernelSU/kernel/manager/throne_tracker.c || true
+          echo "gerbang CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER (aa61fe062):"
+          grep -c '^#ifdef CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER$' include/linux/susfs.h fs/susfs.c kernel/sys.c block/ioprio.c KernelSU/kernel/supercall/dispatch.c KernelSU/kernel/manager/throne_tracker.c || true
+          grep -n -A3 '^config KSU_SUSFS_PRIORITY_UID_FILTER$' KernelSU/kernel/Kconfig || true
 
       - name: Commit BakaSU + bersihkan dirty
         working-directory: kernel
@@ -4823,6 +5025,16 @@ jobs:
           } >> "$DEF"
           echo "[defconfig] CONFIG_NOMOUNT=y ditambahkan"
 
+          # Revisi ke-114: simonpunk aa61fe062 menjadikan priority uid filter opsi
+          # Kconfig (default y, depends on KSU_SUSFS; dipasang step backport prio).
+          # Ditulis eksplisit dan sesudah fragment dlagia, supaya baris
+          # "is not set" dari mana pun tidak mematikannya diam-diam.
+          {
+            echo ""
+            echo "CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y"
+          } >> "$DEF"
+          echo "[defconfig] CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y ditambahkan"
+
           # ----- BBR + fq (revisi ke-12, 2026-09-11) -----
           # Tidak ada patch source sama sekali di sini: tcp_bbr.c dan sch_fq.c
           # SUDAH ada di pohon rosemary-13 (BBRv1 mainline sejak 4.9), cuma tidak
@@ -5024,6 +5236,12 @@ jobs:
 
           grep -q '^CONFIG_KSU_SUSFS=y$' out/.config || {
             echo "ERROR: CONFIG_KSU_SUSFS tidak resolve ke y - integrasi SUSFS (patch dasar + inline hook) tidak akan berfungsi"
+            exit 1
+          }
+          # Revisi ke-114 (aa61fe062): tanpa opsi ini hook getpriority/ioprio dan
+          # perintah 0x60030 tidak dikompilasi (BRENE "Hide third party apps" mati).
+          grep -q '^CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y$' out/.config || {
+            echo "ERROR: CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER tidak resolve ke y - priority uid filter tidak terpasang"
             exit 1
           }
           echo ""
