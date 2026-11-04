@@ -2718,6 +2718,15 @@ jobs:
           # pemilik dan tanpa CAP_FOWNER; kedua jalur resolver (set filter dan
           # worker kthread) berjalan sebagai uid 0 di domain u:r:ksu:s0 (lewat
           # susfs_switch_to_ksu_domain), sama dengan upstream.
+          # Revisi ke-116 (2026-11-05): SUSFS_PIN JackA1ltman 732feefc0 kini membawa
+          # aa61fe062, b0e47464 dan skip_failed true sendiri, plus perbaikan
+          # 732feefc0 ("unused function susfs_switch_to_ksu_domain"): pasangan
+          # susfs_switch_to_ksu_domain/susfs_restore_creds ikut digerbangi
+          # PRIORITY_UID_FILTER, karena hanya fitur itu pemakainya (simonpunk
+          # b0e47464 belum menggerbanginya; dengan opsi =n hasilnya
+          # -Wunused-function). Bagian 8 fixer kini memasang gerbang yang sama di
+          # jalur mana pun, dan aa61_cek menuntut 3 blok di fs/susfs.c (dulu 2:
+          # fixer lama menghentikan build pada patch baru ini).
           cat > /tmp/fix_susfs_prio_uid.py <<'FIX_SUSFS_PRIO_UID_PY'
           #!/usr/bin/env python3
           """
@@ -2728,7 +2737,8 @@ jobs:
           dan dd55dfb98 (2026-11-01): uid dibaca dari /data/system/packages.list,
           set filter selalu skip_failed, aa61fe062 (2026-11-02): fitur jadi opsi
           Kconfig CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER dan semua kodenya digerbangi,
-          dan b0e47464 (2026-11-02): packages.list dibuka dengan O_NOATIME.
+          b0e47464 (2026-11-02): packages.list dibuka dengan O_NOATIME, dan
+          JackA1ltman 732feefc0 (2026-11-03): helper kredensial ksu ikut digerbangi.
 
           Fitur: uid aplikasi pilihan disembunyikan dari getpriority/setpriority/
           ioprio_get/ioprio_set (dipakai sebagian app untuk menghitung app yang
@@ -2760,6 +2770,7 @@ jobs:
           kfree_rcu dipasang bila belum ada (pin 6d787e15d ke bawah membawanya
           tanpa guard; pin 16cb19cc2 ke atas sudah menjaganya sendiri -> dilewati).
           """
+          import re
           import sys
 
           def rw(path, fn):
@@ -3606,6 +3617,9 @@ jobs:
           #    dilewati kalau gerbangnya sudah ada. dispatch.c dan throne_tracker.c
           #    (bagian 6 dan 7, milik kita) langsung memakai gerbang yang sama.
           #    Tidak diikutkan: komentar #endif di susfs.h (kosmetik saja).
+          #    Ikut JackA1ltman 732feefc0 (2026-11-03): susfs_switch_to_ksu_domain
+          #    dan susfs_restore_creds (pemakainya hanya seksi priority uid filter)
+          #    digerbangi juga, jadi fs/susfs.c punya 3 blok gerbang.
           # =====================================================================
           PRIO = 'CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER'
           IFP = '#ifdef ' + PRIO + '\n'
@@ -3719,10 +3733,44 @@ jobs:
                         'susfs_mutex_lock_priority_uid_filter', 'susfs_set_priority_uid_filter',
                         'susfs_parse_priority_app', 'susfs_is_priority_uid_filtered', 'susfs_resolve_priority_app_uid')
 
+          CREDS_FN = 'static struct cred *susfs_switch_to_ksu_domain(void) {\n'
+          CREDS_END = ('static void susfs_restore_creds(struct cred *orig_cred) {\n'
+                       '\tif (!orig_cred)\n'
+                       '\t\treturn;\n'
+                       '\n'
+                       '\tcommit_creds(orig_cred);\n'
+                       '}\n')
+
+          def aa61_creds(s):
+              """JackA1ltman 732feefc0: helper kredensial ksu ikut digerbangi."""
+              need(s, CREDS_FN, SUSFS_C, 'susfs_switch_to_ksu_domain(void)')
+              need(s, CREDS_END, SUSFS_C, 'susfs_restore_creds(struct cred')
+              a = s.index(CREDS_FN)
+              e = s.index(CREDS_END) + len(CREDS_END)
+              if not a < e or '#if' in s[a:e] or '#endif' in s[a:e]:
+                  sys.exit("prio-uid: susfs_switch_to_ksu_domain..susfs_restore_creds di susfs.c bentuknya tak dikenal")
+              if s[:a].endswith(IFP):
+                  if not s[e:].startswith(ENDP):
+                      sys.exit("prio-uid: gerbang susfs_switch_to_ksu_domain di susfs.c tidak lengkap")
+                  print("susfs.c: gerbang susfs_switch_to_ksu_domain/susfs_restore_creds sudah ada, dilewati")
+                  return s
+              luar = s[:a] + s[e:]
+              p = luar.find('/* priority uid filter */\n' + IFP)
+              q = luar.find(ENDP, p)
+              if p < 0 or q < 0:
+                  sys.exit("prio-uid: seksi priority uid filter bergerbang tidak ketemu di susfs.c")
+              sisa = re.sub(r'/\*.*?\*/|//[^\n]*', '', luar[:p] + luar[q:], flags=re.S)
+              for nm in ('susfs_switch_to_ksu_domain', 'susfs_restore_creds'):
+                  if nm in sisa:
+                      sys.exit("prio-uid: '%s' dipakai di luar seksi priority uid filter susfs.c - gerbang akan memutusnya" % nm)
+              print("susfs.c: susfs_switch_to_ksu_domain/susfs_restore_creds digerbangi PRIORITY_UID_FILTER (JackA1ltman 732feefc0)")
+              return s[:a] + IFP + s[a:e] + ENDP + s[e:]
+
           def aa61_susfs_c(s):
               if PRIO in s:
                   print("susfs.c: gerbang PRIORITY_UID_FILTER sudah ada, dilewati")
-                  return None
+                  t = aa61_creds(s)
+                  return None if t == s else t
               need(s, SUSFS_C_HEAD, SUSFS_C, '/* priority uid filter */ + struct bitmap')
               need(s, SUSFS_C_FN, SUSFS_C, 'susfs_is_priority_uid_filtered(')
               need(s, SUSFS_C_TAIL, SUSFS_C, 'akhir susfs_is_priority_uid_filtered + avc log spoofing')
@@ -3741,7 +3789,7 @@ jobs:
               s = s[:a] + '/* priority uid filter */\n' + IFP + BITMAP_DEFS + '\n' + s[a + len('/* priority uid filter */\n'):e] + ENDP + s[e:]
               s = s.replace(FEAT_SUS_MAP, FEAT_SUS_MAP + FEAT_PRIO)
               print("susfs.c: seksi priority uid filter digerbangi (+ konstanta bitmap), CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER di enabled_features")
-              return s
+              return aa61_creds(s)
 
           def aa61_hooks(path, blocks):
               def fn(s):
@@ -3758,7 +3806,7 @@ jobs:
               return fn
 
           # Hitungan akhir: setiap #ifdef/#endif gerbang di tiap berkas.
-          AA61_CEK = ((SUSFS_H, 2), (SUSFS_C, 2), (SYS_C, 3), (IOPRIO_C, 3), (DISPATCH_C, 2), (TT_C, 2))
+          AA61_CEK = ((SUSFS_H, 2), (SUSFS_C, 3), (SYS_C, 3), (IOPRIO_C, 3), (DISPATCH_C, 2), (TT_C, 2))
 
           def aa61_cek():
               for path, n in AA61_CEK:
@@ -3773,7 +3821,7 @@ jobs:
               with open(KCONFIG, encoding='utf-8', errors='surrogateescape') as f:
                   if f.read().count('config KSU_SUSFS_PRIORITY_UID_FILTER\n') != 1:
                       sys.exit("prio-uid: Kconfig tidak punya tepat satu config KSU_SUSFS_PRIORITY_UID_FILTER")
-              print("aa61fe062: gerbang lengkap (susfs.h 2, susfs.c 2, sys.c 3, ioprio.c 3, dispatch.c 2, throne_tracker.c 2, Kconfig 1)")
+              print("aa61fe062: gerbang lengkap (susfs.h 2, susfs.c 3, sys.c 3, ioprio.c 3, dispatch.c 2, throne_tracker.c 2, Kconfig 1)")
 
           rw(DEF_H, fix_def_h)
           rw(SUSFS_H, fix_susfs_h)
