@@ -29,12 +29,10 @@ on:
         required: true
         type: choice
         options:
-          - 'SUSFS'
-          - 'BakaSU'
+          - 'xxKSU'
           - 'NoMount driver'
           - 'NoMount loader'
           - 'source kernel'
-          - 'Build-Kernel_scripts'
           - 'AnyKernel3'
           - 'proton-clang'
       sha:
@@ -92,9 +90,8 @@ jobs:
           # nama 2026-10-14), sama dengan kolom nama KOMPONEN di pin-watch.yml.
           case "$KOMPONEN" in
             'source kernel')         BARIS='KERNEL_PIN;dlagia/android_kernel_xiaomi_rosemary;rosemary-13;.' ;;
-            'Build-Kernel_scripts')  BARIS='SCRIPTS_PIN;dlagia/Build-Kernel_scripts;main;.' ;;
-            'BakaSU')                BARIS='KSU_PIN;Baka-SU/BakaSU;main;^kernel/' ;;
-            'SUSFS')                 BARIS='SUSFS_PIN;JackA1ltman/NonGKI_Kernel_Build_2nd;mainline;(susfs_patch_to_4\.14\.patch|^scripts/|hook)' ;;
+            # Revisi ke-118: BakaSU -> xxKSU; SUSFS dan Build-Kernel_scripts dicabut.
+            'xxKSU')                 BARIS='KSU_PIN;backslashxx/KernelSU;master;^kernel/' ;;
             'NoMount driver')        BARIS='NOMOUNT_PIN;maxsteeel/nomount;dev;^(kernel/src/|userspace/src/)' ;;
             'NoMount loader')        BARIS='NOMOUNT_LOADER_PIN;maxsteeel/nomount;master;^kernel/setup\.sh' ;;
             'proton-clang')          BARIS='CLANG_PIN;kdrag0n/proton-clang;master;.' ;;
