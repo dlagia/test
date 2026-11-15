@@ -1425,8 +1425,16 @@
 #     tanpa patch SUSFS.
 #
 # (e) Userspace yang ikut berubah (di luar workflow ini): manager BakaSU
-#     tidak dikenali kernel ini - xxKSU memeriksa tanda tangan manager
-#     KernelSU resmi (me.weishu.kernelsu, size 0x033b). Modul yang memanggil
+#     tidak dikenali kernel ini. Koreksi revisi ke-118b: is_manager_apk()
+#     di kernel/manager/apk_sign.c menerima paket me.weishu.kernelsu
+#     dengan salah satu dari dua tanda tangan ini (plus dua fork lain):
+#       - kunci rilis xxKSU  : size 0x363, sha256 4359c171f325...
+#         = APK di halaman rilis backslashxx/KernelSU (diperiksa pada
+#         KernelSU_v3.3.1-50_32730-release.apk: versi 32730 = KSU_VERSION
+#         driver pin ini, uapi v6 = KERNEL_SU_UAPI_VERSION driver).
+#       - KernelSU resmi     : size 0x033b, sha256 c371061b19d8...
+#         (rilis resmi v3.3.1 masih uapi v5; driver pin ini uapi v6).
+#     Jadi pasangan yang cocok = APK rilis xxKSU. Modul yang memanggil
 #     ksu_susfs akan gagal dengan "not supported".
 #
 # Mundur: flash zip titik AD, lalu kembalikan berkas workflow ini dan
@@ -3625,8 +3633,8 @@ jobs:
             printf -- '- `%s` sudah berformat AnyKernel3: flash langsung lewat\n' "$ZIP"
             printf -- '  recovery/KernelSU, tidak perlu dibongkar dulu.\n'
             printf -- '- Kernel ini memakai **xxKSU** (backslashxx/KernelSU), uname\n'
-            printf -- '  `4.14.186-perf`, **tanpa SUSFS**. Manager yang dikenali: KernelSU\n'
-            printf -- '  resmi (`me.weishu.kernelsu`); manager BakaSU tidak dikenali.\n'
+            printf -- '  `4.14.186-perf`, **tanpa SUSFS**. Manager: APK dari halaman rilis\n'
+            printf -- '  backslashxx/KernelSU (versi %s); manager BakaSU tidak dikenali.\n' "$KSU_VER"
           } > /tmp/notes.md
 
           # --target: tanpa repo git lokal, gh akan menempelkan tag ke HEAD
