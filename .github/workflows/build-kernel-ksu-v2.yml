@@ -3399,8 +3399,7 @@ jobs:
           echo "==================== RESOLVED fgetpriority CONFIG ===================="
           grep -E '^CONFIG_FGETPRIORITY' out/.config || true
           grep -q '^CONFIG_FGETPRIORITY=y$' out/.config || { echo "ERROR: CONFIG_FGETPRIORITY tidak resolve ke y"; exit 1; }
-          test -f out/drivers/fgetpriority/main.o || { echo "ERROR: out/drivers/fgetpriority/main.o tidak terbentuk - fgetpriority tidak ikut dikompilasi"; exit 1; }
-          echo "OK: fgetpriority built-in (CONFIG_FGETPRIORITY=y, main.o terbentuk)"
+          echo "OK: CONFIG_FGETPRIORITY=y (objek + simbol dicek sesudah kompilasi)"
 
           echo ""
           echo "==================== RESOLVED BBR + fq CONFIG ===================="
@@ -3541,6 +3540,19 @@ jobs:
             }
           done
           echo "OK: banner 4.14.186-perf + handler tabel syscall xxKSU ada di hasil build."
+
+          # fgetpriority: objek + simbol di vmlinux membuktikan ikut dikompilasi
+          # DAN ter-link built-in (bukan cuma CONFIG_FGETPRIORITY=y di .config).
+          test -f out/drivers/fgetpriority/main.o || {
+            echo "ERROR: out/drivers/fgetpriority/main.o tidak terbentuk - fgetpriority tidak ikut dikompilasi"
+            exit 1
+          }
+          grep -qE '^[0-9a-f]+ [Tt] gphook_find_user$' out/System.map || {
+            echo "ERROR: simbol gphook_find_user tidak ada di System.map - fgetpriority tidak ter-link ke vmlinux"
+            grep -c 'fgetpriority\|gphook' out/System.map || true
+            exit 1
+          }
+          echo "OK: fgetpriority built-in (main.o + gphook_find_user di vmlinux)."
           command -v ccache >/dev/null 2>&1 && ccache -s | head -8 || true
 
       - name: Compile nm (NoMount userspace CLI, commit sama dgn kernel)
