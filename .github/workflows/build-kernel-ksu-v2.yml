@@ -1439,6 +1439,39 @@
 #
 # Mundur: flash zip titik AD, lalu kembalikan berkas workflow ini dan
 # pins.env ke commit 2e3265730 (cadangan lengkap di luar repo).
+#
+# Revisi ke-118 TERBUKTI BOOT: build-20261115-171120 diflash dan boot
+# normal, dikonfirmasi pemilik 2026-11-16 = titik AE di pins.env.
+# ============================================================
+
+# REVISI KE-119 (16 November 2026) - audit sesudah titik AE.
+#
+# (a) NoMount naik ke HEAD: NOMOUNT_PIN bd5e2d11f -> 4a4b5645a (dev, maju
+#     94 commit, driver "23", modul v2.3.0) dan NOMOUNT_LOADER_PIN
+#     bf1847f98 -> 7914458ca (master; kernel/setup.sh tetap blob 766365013).
+#     Audit bootloop-nya di blok NoMount pins.env. Tiga hal di workflow ini
+#     ikut disesuaikan, karena tanpa itu build MERAH (disimulasikan lokal):
+#       - guard 58b mencari "bool virtual = nm_inode_is_virtual(inode);".
+#         Upstream kini memulangkan inode virtual di awal
+#         nm_hijacked_evict_inode() (destroy + truncate_inode_pages_final +
+#         clear_inode + return) sebelum evict_inode asli. Guard menerima
+#         bentuk itu dan tetap menolak kalau cabang virtual menyentuh
+#         orig_sop->evict_inode.
+#       - resolver kini memegang ref leaf (atomic_inc(&out->leaf->refs));
+#         guard menuntut pasangannya nm_leaf_put(rule_info->leaf) tepat satu
+#         di nm_materialize_rule().
+#       - nm (CLI) tidak lagi freestanding: sejak 1e800826e ia memakai libc
+#         dan main(). Step "Compile nm" memilih bentuk dari isi nm.h, jadi
+#         pin lama (ber-_start) tetap bisa dibangun saat mundur.
+# (b) Pesan dan komentar yang masih menyebut SUSFS sebagai hal yang berlaku
+#     (petunjuk error step clone kernel, catatan step "Muat pins.env",
+#     ringkasan build) dibetulkan. Tidak ada kode kernel yang berubah
+#     karenanya.
+# (c) anykernel.sh: kernel.string tidak lagi "sphinX Kernel by fjrXTR"
+#     (sisa template; kernel ini bukan sphinX). Daftar device dan versi
+#     Android tidak diubah.
+# Mundur: titik AE = kembalikan dua baris NOMOUNT di pins.env dan berkas ini
+# ke commit e8cd3448c.
 # ============================================================
 
 name: Build Kernel Rosemary (xxKSU + NoMount)
@@ -1706,7 +1739,7 @@ jobs:
             grep -E "^${n}=[0-9a-f]{40}$" /tmp/pins.env >> /tmp/pins.export
           done
 
-          # Baris yang lolos bentuk tapi bukan salah satu dari delapan bukan
+          # Baris yang lolos bentuk tapi bukan salah satu dari enam bukan
           # error - pins.env boleh lebih dulu memuat pin untuk step yang belum
           # ditulis - tapi WAJIB kelihatan. Diabaikan diam-diam persis cara
           # sebuah salinan kedua jadi basi tanpa ketahuan (revisi ke-26..28).
@@ -1731,7 +1764,8 @@ jobs:
           #   - step triase di naikkan-pin.yml, yang menolak kenaikan menyentuh
           #     file sensitif sebelum sebaris pun ditulis ke pins.env;
           #   - assert per komponen di step-step di bawah (KERNEL_ACT vs
-          #     KERNEL_PIN, SUSFS_HIT, self-heal clang/AK3, dan seterusnya).
+          #     KERNEL_PIN, HEAD xxKSU dan NoMount vs pin, self-heal clang/AK3,
+          #     dan seterusnya).
 
       - name: Pasang dependency build
         run: |
@@ -1754,12 +1788,13 @@ jobs:
 
           # ----- ASSERT SHA SOURCE KERNEL (revisi ke-18, 2026-09-12) -----
           # Ini dependency terakhir yang masih MENGAMBANG: branch rosemary-13.
-          # Semua patch SUSFS/KSU/NoMount di bawah, plus setiap fixer Python di
-          # workflow ini, diaudit terhadap ISI POHON commit di bawah (mis.
-          # fs/statfs.c, fs/stat.c, fs/proc/fd.c). Kalau dlagia mendorong commit
-          # baru yang menyentuh fs/, patch bisa ter-apply "bersih" tapi salah,
-          # atau reject-nya berubah dan audit reject di bawah salah tuduh.
-          # Jadi drift-nya dibuat KERAS, bukan diam-diam.
+          # Integrasi xxKSU/NoMount di bawah, plus setiap fixer Python di
+          # workflow ini (memori, CVE rtmutex, flush_work), diaudit terhadap
+          # ISI POHON commit di bawah. Kalau dlagia mendorong commit baru yang
+          # menyentuh berkas yang ditambal, fixer bisa berhenti di anchor atau
+          # - lebih buruk - cocok di tempat yang salah. Jadi drift-nya dibuat
+          # KERAS, bukan diam-diam. (Sampai revisi ke-117 alasan utamanya
+          # patch SUSFS 4.14 dan audit reject-nya.)
           # KERNEL_PIN dari pins.env (revisi ke-26).
           KERNEL_ACT="$(git -C kernel rev-parse HEAD)"
           test "$KERNEL_ACT" = "$KERNEL_PIN" || {
@@ -1768,12 +1803,11 @@ jobs:
             echo "  aktual    : $KERNEL_ACT"
             echo "Yang harus dilakukan sebelum menaikkan pin ini:"
             echo "  1) git log --stat $KERNEL_PIN..$KERNEL_ACT"
-            echo "     (SELURUH pohon: patch SUSFS 4.14 juga menyentuh kernel/, mm/,"
-            echo "     security/, include/; skrip hook drivers/input/; step memori mm/,"
-            echo "     kernel/sysctl.c dan zram - bukan cuma fs/)"
-            echo "  2) kalau berkas yang ditambal tersentuh: ulangi simulasi patch SUSFS"
-            echo "     (lihat blok BUKTI SIMULASI di step integrasi) dan perbarui daftar"
-            echo "     reject yang diharapkan."
+            echo "     (SELURUH pohon: Makefile untuk SUBLEVEL; mm/, kernel/sysctl.c dan"
+            echo "     zram untuk step memori; kernel/locking/rtmutex.c; block/blk-core.c;"
+            echo "     fs/ untuk NoMount; drivers/ dan security/ untuk xxKSU)"
+            echo "  2) kalau berkas yang ditambal tersentuh: jalankan ulang fixer step itu"
+            echo "     di pohon baru (semuanya ber-anchor dan berhenti kalau tidak cocok)."
             echo "  3) kalau rosemary_defconfig tersentuh: ulangi audit defconfig."
             exit 1
           }
@@ -2237,12 +2271,25 @@ jobs:
             N_MAT="$(grep -c "^static struct dentry \*nm_materialize_rule(" "$NM" || true)"
             N_DPUT="$(grep -c "nm_dir_put(rule_info->this_dir)" "$NM" || true)"
             N_PPUT="$(grep -c "path_put(&rule_info->r_path)" "$NM" || true)"
+            # Revisi ke-119: sejak f18a7206e/7f732b6b8 resolver juga memegang
+            # ref leaf untuk rule berkas; pasangannya nm_leaf_put() di
+            # nm_materialize_rule(). Pin lama tidak punya keduanya (0 = 0).
+            N_LINC="$(grep -cF "atomic_inc(&out->leaf->refs)" "$NM" || true)"
+            N_LPUT="$(grep -cF "nm_leaf_put(rule_info->leaf)" "$NM" || true)"
+            N_LEAFOK=1
+            if [ "$N_LINC" != "0" ] || [ "$N_LPUT" != "0" ]; then
+              echo "Ref leaf: inc=$N_LINC put=$N_LPUT"
+              if [ "$N_LINC" != "$N_RESOLVE" ] || [ "$N_LPUT" != "1" ]; then
+                N_LEAFOK=0
+              fi
+            fi
             if [ "$N_RESOLVE" -ge 1 ] && [ "$N_INC" = "$N_RESOLVE" ] && [ "$N_PGET" = "$N_RESOLVE" ] \
-               && [ "$N_MAT" = "1" ] && [ "$N_DPUT" = "1" ] && [ "$N_PPUT" = "1" ] && [ "$N_INTOK" = "1" ]; then
+               && [ "$N_MAT" = "1" ] && [ "$N_DPUT" = "1" ] && [ "$N_PPUT" = "1" ] && [ "$N_INTOK" = "1" ] \
+               && [ "$N_LEAFOK" = "1" ]; then
               echo "OK: struktur nm_resolve_rule + nm_materialize_rule (refs/r_path seimbang)"
               echo "Catatan: keamanan refcount nm_resolve_rule dari audit di pins.env, bukan dari guard ini"
             else
-              echo "ERROR: guard NoMount gagal. get_path=$N_GET_PATH resolve=$N_RESOLVE inc=$N_INC pget=$N_PGET mat=$N_MAT dput=$N_DPUT pput=$N_PPUT int-ok=$N_INTOK"
+              echo "ERROR: guard NoMount gagal. get_path=$N_GET_PATH resolve=$N_RESOLVE inc=$N_INC pget=$N_PGET mat=$N_MAT dput=$N_DPUT pput=$N_PPUT int-ok=$N_INTOK leaf-ok=$N_LEAFOK"
               grep -n "__nomount_get_rule_info(" "$NM" || true
               exit 1
             fi
@@ -2356,6 +2403,26 @@ jobs:
           # memisahkan inode virtual lewat nm_inode_is_virtual() di nomount.h.
           with open("fs/nomount/nomount.h") as f:
               hdr = f.read()
+          # Revisi ke-119: upstream (HEAD dev 4a4b5645a) tidak lagi memakai
+          # variabel "bool virtual"; inode virtual dipulangkan di awal fungsi
+          # lewat jalur generik, sebelum evict_inode asli sempat dipanggil.
+          def pulang_awal():
+              i = src.find("static void nm_hijacked_evict_inode(struct inode *inode)\n{")
+              j = src.find("\n}\n", i)
+              if i < 0 or j < 0:
+                  return False
+              body = src[i:j]
+              a = body.find("if (nm_inode_is_virtual(inode)) {")
+              b = body.find("return;", a)
+              c = body.find("orig_sop->evict_inode")
+              if a < 0 or b < 0 or c < 0 or not b < c:
+                  return False
+              cabang = body[a:b]
+              return ("truncate_inode_pages_final(&inode->i_data);" in cabang
+                      and "clear_inode(inode);" in cabang
+                      and "orig_sop" not in cabang
+                      and body.count("orig_sop->evict_inode(inode)") == 1
+                      and "return inode->i_op == &nm_file_iops || inode->i_op == &nm_dir_iops;" in hdr)
           if ("nm_sop->fake_sop.evict_inode = nomount_hijacked_evict_inode;" not in src
                   and "nm_sop->fake_sop.evict_inode = nm_hijacked_evict_inode;" not in src):
               print("ERROR: evict_inode tidak lagi dibajak NoMount - audit ulang")
@@ -2367,13 +2434,16 @@ jobs:
                   or ("bool virtual = nm_inode_is_virtual(inode);" in src
                       and "return inode->i_op == &nm_file_iops || inode->i_op == &nm_dir_iops;" in hdr)):
               print("OK: upstream sudah memisahkan inode virtual di hijacked_evict_inode() - tambalan tidak diperlukan")
+          elif pulang_awal():
+              print("OK: upstream memulangkan inode virtual lewat jalur generik di awal nm_hijacked_evict_inode() - tambalan tidak diperlukan")
           elif src.count(fixed) == 1:
               print("OK: evict inode virtual sudah lewat jalur generik (tambalan sudah terpasang)")
           else:
               i = src.find("static void nomount_hijacked_evict_inode(")
               j = src.find("\n}\n", i)
               if i < 0 or j < 0:
-                  print("ERROR: nomount_hijacked_evict_inode() tidak ditemukan - audit ulang")
+                  print("ERROR: bentuk hijacked_evict_inode() tidak dikenali (bukan nomount_ lama, "
+                        "bukan 'bool virtual', bukan pulang-awal inode virtual) - audit ulang")
                   raise SystemExit(1)
               body = src[i:j]
               if body.count(orig) != 1:
@@ -3329,10 +3399,33 @@ jobs:
 
           mkdir -p nm-src
           cp "$NM_SRC/nm.c" "$NM_SRC/nm.h" nm-src/
+          # Revisi ke-119: sampai bd5e2d11f nm freestanding (_start lewat
+          # inline asm di nm.h, tanpa libc). Sejak 1e800826e ("link nm against
+          # musl static") ia program libc biasa ber-main(); upstream menautkannya
+          # statis ke musl lewat zig cc, di sini statis ke glibc lintas-arsitektur
+          # (libc6-dev-arm64-cross, ikut gcc-aarch64-linux-gnu). Bentuknya dibaca
+          # dari sumber, jadi pin lama tetap terbangun saat mundur. nm tidak
+          # ikut masuk zip flash; HP memakai nm bawaan modul NoMount.
+          # Polanya ".global _start", bukan "_start" saja: nm.h baru punya
+          # deny_start dan data_start_idx.
+          if grep -qF '.global _start' nm-src/nm.h; then
+            echo "nm: bentuk freestanding (_start di nm.h)"
+            NM_FLAGS="-nostdlib -static -Os -fno-builtin -Wl,-e,_start"
+          elif grep -qE '^int main\(' nm-src/nm.c; then
+            echo "nm: bentuk libc (main di nm.c), ditautkan statis"
+            NM_FLAGS="-static -Os"
+          else
+            echo "ERROR: nm.c/nm.h tidak punya _start maupun main() - bentuk sumber nm berubah"
+            exit 1
+          fi
+          # NM_FLAGS sengaja tanpa kutip: daftar flag, harus terpecah per kata.
+          # shellcheck disable=SC2086
           ( cd nm-src && \
-            aarch64-linux-gnu-gcc -nostdlib -static -Os -fno-builtin -Wl,-e,_start -o nm nm.c && \
+            aarch64-linux-gnu-gcc $NM_FLAGS -o nm nm.c && \
             aarch64-linux-gnu-strip nm )
           file nm-src/nm
+          file nm-src/nm | grep -q 'ARM aarch64' || { echo "ERROR: nm bukan biner aarch64"; exit 1; }
+          file nm-src/nm | grep -q 'statically linked' || { echo "ERROR: nm tidak tertaut statis - tidak akan jalan di Android"; exit 1; }
           test -s nm-src/nm || { echo "ERROR: nm gagal dikompilasi"; exit 1; }
 
       - name: Tentukan file kernel hasil
@@ -3429,7 +3522,7 @@ jobs:
           ### AnyKernel setup
           # begin properties
           properties() { '
-          kernel.string=sphinX Kernel by fjrXTR
+          kernel.string=Kernel rosemary 4.14.186-perf: xxKSU + NoMount + BBR (dlagia/test)
           do.devicecheck=1
           do.modules=0
           do.systemless=1
@@ -3504,11 +3597,11 @@ jobs:
             echo "|---|---|"
             echo "| Kernel (rosemary-13) | \`${KERNEL_SHA:-?}\` |"
             echo "| xxKSU (di-PIN, KSU_VERSION ${KSU_VER:-?}) | \`${KSU_SHA:-?}\` |"
-            echo "| NoMount (di-PIN, ART) | \`${NOMOUNT_SHA:-?}\` |"
+            echo "| NoMount (di-PIN) | \`${NOMOUNT_SHA:-?}\` |"
             echo ""
             # Alasan yang sama dengan blok kembarannya di step "Terbitkan
             # Release", dengan satu tambahan: step ini `if: always()`, jadi
-            # untuk build yang GAGAL inilah satu-satunya tempat kedelapan pin
+            # untuk build yang GAGAL inilah satu-satunya tempat keenam pin
             # tercatat - rilisnya tidak pernah terbit. Sumbernya tetap
             # /tmp/pins.export, bukan daftar nama baru.
             if [ -s /tmp/pins.export ]; then
