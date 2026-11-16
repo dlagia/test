@@ -204,6 +204,7 @@ jobs:
           ^NOMOUNT_LOADER_PIN=[0-9a-f]{40};maxsteeel/nomount;master;^kernel/setup\.sh;NoMount loader
           ^CLANG_PIN=[0-9a-f]{40};kdrag0n/proton-clang;master;.;proton-clang
           ^AK3_PIN=[0-9a-f]{40};vlxlxlv/AnyKernel3;mt6781;^(tools/|META-INF/|ramdisk/);AnyKernel3
+          ^FGETPRIORITY_PIN=[0-9a-f]{40};aerath-stuff/fgetpriority;master;^kernel/;fgetpriority
           '
 
           TABEL=/tmp/tabel.md

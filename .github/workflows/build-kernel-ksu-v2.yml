@@ -17,7 +17,7 @@
 #    eks-fjrXTR)
 # 6. BBR + fq, setelan memori (swappiness 100, zram lz4), tambalan
 #    CVE-2026-43499 dan WARN flush_work blk-core
-# Keenam sumber dipin SHA di pins.env; riwayat revisi di bawah dan di
+# Ketujuh sumber dipin SHA di pins.env; riwayat revisi di bawah dan di
 # pins.env.
 #
 # ---- kepala lama (sampai revisi ke-117), dibiarkan sebagai sejarah ----
@@ -1630,11 +1630,11 @@ jobs:
                   PIN_LAMA=$(ambil "$SEBELUM")
                   PIN_BARU=$(ambil "$GITHUB_SHA")
                   N_BARU=$(printf '%s\n' "$PIN_BARU" | grep -c . || true)
-                  if [ "${N_BARU:-0}" -lt 6 ]; then
+                  if [ "${N_BARU:-0}" -lt 7 ]; then
                     alasan="pins.env sesudah push cuma terbaca ${N_BARU:-0} baris pin - dibangun, biar step 'Muat pins.env' yang memvonis"
                   elif [ "$PIN_LAMA" = "$PIN_BARU" ]; then
                     lanjut=0
-                    alasan="keenam SHA dan workflow build sama persis dengan rilis ${TAG_LATEST} (${SEBELUM:0:9}) - TIDAK dibangun"
+                    alasan="ketujuh SHA dan workflow build sama persis dengan rilis ${TAG_LATEST} (${SEBELUM:0:9}) - TIDAK dibangun"
                   else
                     alasan="nilai pin beda dari rilis ${TAG_LATEST} - dibangun"
                   fi
@@ -1713,10 +1713,13 @@ jobs:
           # kepala loop ini, sekali lagi (secara tersirat, sebagai pola
           # [A-Z0-9_]+) di baris yang mengekspor ke $GITHUB_ENV. Sekarang satu
           # daftar dipakai keduanya.
+          # Revisi ke-120: tujuh nama (FGETPRIORITY_PIN ditambahkan; fgetpriority
+          # built-in, hook getpriority/ioprio).
           # Revisi ke-118: enam nama (SCRIPTS_PIN dan SUSFS_PIN dicabut bersama
           # BakaSU + SUSFS).
           WAJIB="KERNEL_PIN KSU_PIN
-                 NOMOUNT_PIN NOMOUNT_LOADER_PIN CLANG_PIN AK3_PIN"
+                 NOMOUNT_PIN NOMOUNT_LOADER_PIN CLANG_PIN AK3_PIN
+                 FGETPRIORITY_PIN"
           for n in $WAJIB; do
             N_BARIS="$(grep -cE "^${n}=[0-9a-f]{40}$" /tmp/pins.env || true)"
             if [ "$N_BARIS" != "1" ]; then
@@ -1745,7 +1748,7 @@ jobs:
           # sebuah salinan kedua jadi basi tanpa ketahuan (revisi ke-26..28).
           if ASING="$(grep -E '^[A-Z0-9_]+=[0-9a-f]{40}$' /tmp/pins.env \
                       | grep -vxF -f /tmp/pins.export)"; then
-            echo "CATATAN: baris berbentuk sah tapi DI LUAR enam nama - tidak diekspor:"
+            echo "CATATAN: baris berbentuk sah tapi DI LUAR tujuh nama - tidak diekspor:"
             printf '%s\n' "$ASING" | sed 's/^/  /'
           fi
 
@@ -2483,6 +2486,134 @@ jobs:
           echo "NOMOUNT_SHA=$(git -C NoMount rev-parse --short=9 HEAD)" >> "$GITHUB_ENV"
           echo "NoMount branch dev: OK"
 
+      - name: Integrasikan fgetpriority (hook getpriority/ioprio, built-in, di-PIN)
+        working-directory: kernel
+        run: |
+          set -euo pipefail
+
+          # fgetpriority = LKM kecil backslashxx (penulis xxKSU) yang menyaring
+          # hasil sys_getpriority/setpriority/ioprio_get/ioprio_set, supaya proses
+          # app tidak terdeteksi lewat prioritas. Pengganti SUSFS priority-uid-
+          # filter yang hilang saat pindah ke xxKSU (revisi ke-118). Dikompilasi
+          # BUILT-IN (CONFIG_FGETPRIORITY=y), bukan modul: jalur "just compile it
+          # in" resmi penulisnya, jadi bebas masalah LKM (init_user_ns tidak
+          # diekspor ke modul = issue #14, vermagic). FGETPRIORITY_PIN dari
+          # pins.env (revisi ke-120).
+          #
+          # Dukungan 4.14 ADA tapi tidak diuji upstream (matriks DDK mulai 5.10).
+          # Yang membuatnya jalan di 4.14 dijaga eksplisit di bawah; kalau
+          # upstream refactor dan satu penjaga jatuh, build GAGAL di sini - bukan
+          # diam-diam di HP. Jaring terakhir saat runtime: kalau patch cabang
+          # B/BL gagal, init jatuh ke kprobe pada find_user.
+
+          for p in fgetpriority drivers/fgetpriority; do
+            if [ -e "$p" ] || [ -L "$p" ]; then
+              echo "ERROR: $p sudah ada sebelum integrasi - source kernel berubah."
+              exit 1
+            fi
+          done
+
+          # Clone + ambil SHA pin per-hash (orphan-proof, pola sama NoMount).
+          git clone -q https://github.com/aerath-stuff/fgetpriority fgp-src
+          git -C fgp-src fetch -q origin "$FGETPRIORITY_PIN" || true
+          git -C fgp-src checkout -q "$FGETPRIORITY_PIN"
+          test "$(git -C fgp-src rev-parse HEAD)" = "$FGETPRIORITY_PIN" || {
+            echo "ERROR: fgetpriority tidak ter-checkout ke pin $FGETPRIORITY_PIN"
+            echo "HEAD aktual: $(git -C fgp-src rev-parse HEAD)"
+            exit 1
+          }
+
+          # Unity build: hanya main.o; main.c meng-include routine_*.c + header.
+          mkdir drivers/fgetpriority
+          for f in main.c kernel.h arch.h arm64_branch_insn.h routine.h routine_kp.c routine_raw.c Makefile Kconfig; do
+            test -s "fgp-src/kernel/$f" || { echo "ERROR: fgp-src/kernel/$f tidak ada - struktur upstream berubah"; exit 1; }
+            cp "fgp-src/kernel/$f" "drivers/fgetpriority/$f"
+          done
+
+          # Kconfig upstream: 'config FGETPRIORITY' tristate default m, depends on
+          # ARM64 && KALLSYMS. Dipaksa =y lewat defconfig; pastikan simbolnya ada
+          # supaya Kconfig tidak membuangnya diam-diam.
+          test "$(grep -cxF 'config FGETPRIORITY' drivers/fgetpriority/Kconfig)" = "1" || {
+            echo "ERROR: 'config FGETPRIORITY' tidak ketemu tepat 1x di Kconfig - audit ulang"
+            exit 1
+          }
+          grep -qF 'obj-$(CONFIG_FGETPRIORITY) += fgetpriority.o' drivers/fgetpriority/Makefile || {
+            echo "ERROR: Makefile fgetpriority tidak lagi membangun fgetpriority.o - audit ulang"
+            exit 1
+          }
+          grep -qF 'fgetpriority-y := main.o' drivers/fgetpriority/Makefile || {
+            echo "ERROR: Makefile fgetpriority tidak lagi unity (main.o) - audit ulang"
+            exit 1
+          }
+
+          # Sambung ke drivers/Kconfig (sisip sebelum endmenu terakhir, idempoten).
+          python3 - << 'PYEOF'
+          p = "drivers/Kconfig"
+          kc = 'source "drivers/fgetpriority/Kconfig"\n'
+          with open(p) as f:
+              lines = f.readlines()
+          if kc in lines:
+              print("OK: source fgetpriority/Kconfig sudah ada di drivers/Kconfig")
+          else:
+              idx = [i for i, l in enumerate(lines) if l.strip() == "endmenu"]
+              if not idx:
+                  print("ERROR: tidak ada 'endmenu' di drivers/Kconfig")
+                  raise SystemExit(1)
+              lines.insert(idx[-1], kc)
+              with open(p, "w") as f:
+                  f.writelines(lines)
+              print("Disisipkan source fgetpriority/Kconfig sebelum endmenu terakhir")
+          PYEOF
+
+          # Sambung ke drivers/Makefile (idempoten).
+          MK='obj-$(CONFIG_FGETPRIORITY) += fgetpriority/'
+          if [ "$(grep -cxF "$MK" drivers/Makefile)" = "0" ]; then
+            printf '\n%s\n' "$MK" >> drivers/Makefile
+          fi
+
+          KC='source "drivers/fgetpriority/Kconfig"'
+          N_KC=$(grep -cxF "$KC" drivers/Kconfig || true)
+          N_MK=$(grep -cxF "$MK" drivers/Makefile || true)
+          if [ "$N_KC" != "1" ] || [ "$N_MK" != "1" ]; then
+            echo "ERROR: entri fgetpriority drivers/Kconfig=$N_KC drivers/Makefile=$N_MK (masing-masing wajib 1)"
+            grep -n fgetpriority drivers/Kconfig drivers/Makefile || true
+            exit 1
+          fi
+          echo "OK: drivers/Kconfig + drivers/Makefile berisi tepat satu entri fgetpriority"
+
+          # ---- PENJAGA 4.14 BUILT-IN (revisi ke-120) ----
+          M=drivers/fgetpriority
+          # (1) Nama syscall <4.17 pakai bentuk telanjang (sys_getpriority), bukan
+          #     __arm64_sys_. Kernel 4.14 < 4.17, cabang ini WAJIB ada - kalau
+          #     hilang, 4.14 mencari simbol __arm64_sys_* yang tidak ada.
+          if ! grep -qF 'kallsyms_lookup_name("__arm64_" name)' "$M/routine_raw.c" \
+             || ! grep -qF 'kallsyms_lookup_name(name)' "$M/routine_raw.c"; then
+            echo "ERROR: syscall_lookup kehilangan cabang nama telanjang (<4.17) - audit ulang"
+            exit 1
+          fi
+          # (2) copy_from_kernel_nofault punya fallback <5.8 (4.14 belum punya API-nya).
+          grep -qF 'KERNEL_VERSION(5, 8, 0)' "$M/main.c" || {
+            echo "ERROR: fallback copy_from_kernel_nofault (<5.8) hilang - 4.14 tidak punya simbol itu"
+            exit 1
+          }
+          # (3) Keempat callsite syscall tetap di-hook.
+          for s in sys_getpriority sys_setpriority sys_ioprio_set sys_ioprio_get; do
+            grep -qF "syscall_lookup(\"$s\")" "$M/routine_raw.c" || {
+              echo "ERROR: callsite $s tidak lagi di-hook - audit ulang"
+              exit 1
+            }
+          done
+          # (4) Jaring kprobe pada find_user tetap ada (kalau raw-patch gagal).
+          grep -qF 'init_kprobe("find_user"' "$M/routine_kp.c" || {
+            echo "ERROR: jaring kprobe find_user hilang - tidak ada fallback kalau raw-patch gagal"
+            exit 1
+          }
+          echo "OK: penjaga 4.14 built-in lolos (nama syscall telanjang, fallback <5.8, 4 callsite, kprobe)"
+
+          echo "FGP_SHA=$(git -C fgp-src rev-parse --short=9 HEAD)" >> "$GITHUB_ENV"
+          rm -rf fgp-src
+          echo "Integrasi fgetpriority: SUKSES (built-in)"
+
       - name: Pastikan tidak ada residu Re:Kernel & Baseband-guard
         working-directory: kernel
         run: |
@@ -2991,6 +3122,17 @@ jobs:
           } >> "$DEF"
           echo "[defconfig] CONFIG_NOMOUNT=y ditambahkan"
 
+          # fgetpriority selalu ikut (revisi ke-120), built-in.
+          if grep -qE '^(# )?CONFIG_FGETPRIORITY\b' "$DEF"; then
+            echo "ERROR: $DEF sudah berisi CONFIG_FGETPRIORITY sebelum step ini."
+            exit 1
+          fi
+          {
+            echo ""
+            echo "CONFIG_FGETPRIORITY=y"
+          } >> "$DEF"
+          echo "[defconfig] CONFIG_FGETPRIORITY=y ditambahkan"
+
           # ----- BBR + fq (revisi ke-12, 2026-09-11) -----
           # Tidak ada patch source sama sekali di sini: tcp_bbr.c dan sch_fq.c
           # SUDAH ada di pohon rosemary-13 (BBRv1 mainline sejak 4.9), cuma tidak
@@ -3252,6 +3394,13 @@ jobs:
           echo "==================== RESOLVED NoMount CONFIG ===================="
           grep -E '^CONFIG_NOMOUNT' out/.config || true
           grep -q '^CONFIG_NOMOUNT=y$' out/.config || { echo "ERROR: CONFIG_NOMOUNT tidak resolve ke y"; exit 1; }
+
+          echo ""
+          echo "==================== RESOLVED fgetpriority CONFIG ===================="
+          grep -E '^CONFIG_FGETPRIORITY' out/.config || true
+          grep -q '^CONFIG_FGETPRIORITY=y$' out/.config || { echo "ERROR: CONFIG_FGETPRIORITY tidak resolve ke y"; exit 1; }
+          test -f out/drivers/fgetpriority/main.o || { echo "ERROR: out/drivers/fgetpriority/main.o tidak terbentuk - fgetpriority tidak ikut dikompilasi"; exit 1; }
+          echo "OK: fgetpriority built-in (CONFIG_FGETPRIORITY=y, main.o terbentuk)"
 
           echo ""
           echo "==================== RESOLVED BBR + fq CONFIG ===================="
@@ -3594,6 +3743,7 @@ jobs:
             echo "| Add-on | Status |"
             echo "|---|---|"
             echo "| NoMount        | aktif (selalu ikut) |"
+            echo "| fgetpriority   | aktif (built-in, hook getpriority/ioprio) |"
             echo "| BBR + fq       | aktif (congestion control default \`bbr\`, qdisc default \`fq\`) |"
             echo "| Re:Kernel      | dicabut permanen (revisi ke-11) |"
             echo "| Baseband-guard | dicabut permanen (revisi ke-11) |"
@@ -3604,6 +3754,7 @@ jobs:
             echo "| Kernel (rosemary-13) | \`${KERNEL_SHA:-?}\` |"
             echo "| xxKSU (di-PIN, KSU_VERSION ${KSU_VER:-?}) | \`${KSU_SHA:-?}\` |"
             echo "| NoMount (di-PIN) | \`${NOMOUNT_SHA:-?}\` |"
+            echo "| fgetpriority (di-PIN) | \`${FGP_SHA:-?}\` |"
             echo ""
             # Alasan yang sama dengan blok kembarannya di step "Terbitkan
             # Release", dengan satu tambahan: step ini `if: always()`, jadi
@@ -3611,7 +3762,7 @@ jobs:
             # tercatat - rilisnya tidak pernah terbit. Sumbernya tetap
             # /tmp/pins.export, bukan daftar nama baru.
             if [ -s /tmp/pins.export ]; then
-              echo "<details><summary>Keenam pin yang mengunci build ini</summary>"
+              echo "<details><summary>Ketujuh pin yang mengunci build ini</summary>"
               echo ""
               echo '```'
               cat /tmp/pins.export
@@ -3698,6 +3849,7 @@ jobs:
             printf -- '| kernel | `%s` |\n' "$KERNEL_SHA"
             printf -- '| xxKSU (KSU_VERSION %s) | `%s` |\n' "$KSU_VER" "$KSU_SHA"
             printf -- '| NoMount | `%s` |\n' "$NOMOUNT_SHA"
+            printf -- '| fgetpriority | `%s` |\n' "$FGP_SHA"
             # Revisi ke-46: KEDELAPAN pin, bukan tiga. Sejak revisi ke-45c
             # pertanyaan "dua rilis ini isinya sama atau tidak?" dijawab persis
             # dua hal - nilai kedelapan SHA DAN revisi workflow yang
@@ -3714,16 +3866,16 @@ jobs:
             # inilah yang disalin orang ke pins.env waktu mundur, dan penjaga
             # bentuk di step "Muat pins.env" menolak SHA pendek (revisi ke-37).
             if [ -s /tmp/pins.export ]; then
-              printf -- '\n<details><summary>Keenam pin yang mengunci build ini</summary>\n\n'
+              printf -- '\n<details><summary>Ketujuh pin yang mengunci build ini</summary>\n\n'
               printf -- '```\n'
               cat /tmp/pins.export
               printf -- '```\n\n'
               printf -- 'Dikompilasi oleh revisi workflow di commit `%s`.\n' "$GITHUB_SHA"
-              printf -- 'Dua rilis berisi kernel yang sama HANYA kalau keenam baris di\n'
+              printf -- 'Dua rilis berisi kernel yang sama HANYA kalau ketujuh baris di\n'
               printf -- 'atas DAN commit itu sama persis. Ukuran zip tidak menentukan apa pun.\n'
               printf -- '</details>\n'
             else
-              printf -- '\n> CATATAN: daftar keenam pin tidak terbaca (`/tmp/pins.export`\n'
+              printf -- '\n> CATATAN: daftar ketujuh pin tidak terbaca (`/tmp/pins.export`\n'
               printf -- '> kosong) - rilis ini tidak bisa dibandingkan isinya dengan rilis lain\n'
               printf -- '> tanpa membuka log run-nya.\n'
             fi

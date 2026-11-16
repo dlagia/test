@@ -35,6 +35,7 @@ on:
           - 'source kernel'
           - 'AnyKernel3'
           - 'proton-clang'
+          - 'fgetpriority'
       sha:
         description: 'SHA tujuan - kosongkan untuk memakai HEAD upstream'
         required: false
@@ -96,6 +97,7 @@ jobs:
             'NoMount loader')        BARIS='NOMOUNT_LOADER_PIN;maxsteeel/nomount;master;^kernel/setup\.sh' ;;
             'proton-clang')          BARIS='CLANG_PIN;kdrag0n/proton-clang;master;.' ;;
             'AnyKernel3')            BARIS='AK3_PIN;vlxlxlv/AnyKernel3;mt6781;^(tools/|META-INF/|ramdisk/)' ;;
+            'fgetpriority')          BARIS='FGETPRIORITY_PIN;aerath-stuff/fgetpriority;master;^kernel/' ;;
             *) echo "ERROR: komponen tak dikenal: $KOMPONEN"; exit 1 ;;
           esac
           IFS=';' read -r NAMA REPO REF SENSITIF <<< "$BARIS"
