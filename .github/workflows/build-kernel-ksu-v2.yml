@@ -1472,6 +1472,30 @@
 #     Android tidak diubah.
 # Mundur: titik AE = kembalikan dua baris NOMOUNT di pins.env dan berkas ini
 # ke commit e8cd3448c.
+#
+# REVISI KE-122 (17 November 2026) - audit: NOMOUNT_PIN 00e7c5d4f -> 215c7f59c.
+#
+# Upstream 215c7f59c (perbaikan nomount#121, panic ovl_encode_real_fh di
+# GKI 6.6) membajak sb->s_export_op superblock yang dibajak NoMount dan
+# SELALU memasang encode_fh = nm_encode_fh. Kalau export_operations asli
+# tidak punya encode_fh, nm_encode_fh menjawab -EOPNOTSUPP. Di 4.14
+# exportfs_encode_inode_fh() (fs/exportfs/expfs.c) justru jatuh ke
+# export_encode_fh() generik (i_ino + i_generation) saat encode_fh NULL,
+# dan ext4 serta f2fs pohon ini memang tanpa encode_fh. Akibatnya, begitu
+# ada satu rule NoMount di /system, /vendor atau /product:
+#   - name_to_handle_at() atas berkas ASLI di partisi itu gagal
+#     EOPNOTSUPP, padahal di kernel stok berhasil (vektor deteksi);
+#   - fdinfo inotify (fs/notify/fdinfo.c) memicu WARN_ONCE "Can't encode
+#     file handler for inotify";
+#   - copy-up overlayfs 4.14 dengan lower di partisi itu WARN_ON lalu -EIO.
+# Bukan bootloop (tanpa rule NoMount tidak ada yang dibajak), tapi
+# kemunduran di pohon ini. Tambalan di step NoMount: hook export hanya
+# dipasang kalau export_operations asli punya encode_fh. Di ext4/f2fs
+# pohon ini hook tidak pernah terpasang = perilaku driver titik AG.
+# Dilewati kalau upstream tanpa hook export (pin lama) atau sudah
+# memeriksanya sendiri; GAGAL kalau bentuk kodenya berubah.
+# Mundur: titik AG = kembalikan KSU_PIN dan NOMOUNT_PIN titik AG di
+# pins.env dan berkas ini ke commit 36c9640ed.
 # ============================================================
 
 name: Build Kernel Rosemary (xxKSU + NoMount)
@@ -2464,6 +2488,47 @@ jobs:
               with open(path, "w") as f:
                   f.write(src)
               print("Ditambal: inode virtual kembali di-evict lewat jalur generik")
+          PYEOF
+
+          # Revisi ke-122: 215c7f59c memasang encode_fh = nm_encode_fh di
+          # export_operations tiruan untuk SETIAP superblock yang dibajak,
+          # yang menjawab -EOPNOTSUPP kalau aslinya tanpa encode_fh. 4.14
+          # memakai export_encode_fh() generik untuk kasus itu (ext4 dan
+          # f2fs pohon ini tanpa encode_fh), jadi hook hanya dipasang kalau
+          # aslinya punya encode_fh. Rincian di kepala berkas, REVISI KE-122.
+          python3 - << 'PYEOF'
+          path = "fs/nomount/nomount.c"
+          with open(path) as f:
+              src = f.read()
+          lama = "    if (!sb->s_export_op || nm_sop->orig_export_op) return;\n"
+          baru = "    if (!sb->s_export_op || !sb->s_export_op->encode_fh || nm_sop->orig_export_op) return;\n"
+          i = src.find("static void nm_install_export_hook(struct nm_sop *nm_sop)\n{")
+          if i < 0:
+              if "s_export_op" in src:
+                  print("ERROR: NoMount menyentuh s_export_op tanpa nm_install_export_hook() - audit ulang")
+                  raise SystemExit(1)
+              print("OK: NoMount tidak membajak export_operations - tambalan encode_fh tidak diperlukan")
+              raise SystemExit(0)
+          j = src.find("\n}\n", i)
+          body = src[i:j]
+          if body.count("nm_sop->fake_export_op.encode_fh = nm_encode_fh;") != 1:
+              print("ERROR: bentuk nm_install_export_hook() tidak dikenali - audit ulang")
+              raise SystemExit(1)
+          if src.count("&nm_sop->fake_export_op") != 2 or src.count("nm_install_export_hook(nm_sop);") != 2:
+              print("ERROR: pemasang/pemulih export_operations berubah - audit ulang")
+              raise SystemExit(1)
+          if body.count(baru) == 1:
+              print("OK: hook encode_fh hanya untuk FS ber-encode_fh (tambalan sudah terpasang)")
+          elif body.count(lama) == 1:
+              src = src[:i] + body.replace(lama, baru) + src[j:]
+              with open(path, "w") as f:
+                  f.write(src)
+              print("Ditambal: hook encode_fh NoMount dilewati untuk FS tanpa encode_fh (ext4/f2fs 4.14 tetap generik)")
+          elif "->encode_fh" in body.split("nm_sop->orig_export_op = ")[0]:
+              print("OK: upstream sudah memeriksa encode_fh asli sebelum memasang hook - tambalan tidak diperlukan")
+          else:
+              print("ERROR: penjaga awal nm_install_export_hook() berubah - audit ulang")
+              raise SystemExit(1)
           PYEOF
 
           # Entry fs/Makefile. setup.sh menambahkannya dengan penjaga longgar:
