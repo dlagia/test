@@ -11,8 +11,9 @@
 # pernah mendorong commit. Ia cuma membaca pins.env di akar repo (sejak revisi
 # ke-26; kalimat ini sendiri masih menyebut build-kernel-ksu-v2.yml sampai
 # revisi ke-34 - prosa pun bisa jadi salinan kedua yang basi), membandingkan
-# kedelapan pin dengan upstream, lalu menulis satu issue berisi tabel + vonis per
-# komponen. Naik-turun pin tetap keputusan pemilik.
+# keenam pin (delapan sampai revisi ke-117) dengan upstream, lalu menulis satu
+# issue berisi tabel + vonis per komponen. Naik-turun pin tetap keputusan
+# pemilik.
 #
 # Tiga hal yang dicek per komponen:
 #   1. TERTINGGAL?  pin != HEAD branch.

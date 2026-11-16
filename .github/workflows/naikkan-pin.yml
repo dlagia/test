@@ -4,7 +4,7 @@
 # Ia HANYA jalan kalau Anda menekannya (workflow_dispatch). Tidak ada jadwal,
 # tidak pernah menaikkan apa pun sendiri. Pasangannya:
 #
-#   pin-watch.yml   -> MEMBACA & memvonis  ("SUSFS gerak, vonis AMAN")
+#   pin-watch.yml   -> MEMBACA & memvonis  ("NoMount gerak, vonis AMAN")
 #   naikkan-pin.yml -> MENULIS pins.env    (ini)
 #   build-...yml    -> MENG-COMPILE
 #
@@ -14,8 +14,8 @@
 #
 # PENGAMAN YANG PALING PENTING ada di step "Triase": sebelum menulis apa pun, ia
 # membandingkan pin lama dengan tujuan dan menolak kalau ada file sensitif yang
-# tersentuh (source kernel mana pun, patch SUSFS, kernel/src/, userspace/src/ NoMount,
-# META-INF/ AnyKernel3, ...). Jadi tombol ini
+# tersentuh (source kernel mana pun, kernel/ xxKSU, kernel/src/ dan
+# userspace/src/ NoMount, META-INF/ AnyKernel3, ...). Jadi tombol ini
 # tidak bisa dipakai untuk diam-diam menaikkan sesuatu yang seharusnya diaudit
 # dulu - kecuali Anda sendiri mencentang "paksa" dan menyatakan sudah paham.
 # ============================================================

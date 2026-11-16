@@ -1773,7 +1773,12 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             bc bison build-essential ccache cpio curl flex git kmod \
             libelf-dev libssl-dev zip zlib1g-dev xxd python3 \
-            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libc6-dev-arm64-cross
+          # Revisi ke-119: libc6-dev-arm64-cross WAJIB ditulis sendiri. Ia cuma
+          # "Recommends" dari gcc-aarch64-linux-gnu, jadi --no-install-recommends
+          # membuangnya; nm ber-libc (NoMount 1e800826e+) lalu gagal di
+          # "bits/wordsize.h: No such file" (run 43782879394). nm freestanding
+          # lama tidak butuh header libc, jadi selama ini tidak ketahuan.
           # Revisi ke-55: libtinfo5/libncurses5 dibuang - tidak ada di 24.04
           # dan tidak dibutuhkan (diuji: run 36085113472 sukses tanpa keduanya).
           # gcc-aarch64-linux-gnu kini gcc 13 (dulu 11); ia cuma dipakai
@@ -3403,7 +3408,8 @@ jobs:
           # inline asm di nm.h, tanpa libc). Sejak 1e800826e ("link nm against
           # musl static") ia program libc biasa ber-main(); upstream menautkannya
           # statis ke musl lewat zig cc, di sini statis ke glibc lintas-arsitektur
-          # (libc6-dev-arm64-cross, ikut gcc-aarch64-linux-gnu). Bentuknya dibaca
+          # (libc6-dev-arm64-cross, dipasang eksplisit di step dependency).
+          # Bentuknya dibaca
           # dari sumber, jadi pin lama tetap terbangun saat mundur. nm tidak
           # ikut masuk zip flash; HP memakai nm bawaan modul NoMount.
           # Polanya ".global _start", bukan "_start" saja: nm.h baru punya
