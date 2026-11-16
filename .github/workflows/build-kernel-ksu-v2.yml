@@ -1496,6 +1496,14 @@
 # memeriksanya sendiri; GAGAL kalau bentuk kodenya berubah.
 # Mundur: titik AG = kembalikan KSU_PIN dan NOMOUNT_PIN titik AG di
 # pins.env dan berkas ini ke commit 36c9640ed.
+#
+# REVISI KE-123 (17 November 2026) - NOMOUNT_PIN 215c7f59c -> e4f201e34.
+# Upstream e4f201e34 ("preserve native file handle encoding") memasang
+# penjaga yang SAMA PERSIS dengan tambalan revisi ke-122 (hook encode_fh
+# hanya kalau encode_fh asli ada) dan memasang hook sesudah s_op tiruan
+# terbit. Tambalan tetap di step NoMount, tapi di pin ini ia hanya
+# memeriksa (tanpa mengubah berkas); ia baru menambal kalau pin mundur ke
+# 215c7f59c.
 # ============================================================
 
 name: Build Kernel Rosemary (xxKSU + NoMount)
@@ -2518,7 +2526,7 @@ jobs:
               print("ERROR: pemasang/pemulih export_operations berubah - audit ulang")
               raise SystemExit(1)
           if body.count(baru) == 1:
-              print("OK: hook encode_fh hanya untuk FS ber-encode_fh (tambalan sudah terpasang)")
+              print("OK: hook encode_fh hanya untuk FS ber-encode_fh (sudah di upstream sejak e4f201e34, atau tambalan sudah terpasang)")
           elif body.count(lama) == 1:
               src = src[:i] + body.replace(lama, baru) + src[j:]
               with open(path, "w") as f:
