@@ -1504,6 +1504,18 @@
 # terbit. Tambalan tetap di step NoMount, tapi di pin ini ia hanya
 # memeriksa (tanpa mengubah berkas); ia baru menambal kalau pin mundur ke
 # 215c7f59c.
+#
+# REVISI KE-124 (17 November 2026) - audit sesudah titik AH: tiga pin ke
+# HEAD (KSU_PIN 9339aca93 -> e762d4b0e, NOMOUNT_PIN e4f201e34 -> 48e4b79a3,
+# FGETPRIORITY_PIN 178dd7479 -> 9a38e02b0). Audit bootloop-nya di blok
+# masing-masing pin di pins.env.
+# Bug tersembunyi yang ikut dibetulkan: step "Integrasikan fgetpriority"
+# menyalin daftar berkas yang ditulis tangan. Upstream 9a38e02b0 mengganti
+# nama arm64_branch_insn.h -> arm64_branch_patch.h, jadi build GAGAL di
+# step itu. Kini semua *.c/*.h di kernel/ upstream disalin dan setiap
+# #include "..." lokal diperiksa ada (pin lama dan baru sama-sama lolos).
+# Mundur: titik AH = kembalikan tiga baris pin titik AH di pins.env dan
+# berkas ini ke commit 28f408ebc.
 # ============================================================
 
 name: Build Kernel Rosemary (xxKSU + NoMount)
@@ -2597,11 +2609,28 @@ jobs:
           }
 
           # Unity build: hanya main.o; main.c meng-include routine_*.c + header.
+          # Revisi ke-124: daftar berkas tidak lagi ditulis satu per satu.
+          # Upstream 9a38e02b0 mengganti nama arm64_branch_insn.h menjadi
+          # arm64_branch_patch.h, dan daftar lama membuat build GAGAL di sini.
+          # Kini semua *.c dan *.h di kernel/ upstream disalin, lalu setiap
+          # '#include "..."' lokal wajib ada di drivers/fgetpriority/. Kalau
+          # upstream memindah header ke luar kernel/, build tetap berhenti di
+          # sini dengan pesan jelas, bukan di tengah compile. Berlaku juga
+          # saat pin mundur ke 178dd7479 (nama header lama).
           mkdir drivers/fgetpriority
-          for f in main.c kernel.h arch.h arm64_branch_insn.h routine.h routine_kp.c routine_raw.c Makefile Kconfig; do
+          for f in main.c routine_kp.c routine_raw.c Makefile Kconfig; do
             test -s "fgp-src/kernel/$f" || { echo "ERROR: fgp-src/kernel/$f tidak ada - struktur upstream berubah"; exit 1; }
-            cp "fgp-src/kernel/$f" "drivers/fgetpriority/$f"
           done
+          cp fgp-src/kernel/*.c fgp-src/kernel/*.h fgp-src/kernel/Makefile fgp-src/kernel/Kconfig drivers/fgetpriority/
+          for f in drivers/fgetpriority/*.c drivers/fgetpriority/*.h; do
+            sed -nE 's/^[[:space:]]*#[[:space:]]*include[[:space:]]+"([^"]+)".*/\1/p' "$f" | while IFS= read -r inc; do
+              test -s "drivers/fgetpriority/$inc" || {
+                echo "ERROR: $f meng-include \"$inc\" yang tidak ada di kernel/ upstream - audit ulang"
+                exit 1
+              }
+            done
+          done
+          echo "OK: berkas fgetpriority disalin:" drivers/fgetpriority/*
 
           # Kconfig upstream: 'config FGETPRIORITY' tristate default m, depends on
           # ARM64 && KALLSYMS. Dipaksa =y lewat defconfig; pastikan simbolnya ada
