@@ -1816,11 +1816,29 @@ jobs:
 
       - name: Pasang dependency build
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            bc bison build-essential ccache cpio curl flex git kmod \
-            libelf-dev libssl-dev zip zlib1g-dev xxd python3 \
-            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libc6-dev-arm64-cross
+          # Revisi ke-129: apt diberi retry. Run 44524026177 mati di sini
+          # karena mirror Ubuntu membalas "503 Service Unavailable" untuk 20+
+          # paket - gangguan sesaat di luar repo, tapi tanpa retry satu
+          # kedipan mirror membatalkan seluruh build. Acquire::Retries=5
+          # mengulang tiap unduhan; putaran luar 3x (jeda 60 detik) menutup
+          # gangguan yang lebih lama. Paket dan urutannya tidak berubah.
+          for i in 1 2 3; do
+            if sudo apt-get -o Acquire::Retries=5 update && \
+               sudo apt-get -o Acquire::Retries=5 install -y \
+                 --no-install-recommends \
+                 bc bison build-essential ccache cpio curl flex git kmod \
+                 libelf-dev libssl-dev zip zlib1g-dev xxd python3 \
+                 gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+                 libc6-dev-arm64-cross; then
+              break
+            fi
+            if [ "$i" = 3 ]; then
+              echo "ERROR: apt gagal 3x berturut-turut (mirror Ubuntu?)."
+              exit 1
+            fi
+            echo "apt gagal (percobaan $i/3), ulang dalam 60 detik."
+            sleep 60
+          done
           # Revisi ke-119: libc6-dev-arm64-cross WAJIB ditulis sendiri. Ia cuma
           # "Recommends" dari gcc-aarch64-linux-gnu, jadi --no-install-recommends
           # membuangnya; nm ber-libc (NoMount 1e800826e+) lalu gagal di
